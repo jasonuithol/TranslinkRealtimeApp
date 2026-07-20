@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: build & smoke test
+    runs-on: ubuntu-latest   # Docker is preinstalled, so the image build works out of the box
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Syntax check
+        run: python -m compileall -q app.py ingest_gtfs.py
+
+      - name: Build the image
+        run: docker build -t translink:ci -f Containerfile .
+
+      # There is no unit-test suite in this repo (the original tests were written
+      # in claude.ai and not preserved), so the gate is an end-to-end smoke test
+      # against mock_gtfs.zip: ingest, serve, query. It exercises the same image
+      # that publish-image ships.
+      - name: Ingest the mock feed
+        run: |
+          docker volume create ci-data
+          docker run --rm -v ci-data:/data \
+            -v "$PWD/mock_gtfs.zip:/tmp/mock.zip:ro" \
+            translink:ci python ingest_gtfs.py /tmp/mock.zip
+
+      - name: Re-ingest, to prove the atomic swap works over an existing DB
+        run: |
+          docker run --rm -v ci-data:/data \
+            -v "$PWD/mock_gtfs.zip:/tmp/mock.zip:ro" \
+            translink:ci python ingest_gtfs.py /tmp/mock.zip
+          # A leftover .tmp means os.replace() did not land.
+          docker run --rm -v ci-data:/data translink:ci \
+            sh -c 'test ! -e /data/gtfs.sqlite3.tmp' \
+            || { echo "gtfs.sqlite3.tmp left behind"; exit 1; }
+
+      - name: Start the board
+        run: |
+          docker run -d --name translink-ci -p 8000:8000 -v ci-data:/data translink:ci
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8000/ && exit 0
+            sleep 1
+          done
+          echo "server did not come up:"; docker logs translink-ci; exit 1
+
+      - name: Query the API
+        run: |
+          # Parent-station expansion: 'Central station' is location_type=1 in the
+          # mock feed and must come back from search without its child platforms.
+          search=$(curl -fsS "http://localhost:8000/api/stops/search?q=Central")
+          echo "$search"
+          echo "$search" | grep -q '"stop_id":"place_censta"' \
+            || { echo "expected Central station in search results"; exit 1; }
+          echo "$search" | grep -q '"is_station":true' \
+            || { echo "expected Central station flagged as a station"; exit 1; }
+
+          # Departures for the parent station: the mock timetable is fixed in the
+          # past, so assert the response shape rather than a non-empty board.
+          deps=$(curl -fsS "http://localhost:8000/api/departures/place_censta")
+          echo "$deps"
+          echo "$deps" | grep -q '"departures"' \
+            || { echo "malformed departures response"; exit 1; }
+
+          # No -f here: it would make curl exit non-zero on the 404 we want.
+          curl -sS -o /dev/null -w '%{http_code}\n' \
+            "http://localhost:8000/api/departures/nonexistent" | grep -q 404 \
+            || { echo "expected 404 for an unknown stop_id"; exit 1; }
+
+      - name: Container logs
+        if: always()
+        run: docker logs translink-ci || true
+
+  # Build the runtime image once, from the exact tree that passed the smoke test, and push
+  # it to GHCR. The VPS pulls this image instead of rebuilding — see deploy/install-vps.sh.
+  # Only runs on pushes to main (a fork PR can't push packages, and untested images shouldn't ship).
+  publish-image:
+    name: publish image
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          push: true
+          # image names must be lowercase; the repo is TranslinkNextArrivalApp, so it's hardcoded here
+          tags: |
+            ghcr.io/jasonuithol/translink-departures:latest
+            ghcr.io/jasonuithol/translink-departures:${{ github.sha }}

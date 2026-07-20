@@ -109,7 +109,7 @@ jobs:
           context: .
           file: ./Containerfile
           push: true
-          # image names must be lowercase; the repo is TranslinkNextArrivalApp, so it's hardcoded here
+          # image names must be lowercase; the repo is TranslinkRealtimeApp, so it's hardcoded here
           tags: |
             ghcr.io/jasonuithol/translink-departures:latest
             ghcr.io/jasonuithol/translink-departures:${{ github.sha }}

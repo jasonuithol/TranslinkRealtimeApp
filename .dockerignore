@@ -7,6 +7,5 @@ venv/
 # Build artifacts and archives — never belong in the image
 gtfs.sqlite3
 SEQ_GTFS.zip
-translink-departures.zip
 
 *.md

@@ -1,4 +1,8 @@
-fastapi
-uvicorn[standard]
-httpx
-gtfs-realtime-bindings
+# Pinned to the versions verified against the real Translink feed on 2026-07-21.
+# Direct dependencies only; transitives resolve freely. Bump deliberately — an
+# unpinned deploy months from now can pull a breaking release and fail in ways
+# that look like an application bug.
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+httpx==0.28.1
+gtfs-realtime-bindings==2.1.0

@@ -104,7 +104,13 @@ def download_feed(dest: Path) -> Path:
 
 
 def ingest(zip_path: Path) -> None:
-    con = sqlite3.connect(DB_PATH)
+    # Build into a temp file and swap it in atomically. SCHEMA drops every table
+    # first, so ingesting over a live DB would leave the running server querying
+    # half-dropped tables for the duration. app.py opens a fresh connection per
+    # request, so a rename moves readers onto the finished DB between requests.
+    tmp_path = Path(str(DB_PATH) + ".tmp")
+    tmp_path.unlink(missing_ok=True)
+    con = sqlite3.connect(tmp_path)
     con.executescript(SCHEMA)
     with zipfile.ZipFile(zip_path) as zf:
         for table, cols in TABLES.items():
@@ -127,8 +133,9 @@ def ingest(zip_path: Path) -> None:
                     con.executemany(sql, batch)
             con.commit()
     n = con.execute("SELECT COUNT(*) FROM stop_times").fetchone()[0]
-    print(f"Done. {n:,} stop_times rows in {DB_PATH}")
     con.close()
+    os.replace(tmp_path, DB_PATH)
+    print(f"Done. {n:,} stop_times rows in {DB_PATH}")
 
 
 if __name__ == "__main__":

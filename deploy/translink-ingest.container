@@ -1,0 +1,19 @@
+[Unit]
+Description=Refresh the Translink static GTFS timetable
+
+[Container]
+ContainerName=translink-ingest
+Image=ghcr.io/jasonuithol/translink-departures:latest
+Volume=translink-data.volume:/data
+Environment=GTFS_DB=/data/gtfs.sqlite3
+# Same image as the server; argv override runs the ingest instead of uvicorn.
+Exec=python ingest_gtfs.py
+
+[Service]
+# Runs to completion rather than staying up. The ingest swaps the finished DB
+# in atomically, so the server keeps serving throughout and needs no restart.
+Type=oneshot
+# The real SEQ feed is a few hundred MB unzipped; give it room on a small VPS.
+TimeoutStartSec=1800
+
+# No [Install] section: this is triggered by translink-ingest.timer, not by boot.

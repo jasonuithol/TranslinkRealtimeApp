@@ -1,0 +1,4 @@
+# Holds gtfs.sqlite3 (and the downloaded SEQ_GTFS.zip). Survives redeploys and
+# reboots, so a restart does not require a re-ingest.
+[Volume]
+VolumeName=translink-data

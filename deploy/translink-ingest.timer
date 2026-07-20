@@ -1,0 +1,17 @@
+[Unit]
+Description=Weekly Translink GTFS timetable refresh
+# Quadlet does not process .timer files, so this is a plain user unit in
+# ~/.config/systemd/user/. It triggers translink-ingest.service, which Quadlet
+# generates from translink-ingest.container.
+
+[Timer]
+# The feed changes roughly weekly. Sunday 03:30 local: off-peak, and well clear
+# of the after-midnight (25:xx) services the board still needs to show.
+OnCalendar=Sun *-*-* 03:30:00
+# Randomise slightly so we are not hammering Translink on the stroke of the hour.
+RandomizedDelaySec=900
+# If the VPS was off at the scheduled time, run once it comes back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

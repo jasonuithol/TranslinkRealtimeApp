@@ -1,0 +1,19 @@
+[Unit]
+Description=Translink next-service departures board
+
+[Container]
+ContainerName=translink
+Image=ghcr.io/jasonuithol/translink-departures:latest
+# 8080 is taken by inventoryquest on this host.
+PublishPort=8000:8000
+Volume=translink-data.volume:/data
+Environment=GTFS_DB=/data/gtfs.sqlite3
+# Let 'podman auto-update' pull a newer :latest and restart this container,
+# matching how iq-pod-app is managed.
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

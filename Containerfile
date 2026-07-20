@@ -29,7 +29,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # --chmod so the image does not inherit restrictive host file modes.
 COPY --chmod=0644 app.py ingest_gtfs.py ./
 COPY --chmod=0755 fetch_basemap.sh ./
-COPY --chmod=0644 static/ ./static/
+# NOT --chmod=0644 here: that applies to directories as well, and a directory
+# without its execute bit cannot be traversed. Starlette turns the resulting
+# PermissionError into a 401, so every file under static/vendor and static/fonts
+# would 401. `a+rX` grants read to all and execute to directories only.
+COPY static/ ./static/
+RUN chmod -R a+rX ./static
 
 # Run unprivileged. /data is created and owned here so that a named podman
 # volume mounted over it inherits this ownership on first use.

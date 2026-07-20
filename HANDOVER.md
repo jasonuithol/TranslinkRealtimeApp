@@ -42,8 +42,12 @@ Runs as a container; the same image serves the board and runs the ingest.
 podman build -t translink-departures .
 podman volume create translink-data
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py
+podman run --rm -v translink-data:/data translink-departures ./fetch_basemap.sh
 podman run -d -p 8000:8000 -v translink-data:/data translink-departures
 ```
+
+The basemap step is optional and slow-moving — refresh it occasionally, not
+weekly like the timetable.
 
 On the VPS it is managed by **Quadlet** units in `deploy/`, installed by
 `deploy/install-vps.sh` — see that script's header for what it assumes about
@@ -141,13 +145,43 @@ official color from the feed, green pulsing dot = live prediction, "DUE"
 flashes under 1 minute. Respects `prefers-reduced-motion`. Keep this
 identity when extending.
 
-## Requirement: map view with live vehicle positions
+## Map view with live vehicle positions — built
 
-Wanted: a map showing where the vehicles actually are, fed by the unused
-`.../SEQ/VehiclePositions` endpoint.
+A MapLibre map sits under the board, showing the live GPS of the vehicles
+running the services listed. Everything is self-hosted; the page makes no
+external requests at all.
 
-**Bing Maps was requested, conditional on being free. It is not — don't
-spend time on it.** As checked on 2026-07-21:
+- `app.py` polls `.../SEQ/VehiclePositions` alongside TripUpdates and keys it
+  by `trip_id`. `/api/departures/{stop_id}` returns a `vehicles` array holding
+  positions for **only the trips on the board**, so the map can never show a
+  vehicle the user has no row for.
+- Basemap: a **Protomaps `.pmtiles`** extract of SEQ built by
+  `fetch_basemap.sh` onto the data volume — 22 MB at maxzoom 13, ~11 s to
+  build. Served by StaticFiles, which answers the HTTP range requests
+  pmtiles.js uses to read the archive without downloading it whole.
+- `/api/config` reports whether a basemap exists; without one the map hides
+  and the board works unchanged. CI asserts that path.
+- `static/map-style.json` is a hand-written dark style matching the board.
+  Glyphs, MapLibre and pmtiles.js are vendored under `static/vendor/`.
+
+Two bugs worth not reintroducing:
+
+- **Do not construct the Map inside a hidden container.** MapLibre measures
+  its container at construction; `display:none` gives it zero size and it then
+  never fires `load`. Reveal `#map-wrap` *before* `new maplibregl.Map()`.
+- **`new pmtiles.Protocol({metadata: true})` — the flag is required.** The
+  style's source uses `url:`, so MapLibre asks the protocol for TileJSON.
+  Without the flag pmtiles ignores that request and the promise never settles:
+  the style hangs forever with no error on any channel.
+
+Note that headless Firefox cannot verify the map — with no GPU it never
+completes a render pass, so MapLibre's `load` never fires and the canvas stays
+blank even though the style loads. Check the map in a real browser.
+
+### Bing Maps: ruled out, don't revisit
+
+**Bing Maps was requested, conditional on being free. It is not.** As checked
+on 2026-07-21:
 
 - Bing Maps for Enterprise **free (Basic) tier retired 30 June 2025**. New
   free keys are not issued. Existing *Enterprise* contracts run to 30 June
@@ -158,21 +192,8 @@ spend time on it.** As checked on 2026-07-21:
   allowance** — they bill at ~$0.50 per 1,000 transactions (1 transaction ≈
   15 tiles) from the first request.
 
-So a free Microsoft mapping option no longer exists. Realistic free routes,
-in rough order of preference:
-
-1. **MapLibre GL JS** (BSD) + **Protomaps** `.pmtiles` — vector tiles served
-   as a static file from this same container. No key, no quota, no third
-   party in the request path. Best fit: the extract only needs to cover SEQ.
-2. **MapLibre + OpenStreetMap raster tiles** — simplest to stand up, but
-   `tile.openstreetmap.org` has a usage policy that a public board could
-   breach. Fine for personal use, not for anything promoted.
-3. **MapTiler / Stadia free tier** — key required, quota'd, and a third party
-   sees viewer IPs.
-
-Whichever is chosen, note the frontend currently loads fonts from
-`fonts.googleapis.com`; self-hosting those would remove the last external
-dependency and keep the board working offline.
+So a free Microsoft mapping option no longer exists. MapLibre + Protomaps was
+chosen instead and is what ships — see above.
 
 ## Other next-step ideas (not yet built)
 

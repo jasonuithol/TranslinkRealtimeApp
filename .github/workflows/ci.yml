@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest   # Docker is preinstalled, so the image build works out of the box
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -78,6 +78,28 @@ jobs:
             "http://localhost:8000/api/departures/nonexistent" | grep -q 404 \
             || { echo "expected 404 for an unknown stop_id"; exit 1; }
 
+          # The map rides along on the departures response.
+          echo "$deps" | grep -q '"vehicles"' \
+            || { echo "departures response missing the vehicles array"; exit 1; }
+
+          # No basemap is built in CI, so the frontend must be told to hide the
+          # map rather than fail. This is the degradation path on a fresh volume.
+          curl -fsS http://localhost:8000/api/config | grep -q '"basemap":false' \
+            || { echo "expected basemap:false with no basemap on the volume"; exit 1; }
+
+      - name: Frontend assets are self-hosted
+        run: |
+          # The board must make no external requests: fonts, map JS and glyphs
+          # are all vendored. A stray CDN link would break offline/air-gapped use.
+          if grep -nE "https?://(fonts\.googleapis|fonts\.gstatic|unpkg|cdn\.|.*\.jsdelivr)" static/index.html; then
+            echo "external asset reference found in index.html"; exit 1
+          fi
+          for A in /static/vendor/maplibre-gl.js /static/vendor/pmtiles.js \
+                   /static/map-style.json /static/fonts/fonts.css; do
+            curl -fsS -o /dev/null "http://localhost:8000$A" \
+              || { echo "missing vendored asset: $A"; exit 1; }
+          done
+
       - name: Container logs
         if: always()
         run: docker logs translink-ci || true
@@ -94,17 +116,17 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile

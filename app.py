@@ -29,6 +29,14 @@ BASE = Path(__file__).parent
 # Overridable so the DB can live on a mounted volume (see Containerfile).
 DB_PATH = Path(os.environ.get("GTFS_DB") or BASE / "gtfs.sqlite3")
 TRIP_UPDATES_URL = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates"
+VEHICLE_POSITIONS_URL = (
+    "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions"
+)
+# Basemap for the map view: a Protomaps .pmtiles extract of SEQ, built by
+# fetch_basemap.sh onto the same volume as the timetable. Absent is fine — the
+# frontend hides the map rather than failing.
+BASEMAP_DIR = Path(os.environ.get("BASEMAP_DIR") or BASE / "basemap")
+BASEMAP_FILE = BASEMAP_DIR / "seq.pmtiles"
 POLL_SECONDS = 30
 LOOKAHEAD_MINUTES = 90
 MAX_RESULTS = 12
@@ -38,6 +46,10 @@ MAX_RESULTS = 12
 # ---------------------------------------------------------------------------
 rt_cache: dict = {}
 rt_last_fetch: float | None = None
+
+# Vehicle positions: {trip_id: {"lat", "lon", "bearing", "status", "timestamp"}}
+vp_cache: dict = {}
+vp_last_fetch: float | None = None
 
 
 async def poll_trip_updates() -> None:
@@ -82,11 +94,49 @@ async def poll_trip_updates() -> None:
             await asyncio.sleep(POLL_SECONDS)
 
 
+async def poll_vehicle_positions() -> None:
+    """Live GPS for the map view. Keyed by trip_id so a departure on the board
+    can be matched to the vehicle actually running it."""
+    global vp_cache, vp_last_fetch
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            try:
+                resp = await client.get(VEHICLE_POSITIONS_URL)
+                resp.raise_for_status()
+                feed = gtfs_realtime_pb2.FeedMessage()
+                feed.ParseFromString(resp.content)
+
+                cache: dict = {}
+                for entity in feed.entity:
+                    if not entity.HasField("vehicle"):
+                        continue
+                    v = entity.vehicle
+                    if not v.HasField("position") or not v.trip.trip_id:
+                        continue
+                    pos = v.position
+                    cache[v.trip.trip_id] = {
+                        "lat": pos.latitude,
+                        "lon": pos.longitude,
+                        "bearing": pos.bearing if pos.HasField("bearing") else None,
+                        "status": v.current_status,
+                        "timestamp": v.timestamp or None,
+                    }
+                vp_cache = cache
+                vp_last_fetch = time.time()
+            except Exception as exc:  # the board must survive a map outage
+                print(f"[poll] vehicle positions fetch failed: {exc}")
+            await asyncio.sleep(POLL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(poll_trip_updates())
+    tasks = [
+        asyncio.create_task(poll_trip_updates()),
+        asyncio.create_task(poll_vehicle_positions()),
+    ]
     yield
-    task.cancel()
+    for t in tasks:
+        t.cancel()
 
 
 app = FastAPI(title="Translink Next Service", lifespan=lifespan)
@@ -224,7 +274,8 @@ def search_stops(q: str):
 def departures(stop_id: str):
     con = db()
     stop = con.execute(
-        "SELECT stop_id, stop_name, location_type FROM stops WHERE stop_id=?",
+        "SELECT stop_id, stop_name, location_type, stop_lat, stop_lon "
+        "FROM stops WHERE stop_id=?",
         (stop_id,),
     ).fetchone()
     if stop is None:
@@ -274,18 +325,57 @@ def departures(stop_id: str):
             )
 
     results.sort(key=lambda d: d["predicted"])
+    shown = results[:MAX_RESULTS]
+
+    # Live positions for exactly the trips on the board, so the map never shows
+    # a vehicle the user has no row for. Most trips have no GPS at any moment.
+    vehicles = []
+    for dep in shown:
+        v = vp_cache.get(dep["trip_id"])
+        if not v:
+            continue
+        vehicles.append(
+            {
+                "trip_id": dep["trip_id"],
+                "route": dep["route"],
+                "route_color": dep["route_color"],
+                "headsign": dep["headsign"],
+                "minutes": dep["minutes"],
+                **v,
+            }
+        )
+
     return {
         "stop": dict(stop),
         "generated_at": now_epoch,
         "realtime_feed_age": (
             round(time.time() - rt_last_fetch) if rt_last_fetch else None
         ),
-        "departures": results[:MAX_RESULTS],
+        "vehicle_feed_age": (
+            round(time.time() - vp_last_fetch) if vp_last_fetch else None
+        ),
+        "departures": shown,
+        "vehicles": vehicles,
     }
+
+
+@app.get("/api/config")
+def config():
+    """The frontend asks whether a basemap is present before building the map,
+    so a deployment without one degrades to a board-only page."""
+    return {"basemap": BASEMAP_FILE.exists()}
 
 
 # Frontend
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
+# StaticFiles serves HTTP range requests, which is how pmtiles.js reads the
+# archive — it fetches byte ranges rather than the whole 22 MB file.
+# check_dir=False: the basemap is optional, and the volume may not have one yet.
+app.mount(
+    "/basemap",
+    StaticFiles(directory=BASEMAP_DIR, check_dir=False),
+    name="basemap",
+)
 
 
 @app.get("/")

@@ -1,0 +1,55 @@
+{
+  "version": 8,
+  "name": "Translink board dark",
+  "glyphs": "/static/vendor/glyphs/{fontstack}/{range}.pbf",
+  "sources": {
+    "protomaps": {
+      "type": "vector",
+      "url": "pmtiles:///basemap/seq.pmtiles",
+      "attribution": "<a href=\"https://openstreetmap.org\">OpenStreetMap</a> · <a href=\"https://protomaps.com\">Protomaps</a>"
+    }
+  },
+  "layers": [
+    { "id": "bg", "type": "background", "paint": { "background-color": "#0c1013" } },
+    { "id": "earth", "type": "fill", "source": "protomaps", "source-layer": "earth",
+      "paint": { "fill-color": "#12171c" } },
+    { "id": "landuse", "type": "fill", "source": "protomaps", "source-layer": "landuse",
+      "paint": { "fill-color": "#161c22", "fill-opacity": 0.6 } },
+    { "id": "water", "type": "fill", "source": "protomaps", "source-layer": "water",
+      "paint": { "fill-color": "#0a1a26" } },
+    { "id": "buildings", "type": "fill", "source": "protomaps", "source-layer": "buildings",
+      "minzoom": 14,
+      "paint": { "fill-color": "#1b222a", "fill-opacity": 0.7 } },
+
+    { "id": "roads-minor", "type": "line", "source": "protomaps", "source-layer": "roads",
+      "filter": ["in", ["get", "kind"], ["literal", ["minor_road", "other", "path"]]],
+      "minzoom": 12,
+      "paint": { "line-color": "#232c35",
+                 "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.4, 16, 2] } },
+    { "id": "roads-medium", "type": "line", "source": "protomaps", "source-layer": "roads",
+      "filter": ["==", ["get", "kind"], "medium_road"],
+      "paint": { "line-color": "#2b3742",
+                 "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 16, 3] } },
+    { "id": "roads-major", "type": "line", "source": "protomaps", "source-layer": "roads",
+      "filter": ["in", ["get", "kind"], ["literal", ["major_road", "highway"]]],
+      "paint": { "line-color": "#394856",
+                 "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 16, 4] } },
+    { "id": "rail", "type": "line", "source": "protomaps", "source-layer": "transit",
+      "filter": ["==", ["get", "kind"], "rail"],
+      "minzoom": 11,
+      "paint": { "line-color": "#3a3050", "line-width": 0.9 } },
+
+    { "id": "boundaries", "type": "line", "source": "protomaps", "source-layer": "boundaries",
+      "paint": { "line-color": "#2e3944", "line-dasharray": [3, 2], "line-width": 0.7 } },
+
+    { "id": "places", "type": "symbol", "source": "protomaps", "source-layer": "places",
+      "filter": ["in", ["get", "kind"], ["literal", ["locality", "neighbourhood"]]],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Medium"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 15, 13],
+        "text-max-width": 8
+      },
+      "paint": { "text-color": "#7f8c99", "text-halo-color": "#0c1013", "text-halo-width": 1.2 } }
+  ]
+}

@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Next Service</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="/static/fonts/fonts.css" rel="stylesheet">
+<link href="/static/vendor/maplibre-gl.css" rel="stylesheet">
 <style>
   :root {
     --board: #101418;        /* board casing */
@@ -147,6 +147,33 @@
     background: var(--panel);
   }
   .error { color: #ff8a7a; }
+
+  /* --- map view ---------------------------------------------------------- */
+  #map-wrap { margin-top: 18px; }
+  #map-wrap[hidden] { display: none; }
+  #map {
+    height: 360px; border-radius: 10px; overflow: hidden;
+    background: #0c1013; border: 1px solid #232c35;
+  }
+  .map-caption {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; padding: 8px 2px 0; color: var(--muted); font-size: 13px;
+  }
+  .map-caption .hint { font-family: "IBM Plex Mono", monospace; font-size: 11px; }
+  /* MapLibre's own chrome, toned down to match the board */
+  .maplibregl-ctrl-attrib { background: rgba(12,16,19,.8) !important; }
+  .maplibregl-ctrl-attrib a { color: #7f8c99 !important; }
+  .maplibregl-popup-content {
+    background: var(--panel); color: var(--text);
+    font-family: Archivo, system-ui, sans-serif; font-size: 13px;
+    border-radius: 8px; padding: 8px 10px; border: 1px solid #2b3742;
+  }
+  .maplibregl-popup-content .pop-route { font-weight: 700; }
+  .maplibregl-popup-content .pop-sub {
+    color: var(--muted); font-size: 11px;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .maplibregl-popup-tip { border-top-color: var(--panel) !important; }
 </style>
 </head>
 <body>
@@ -165,9 +192,19 @@
   <div class="board" id="board">
     <div class="empty">Search for a stop to see departures.</div>
   </div>
+  <div id="map-wrap" hidden>
+    <div id="map"></div>
+    <div class="map-caption">
+      <span id="map-status">live vehicle positions</span>
+      <span class="hint">tap a vehicle for detail</span>
+    </div>
+  </div>
+
   <div class="status" id="status"></div>
 </main>
 
+<script src="/static/vendor/maplibre-gl.js"></script>
+<script src="/static/vendor/pmtiles.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   let stopId = new URLSearchParams(location.search).get("stop");
@@ -196,6 +233,7 @@
 
   function selectStop(id) {
     stopId = id;
+    centred = false;          // re-centre the map on the newly chosen stop
     $("results").hidden = true;
     $("search").value = "";
     history.replaceState(null, "", `?stop=${id}`);
@@ -204,7 +242,130 @@
     timer = setInterval(refresh, 15000);
   }
 
+  // --- map ---------------------------------------------------------------
+  // The basemap is a self-hosted Protomaps extract on the data volume. If the
+  // deployment has no basemap, /api/config says so and the map stays hidden —
+  // the board is the product, the map is an enhancement.
+  let map = null, mapReady = false, hasBasemap = false, centred = false;
+
+  async function initMap() {
+    try {
+      const cfg = await (await fetch("/api/config")).json();
+      hasBasemap = !!cfg.basemap;
+    } catch { hasBasemap = false; }
+    if (!hasBasemap) return;
+
+    // Reveal before constructing the Map: MapLibre measures its container at
+    // construction, and a display:none container gives it zero size — the map
+    // then never fires 'load' and paints nothing.
+    $("map-wrap").hidden = false;
+
+    // {metadata: true} is required: the style's source uses `url:`, so MapLibre
+    // asks the protocol for TileJSON. Without this flag pmtiles ignores that
+    // request — the promise never settles, and the style hangs with no error.
+    maplibregl.addProtocol("pmtiles", new pmtiles.Protocol({ metadata: true }).tile);
+    map = new maplibregl.Map({
+      container: "map",
+      style: "/static/map-style.json",
+      center: [153.026, -27.4705],   // Brisbane, until a stop is selected
+      zoom: 11,
+      attributionControl: { compact: true },
+      // The board is often on a wall display; don't let a stray scroll move it.
+      scrollZoom: false,
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+    map.on("load", () => {
+      map.addSource("vehicles", { type: "geojson", data: emptyFC() });
+      map.addSource("stop", { type: "geojson", data: emptyFC() });
+
+      map.addLayer({
+        id: "stop-ring", type: "circle", source: "stop",
+        paint: {
+          "circle-radius": 7, "circle-color": "#0c1013",
+          "circle-stroke-width": 2.5, "circle-stroke-color": "#ffb020",
+        },
+      });
+      map.addLayer({
+        id: "vehicle-dot", type: "circle", source: "vehicles",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 5, 15, 9],
+          "circle-color": ["coalesce", ["get", "color"], "#3fb950"],
+          "circle-stroke-width": 1.5, "circle-stroke-color": "#0c1013",
+        },
+      });
+      map.addLayer({
+        id: "vehicle-label", type: "symbol", source: "vehicles",
+        layout: {
+          "text-field": ["get", "route"],
+          "text-font": ["Noto Sans Medium"],
+          "text-size": 10,
+          "text-offset": [0, 1.3],
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#c9d4de", "text-halo-color": "#0c1013", "text-halo-width": 1.2,
+        },
+      });
+
+      map.on("click", "vehicle-dot", (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup({ closeButton: false, offset: 12 })
+          .setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(
+            `<div class="pop-route">${p.route ?? ""} · ${p.headsign ?? ""}</div>` +
+            `<div class="pop-sub">${p.minutes} min away${p.age ? " · seen " + p.age + "s ago" : ""}</div>`)
+          .addTo(map);
+      });
+      map.on("mouseenter", "vehicle-dot", () => map.getCanvas().style.cursor = "pointer");
+      map.on("mouseleave", "vehicle-dot", () => map.getCanvas().style.cursor = "");
+
+      mapReady = true;
+      map.resize();
+      if (lastData) updateMap(lastData);
+    });
+  }
+
+  const emptyFC = () => ({ type: "FeatureCollection", features: [] });
+
+  function updateMap(data) {
+    if (!mapReady) return;
+    const lat = data.stop.stop_lat, lon = data.stop.stop_lon;
+
+    if (lat != null && lon != null) {
+      map.getSource("stop").setData({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: {} }],
+      });
+      // Centre once per stop selection, then leave the user's panning alone.
+      if (!centred) { map.jumpTo({ center: [lon, lat], zoom: 13 }); centred = true; }
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    map.getSource("vehicles").setData({
+      type: "FeatureCollection",
+      features: (data.vehicles || []).map((v) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+        properties: {
+          route: v.route ?? "",
+          headsign: v.headsign ?? "",
+          minutes: v.minutes,
+          color: v.route_color ? `#${v.route_color}` : null,
+          age: v.timestamp ? now - v.timestamp : null,
+        },
+      })),
+    });
+
+    const n = (data.vehicles || []).length;
+    $("map-status").textContent = n === 0
+      ? "no live positions for these services"
+      : `${n} of ${data.departures.length} services tracking live`;
+  }
+
   // --- departures board --------------------------------------------------
+  let lastData = null;
+
   async function refresh() {
     if (!stopId) return;
     try {
@@ -249,11 +410,15 @@
       $("status").textContent = data.realtime_feed_age === null
         ? "realtime feed: waiting for first fetch"
         : `realtime feed updated ${data.realtime_feed_age}s ago`;
+
+      lastData = data;
+      updateMap(data);
     } catch (err) {
       $("board").innerHTML = `<div class="error">${err.message}</div>`;
     }
   }
 
+  initMap();
   if (stopId) selectStop(stopId);
 </script>
 </body>

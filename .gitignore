@@ -1,0 +1,13 @@
+# Build artifact — regenerate with `python ingest_gtfs.py`
+gtfs.sqlite3
+
+# Downloaded GTFS feed
+SEQ_GTFS.zip
+
+__pycache__/
+*.py[cod]
+
+.venv/
+venv/
+
+.env

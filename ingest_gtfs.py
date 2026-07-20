@@ -11,6 +11,7 @@ Only the tables needed for a departures board are loaded.
 
 import csv
 import io
+import os
 import sqlite3
 import sys
 import zipfile
@@ -19,7 +20,8 @@ from pathlib import Path
 import httpx
 
 GTFS_URL = "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip"
-DB_PATH = Path(__file__).parent / "gtfs.sqlite3"
+# Overridable so the DB can live on a mounted volume (see Containerfile).
+DB_PATH = Path(os.environ.get("GTFS_DB") or Path(__file__).parent / "gtfs.sqlite3")
 
 SCHEMA = """
 DROP TABLE IF EXISTS stops;
@@ -133,6 +135,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         zpath = Path(sys.argv[1])
     else:
-        zpath = Path(__file__).parent / "SEQ_GTFS.zip"
+        zpath = DB_PATH.parent / "SEQ_GTFS.zip"
         download_feed(zpath)
     ingest(zpath)

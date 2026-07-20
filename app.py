@@ -11,6 +11,7 @@ Run:  uvicorn app:app --reload
 """
 
 import asyncio
+import os
 import re
 import sqlite3
 import time
@@ -25,7 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from google.transit import gtfs_realtime_pb2
 
 BASE = Path(__file__).parent
-DB_PATH = BASE / "gtfs.sqlite3"
+# Overridable so the DB can live on a mounted volume (see Containerfile).
+DB_PATH = Path(os.environ.get("GTFS_DB") or BASE / "gtfs.sqlite3")
 TRIP_UPDATES_URL = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates"
 POLL_SECONDS = 30
 LOOKAHEAD_MINUTES = 90

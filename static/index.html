@@ -144,9 +144,24 @@
      "live" label. Untracked rows keep the plain green dot. */
   .row.tracked { border-left: 3px solid var(--vcolor); padding-left: 13px; }
   .row.tracked .live-dot { background: var(--vcolor); }
+  /* Tracked rows are clickable: they ping their vehicle on the map. */
+  .row.tracked { cursor: pointer; }
+  .row.tracked:hover { background: #1c242d; }
+  .row.tracked:focus-visible { outline: 2px solid var(--vcolor); outline-offset: -2px; }
+  /* Flashed when its marker is clicked on the map, in its own colour so the
+     pairing is unambiguous. */
+  .row.flash { animation: rowflash 0.73s ease-in-out 3; }
+  @keyframes rowflash {
+    50% { background: color-mix(in srgb, var(--vcolor) 24%, var(--panel)); }
+  }
   @keyframes pulse { 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) {
     .live-dot, .due { animation: none !important; }
+    /* Still needs to be identifiable, so hold the tint rather than pulse it. */
+    .row.flash {
+      animation: none;
+      background: color-mix(in srgb, var(--vcolor) 24%, var(--panel));
+    }
   }
 
   .eta {
@@ -241,7 +256,7 @@
       <div id="map"></div>
       <div class="map-caption">
         <span id="map-status">live vehicle positions</span>
-        <span class="hint">tap a vehicle for detail</span>
+        <span class="hint">click either side to link them</span>
       </div>
     </div>
   </div>
@@ -329,6 +344,27 @@
   };
   const DEFAULT_EMOJI = MODE_EMOJI[3];
 
+  // The selected stop's own marker, by what actually calls there.
+  const STOP_STATION = "\u{1F3EB}";  // 🏫
+  const STOP_BUS = "\u{1F68F}";      // 🚏
+  const STOP_INK = "#ffb400";        // board amber: the anchor, not a vehicle
+
+  function stopGlyph(data) {
+    const counts = {};
+    data.departures.forEach((d) => {
+      counts[d.route_type] = (counts[d.route_type] || 0) + 1;
+    });
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    switch (top ? Number(top[0]) : -1) {
+      case 3: return STOP_BUS;
+      case 4: return MODE_EMOJI[4];
+      case 0: return MODE_EMOJI[0];
+      case 1: case 2: return STOP_STATION;
+      // No departures to judge by: fall back to the GTFS record itself.
+      default: return data.stop.location_type === 1 ? STOP_STATION : STOP_BUS;
+    }
+  }
+
   // Assign in departure order, striding the palette so the colours in use are
   // spread right around the wheel rather than bunched at one end: four tracked
   // vehicles get red/lime/cyan/purple, not red/orange/lime/green. Seeding from
@@ -373,8 +409,6 @@
       center: [153.026, -27.4705],   // Brisbane, until a stop is selected
       zoom: 11,
       attributionControl: { compact: true },
-      // The board is often on a wall display; don't let a stray scroll move it.
-      scrollZoom: false,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
@@ -383,12 +417,29 @@
       map.addSource("stop", { type: "geojson", data: emptyFC() });
 
       map.addLayer({
-        id: "stop-ring", type: "circle", source: "stop",
-        paint: {
-          "circle-radius": 7, "circle-color": "#0c1013",
-          "circle-stroke-width": 2.5, "circle-stroke-color": "#ffb020",
+        id: "stop-ring", type: "symbol", source: "stop",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.65, 15, 1.05],
+          "icon-allow-overlap": true,
+          "icon-anchor": "bottom",   // the marker sits on the stop, not over it
         },
       });
+      // Expanding ring used to ping one vehicle. Below the icons so it never
+      // obscures them; filtered to nothing until a ping is requested.
+      map.addLayer({
+        id: "vehicle-ping", type: "circle", source: "vehicles",
+        filter: PING_OFF,
+        paint: {
+          "circle-radius": 10,
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.35,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-opacity": 0.9,
+        },
+      });
+
       map.addLayer({
         id: "vehicle-dot", type: "symbol", source: "vehicles",
         layout: {
@@ -423,6 +474,7 @@
             `<div class="pop-route">${p.route ?? ""} · ${p.headsign ?? ""}</div>` +
             `<div class="pop-sub">${p.minutes} min away${p.age ? " · seen " + p.age + "s ago" : ""}</div>`)
           .addTo(map);
+        flashRow(p.trip);
       });
       map.on("mouseenter", "vehicle-dot", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "vehicle-dot", () => map.getCanvas().style.cursor = "");
@@ -490,8 +542,68 @@
     return id;
   }
 
+  // A filter that matches no feature — the ping ring's resting state.
+  const PING_OFF = ["==", ["get", "trip"], " none"];
+  const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
+
   const FIT_PADDING = 46;   // keeps markers clear of the edges and the controls
   const FIT_MAX_ZOOM = 15;  // stop it diving in when everything is close together
+
+  // --- linking the two views ---------------------------------------------
+  let pingRaf = null, pingTimer = null;
+
+  // Board row -> map. Expanding ring on that vehicle, panning to it first if it
+  // has drifted out of view.
+  function pingVehicle(tripId) {
+    if (!mapReady || !map.getLayer("vehicle-ping")) return;
+    const v = (lastData?.__vehicles || []).find((x) => x.trip_id === tripId);
+    if (!v) return;
+
+    if (!map.getBounds().contains([v.lon, v.lat])) {
+      cameraMove(() => map.easeTo({ center: [v.lon, v.lat], duration: 600 }));
+    }
+
+    cancelAnimationFrame(pingRaf);
+    clearTimeout(pingTimer);
+    map.setFilter("vehicle-ping", ["==", ["get", "trip"], tripId]);
+
+    if (REDUCED_MOTION.matches) {
+      // Static ring instead of a pulse, then clear.
+      map.setPaintProperty("vehicle-ping", "circle-radius", 20);
+      map.setPaintProperty("vehicle-ping", "circle-opacity", 0.3);
+      map.setPaintProperty("vehicle-ping", "circle-stroke-opacity", 0.9);
+      pingTimer = setTimeout(() => map.setFilter("vehicle-ping", PING_OFF), 1600);
+      return;
+    }
+
+    const START = performance.now(), CYCLE = 850, TOTAL = 2550;
+    const step = (t) => {
+      const elapsed = t - START;
+      if (elapsed > TOTAL) {
+        map.setFilter("vehicle-ping", PING_OFF);
+        return;
+      }
+      const p = (elapsed % CYCLE) / CYCLE;      // 0..1 within each pulse
+      map.setPaintProperty("vehicle-ping", "circle-radius", 9 + p * 26);
+      map.setPaintProperty("vehicle-ping", "circle-opacity", 0.32 * (1 - p));
+      map.setPaintProperty("vehicle-ping", "circle-stroke-opacity", 0.95 * (1 - p));
+      pingRaf = requestAnimationFrame(step);
+    };
+    pingRaf = requestAnimationFrame(step);
+  }
+
+  // Map -> board row. Flash the matching row and bring it into view.
+  let flashTimer = null;
+  function flashRow(tripId) {
+    const row = document.querySelector(`.row[data-trip="${CSS.escape(tripId)}"]`);
+    if (!row) return;
+    clearTimeout(flashTimer);
+    document.querySelectorAll(".row.flash").forEach((r) => r.classList.remove("flash"));
+    void row.offsetWidth;             // restart the animation if it is re-clicked
+    row.classList.add("flash");
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    flashTimer = setTimeout(() => row.classList.remove("flash"), 2200);
+  }
 
   // Move the camera under our own flag, so the movestart handler does not read
   // it as the user taking over.
@@ -551,7 +663,11 @@
     if (lat != null && lon != null) {
       map.getSource("stop").setData({
         type: "FeatureCollection",
-        features: [{ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: {} }],
+        features: [{
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [lon, lat] },
+          properties: { icon: ensureVehicleIcon(stopGlyph(data), STOP_INK) },
+        }],
       });
     }
 
@@ -572,6 +688,7 @@
           type: "Feature",
           geometry: { type: "Point", coordinates: [v.lon, v.lat] },
           properties: {
+            trip: v.trip_id,          // links the marker back to its board row
             route: v.route ?? "",
             headsign: v.headsign ?? "",
             minutes: v.minutes,
@@ -634,7 +751,19 @@
         const row = document.createElement("div");
         const vcolor = colors[d.trip_id];
         row.className = vcolor ? "row tracked" : "row";
-        if (vcolor) row.style.setProperty("--vcolor", vcolor);
+        row.dataset.trip = d.trip_id;
+        if (vcolor) {
+          row.style.setProperty("--vcolor", vcolor);
+          // Only tracked rows have something on the map to ping.
+          row.tabIndex = 0;
+          row.addEventListener("click", () => pingVehicle(d.trip_id));
+          row.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              pingVehicle(d.trip_id);
+            }
+          });
+        }
         // The badge plate stays black; the glyph and number take the vehicle
         // colour, so badge, row stripe and map marker all agree. Anything
         // without a live position is plain white — it has nothing on the map to

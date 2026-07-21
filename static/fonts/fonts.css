@@ -37,7 +37,8 @@
 /* Noto Emoji — the MONOCHROME family, not Noto Color Emoji. Colour-emoji fonts
    paint their own palette and ignore CSS `color`; these glyphs are ordinary
    outlines, so they tint like text. Subset to the four transport glyphs used
-   for the mode badges: ⛴ U+26F4, 🚆 U+1F686, 🚊 U+1F68A, 🚍 U+1F68D. */
+   for the mode badges — ⛴ U+26F4, 🚆 U+1F686, 🚊 U+1F68A, 🚍 U+1F68D — plus the
+   two stop markers: 🏫 U+1F3EB station, 🚏 U+1F68F bus stop. */
 @font-face {
   font-family: 'Noto Emoji';
   font-style: normal;

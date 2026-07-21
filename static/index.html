@@ -269,7 +269,8 @@
 
   function selectStop(id) {
     stopId = id;
-    centred = false;          // re-centre the map on the newly chosen stop
+    autoFit = true;           // a new stop re-enables auto-fit...
+    forceFit = true;          // ...and reframes even if the user had panned
     $("results").hidden = true;
     $("search").value = "";
     history.replaceState(null, "", `?stop=${id}`);
@@ -282,7 +283,12 @@
   // The basemap is a self-hosted Protomaps extract on the data volume. If the
   // deployment has no basemap, /api/config says so and the map stays hidden —
   // the board is the product, the map is an enhancement.
-  let map = null, mapReady = false, hasBasemap = false, centred = false;
+  let map = null, mapReady = false, hasBasemap = false;
+  // The view auto-fits to the stop plus every tracked vehicle. It stops doing
+  // so the moment the user moves the map themselves, and resumes on the next
+  // stop selection. `programmatic` distinguishes our own camera moves from
+  // theirs — including the +/- buttons, which move the map without a DOM event.
+  let autoFit = true, forceFit = true, programmatic = false;
 
   // Distinct on a dark board, and enough of them that a full board of tracked
   // services gets a unique colour each. Route colour is not usable here: the
@@ -425,6 +431,11 @@
       map.on("mouseenter", "vehicle-dot", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "vehicle-dot", () => map.getCanvas().style.cursor = "");
 
+      // Any move we did not initiate is the user taking control; stop
+      // auto-fitting so the map does not yank out from under them.
+      map.on("movestart", () => { if (!programmatic) autoFit = false; });
+      map.on("moveend", () => { programmatic = false; });
+
       mapReady = true;
       map.resize();
       if (lastData) updateMap(lastData);
@@ -432,6 +443,60 @@
   }
 
   const emptyFC = () => ({ type: "FeatureCollection", features: [] });
+
+  const FIT_PADDING = 46;   // keeps markers clear of the edges and the controls
+  const FIT_MAX_ZOOM = 15;  // stop it diving in when everything is close together
+
+  // Move the camera under our own flag, so the movestart handler does not read
+  // it as the user taking over.
+  function cameraMove(fn) {
+    programmatic = true;
+    fn();
+  }
+
+  // Frame the stop and every tracked vehicle. Called on each poll, but only
+  // actually moves when it needs to: re-animating a map every 15 seconds while
+  // someone is reading it is worse than a slightly stale frame.
+  function fitView(data, vehicles) {
+    if (!mapReady || (!autoFit && !forceFit)) return;
+
+    const pts = [];
+    const { stop_lat: lat, stop_lon: lon } = data.stop;
+    if (lat != null && lon != null) pts.push([lon, lat]);
+    vehicles.forEach((v) => pts.push([v.lon, v.lat]));
+    if (!pts.length) return;
+
+    if (pts.length === 1) {
+      if (forceFit) {
+        cameraMove(() => map.easeTo({ center: pts[0], zoom: 14, duration: 600 }));
+        forceFit = false;
+      }
+      return;
+    }
+
+    const bounds = pts.reduce(
+      (b, p) => b.extend(p),
+      new maplibregl.LngLatBounds(pts[0], pts[0]),
+    );
+
+    if (!forceFit) {
+      // Already framed well enough? Leave it alone. Refit when something has
+      // moved out of view, or when the view has drifted much wider than needed
+      // (a distant vehicle dropping off the board zooms us back in).
+      const view = map.getBounds();
+      const allVisible = pts.every((p) => view.contains(p));
+      const target = map.cameraForBounds(bounds, {
+        padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM,
+      });
+      const tooWide = target && target.zoom - map.getZoom() > 1.5;
+      if (allVisible && !tooWide) return;
+    }
+
+    cameraMove(() => map.fitBounds(bounds, {
+      padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM, duration: 700,
+    }));
+    forceFit = false;
+  }
 
   function updateMap(data) {
     if (!mapReady) return;
@@ -442,8 +507,6 @@
         type: "FeatureCollection",
         features: [{ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: {} }],
       });
-      // Centre once per stop selection, then leave the user's panning alone.
-      if (!centred) { map.jumpTo({ center: [lon, lat], zoom: 13 }); centred = true; }
     }
 
     const now = Math.floor(Date.now() / 1000);
@@ -464,6 +527,8 @@
         },
       })),
     });
+
+    fitView(data, vehicles);
 
     const shownCount = data.departures.length - (data.__hidden || 0);
     $("map-status").textContent = vehicles.length === 0

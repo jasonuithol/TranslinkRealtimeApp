@@ -177,6 +177,15 @@ external requests at all.
 - `static/map-style.json` is a hand-written dark style matching the board.
   Glyphs, MapLibre and pmtiles.js are vendored under `static/vendor/`.
 
+The map auto-fits to the stop plus every tracked vehicle (`fitView`), capped at
+zoom 15 so a cluster of nearby vehicles does not dive to street level. It only
+moves when it has to — something out of view, or the view much wider than
+needed — because re-animating every 15 s poll while someone is reading the
+board is worse than a slightly stale frame. Any camera move the app did not
+initiate is treated as the user taking over and disables auto-fit until the
+next stop selection; `programmatic` is what distinguishes the two, since the
+zoom buttons move the map with no DOM event to test for.
+
 Layout: board and map sit side by side above 900px and stack below it. The map
 column is sticky so it stays in view against a long board. Each tracked vehicle
 gets its own colour — seeded from `trip_id` so it is stable across refreshes,

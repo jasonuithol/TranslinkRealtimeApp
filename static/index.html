@@ -282,7 +282,10 @@
      can measure its container and load underneath. */
   #map-wrap.awaiting #map,
   .split.side-by-side #map-wrap.awaiting #map {
-    height: var(--ph-height); min-height: var(--ph-height);
+    /* +2px: the board's 1px border wraps its --ph-height placeholder (outer
+       242), whereas #map is border-box (border inside height). Matching the
+       outer boxes keeps the two empty panels exactly level. */
+    height: calc(var(--ph-height) + 2px); min-height: calc(var(--ph-height) + 2px);
   }
   #map {
     height: 360px; border-radius: 10px; overflow: hidden;
@@ -292,6 +295,11 @@
     display: flex; justify-content: space-between; align-items: baseline;
     gap: 12px; padding: 8px 2px 0; color: var(--muted); font-size: 13px;
   }
+  /* `display: flex` above outranks the UA `[hidden] { display: none }`, so
+     without this the caption keeps its ~22px of layout even while hidden —
+     which, under the opaque .map-empty overlay, made the empty map panel a text
+     row taller than the board. */
+  .map-caption[hidden] { display: none; }
   .map-caption .hint { font-family: "IBM Plex Mono", monospace; font-size: 11px; }
   /* MapLibre's own chrome, toned down to match the board */
   .maplibregl-ctrl-attrib { background: rgba(12,16,19,.8) !important; }

@@ -412,6 +412,17 @@
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
+    // A bad style silently yields a blank map: MapLibre reports it here and
+    // nowhere else, and a style error stops 'load' firing at all, so every
+    // layer we add in that handler never exists. Surface it rather than let
+    // the map look merely empty.
+    map.on("error", (e) => {
+      const msg = (e && e.error && e.error.message) || "map error";
+      console.error("[map]", msg);
+      const el = $("map-status");
+      if (el) el.textContent = `map: ${msg}`;
+    });
+
     map.on("load", () => {
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
@@ -479,13 +490,17 @@
       map.on("mouseenter", "vehicle-dot", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "vehicle-dot", () => map.getCanvas().style.cursor = "");
 
-      // Any move we did not initiate is the user taking control; stop
-      // auto-fitting so the map does not yank out from under them.
-      map.on("movestart", () => { if (!programmatic) autoFit = false; });
+      // Only a move carrying a DOM event is the user taking control — a drag,
+      // a wheel, a pinch. Testing `programmatic` instead looked equivalent but
+      // was not: map.resize() below fires movestart with the flag clear, which
+      // switched auto-fit off during startup and left it off forever. The cost
+      // is that the +/- buttons no longer disable auto-fit, which is the far
+      // less annoying failure.
+      map.on("movestart", (e) => { if (e.originalEvent) autoFit = false; });
       map.on("moveend", () => { programmatic = false; });
 
       mapReady = true;
-      map.resize();
+      cameraMove(() => map.resize());
       if (lastData) updateMap(lastData);
     });
   }

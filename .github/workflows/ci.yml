@@ -119,6 +119,27 @@ jobs:
           print(f'{len(deps)} departures, no duplicates')
           "
 
+      - name: Map style references real vector layers
+        run: |
+          # Regression test. map-style.json had source-layer "transit", which
+          # does not exist in the Protomaps v4 basemap. MapLibre reports that
+          # on its own error channel and then never fires 'load' — so every
+          # layer added in the load handler silently never existed, and the map
+          # rendered blank with no console error and no failed request.
+          python3 - <<'PY'
+          import json, sys
+          # The vector layers Protomaps v4 actually ships, read from the
+          # tileset metadata (pmtiles show --metadata).
+          PRESENT = {"boundaries", "buildings", "earth", "landcover",
+                     "landuse", "places", "pois", "roads", "water"}
+          style = json.load(open("static/map-style.json"))
+          bad = [(l["id"], l["source-layer"]) for l in style["layers"]
+                 if l.get("source-layer") and l["source-layer"] not in PRESENT]
+          for lid, sl in bad:
+              print(f"layer {lid!r} references missing source-layer {sl!r}")
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Frontend assets are self-hosted
         run: |
           # The board must make no external requests: fonts, map JS and glyphs

@@ -34,7 +34,7 @@
       "filter": ["in", ["get", "kind"], ["literal", ["major_road", "highway"]]],
       "paint": { "line-color": "#394856",
                  "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 16, 4] } },
-    { "id": "rail", "type": "line", "source": "protomaps", "source-layer": "transit",
+    { "id": "rail", "type": "line", "source": "protomaps", "source-layer": "roads",
       "filter": ["==", ["get", "kind"], "rail"],
       "minzoom": 11,
       "paint": { "line-color": "#3a3050", "line-width": 0.9 } },

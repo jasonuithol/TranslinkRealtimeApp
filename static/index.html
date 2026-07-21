@@ -113,7 +113,12 @@
     padding: 4px 6px;
     border-right: 1px solid #fff;
   }
-  .badge .mode svg { width: 16px; height: 16px; display: block; }
+  /* Noto Emoji is monochrome, so the glyph inherits the badge's `color`.
+     Listing it first means only these codepoints come from it. */
+  .badge .mode {
+    font-family: "Noto Emoji", "Archivo", system-ui, sans-serif;
+    font-size: 15px;
+  }
   .badge .num {
     display: flex; align-items: center; justify-content: center;
     padding: 4px 7px; font-size: 15px; min-width: 32px;
@@ -152,6 +157,11 @@
   }
   .eta .num { font-size: 30px; font-weight: 600; line-height: 1; }
   .eta .unit { font-size: 11px; color: var(--amber-dim); letter-spacing: 0.1em; }
+  /* A tracked service's countdown carries its vehicle colour too, so the row
+     reads as one object: badge, stripe, countdown and map marker all agree.
+     The amber glow is dropped for those — it would tint the colour. */
+  .row.tracked .eta { color: var(--vcolor); text-shadow: none; }
+  .row.tracked .eta .unit { color: var(--vcolor); opacity: 0.6; }
   .eta .due {
     font-size: 22px; font-weight: 600; letter-spacing: 0.06em;
     animation: pulse 1.2s infinite;
@@ -307,38 +317,17 @@
   // Everything without a live position: no map marker, so no colour to match.
   const UNTRACKED_INK = "#e8eef4";
 
-  // Mode glyphs. Inline SVG rather than emoji: colour-emoji fonts paint their
-  // own palette and ignore CSS `color`, so an emoji cannot take the vehicle
-  // colour. Cut-outs are filled #000 to match the badge plate.
-  const ICON_BUS = `<svg viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="3" y="3" width="18" height="14" rx="2.5" fill="currentColor"/>
-    <rect x="5" y="5.5" width="6" height="4.5" rx="1" fill="#000"/>
-    <rect x="13" y="5.5" width="6" height="4.5" rx="1" fill="#000"/>
-    <circle cx="7.5" cy="19" r="2" fill="currentColor"/>
-    <circle cx="16.5" cy="19" r="2" fill="currentColor"/></svg>`;
-  const ICON_TRAIN = `<svg viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="4" y="2.5" width="16" height="15" rx="3.5" fill="currentColor"/>
-    <rect x="6" y="5" width="12" height="5" rx="1" fill="#000"/>
-    <circle cx="8.5" cy="13.5" r="1.3" fill="#000"/>
-    <circle cx="15.5" cy="13.5" r="1.3" fill="#000"/>
-    <path d="M8 18l-2.5 3M16 18l2.5 3" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" fill="none"/></svg>`;
-  const ICON_FERRY = `<svg viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="8" y="3" width="8" height="6" rx="1" fill="currentColor"/>
-    <path d="M2.5 11h19l-2.6 6.4A2.5 2.5 0 0 1 16.6 19H7.4a2.5 2.5 0 0 1-2.3-1.6L2.5 11z"
-          fill="currentColor"/></svg>`;
-  const ICON_TRAM = `<svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 1v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-    <rect x="5" y="4" width="14" height="14" rx="3" fill="currentColor"/>
-    <rect x="7" y="6.5" width="10" height="4.5" rx="1" fill="#000"/>
-    <circle cx="9" cy="14.5" r="1.2" fill="#000"/>
-    <circle cx="15" cy="14.5" r="1.2" fill="#000"/>
-    <path d="M8 19l-2 2M16 19l2 2" stroke="currentColor" stroke-width="1.8"
-          stroke-linecap="round" fill="none"/></svg>`;
-  // GTFS route_type: 0 tram, 1 metro, 2 rail, 3 bus, 4 ferry.
-  const MODE_ICON = {
-    0: ICON_TRAM, 1: ICON_TRAIN, 2: ICON_TRAIN, 3: ICON_BUS, 4: ICON_FERRY,
+  // Mode glyphs, rendered in the monochrome Noto Emoji face so they tint with
+  // `color` like ordinary text. GTFS route_type: 0 tram, 1 metro, 2 rail,
+  // 3 bus, 4 ferry.
+  const MODE_EMOJI = {
+    0: "\u{1F68A}", // 🚊 tram
+    1: "\u{1F686}", // 🚆 train
+    2: "\u{1F686}", // 🚆 train
+    3: "\u{1F68D}", // 🚍 bus
+    4: "\u{26F4}",  // ⛴ ferry
   };
+  const DEFAULT_EMOJI = MODE_EMOJI[3];
 
   // Assign in departure order, striding the palette so the colours in use are
   // spread right around the wheel rather than bunched at one end: four tracked
@@ -360,6 +349,11 @@
       hasBasemap = !!cfg.basemap;
     } catch { hasBasemap = false; }
     if (!hasBasemap) return;
+
+    // Must complete before any icon is rasterised, or the wrong glyph gets
+    // baked into the cached image. ensureVehicleIcon only runs after the map's
+    // 'load', which is well after this await.
+    await loadEmojiFont();
 
     // Reveal before constructing the Map: MapLibre measures its container at
     // construction, and a display:none container gives it zero size — the map
@@ -396,12 +390,12 @@
         },
       });
       map.addLayer({
-        id: "vehicle-dot", type: "circle", source: "vehicles",
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 6, 15, 10],
-          // Same colour the matching board row is striped with.
-          "circle-color": ["coalesce", ["get", "color"], "#3fb950"],
-          "circle-stroke-width": 2, "circle-stroke-color": "#0c1013",
+        id: "vehicle-dot", type: "symbol", source: "vehicles",
+        layout: {
+          // The mode emoji, tinted to match the board row's badge and stripe.
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 15, 1],
+          "icon-allow-overlap": true,
         },
       });
       map.addLayer({
@@ -412,7 +406,7 @@
           "text-field": ["concat", ["get", "minutes"], " min"],
           "text-font": ["Noto Sans Medium"],
           "text-size": 11,
-          "text-offset": [0, 1.4],
+          "text-offset": [0, 1.7],
           "text-allow-overlap": false,
         },
         paint: {
@@ -445,6 +439,56 @@
   }
 
   const emptyFC = () => ({ type: "FeatureCollection", features: [] });
+
+  // MapLibre draws label text from pre-built glyph PBFs, and ours cover latin
+  // only — an emoji codepoint simply would not render. So the glyph is
+  // rasterised to a canvas in the vehicle's colour and registered as a map
+  // image instead. One image per (glyph, colour) pair, made on demand.
+  const ICON_PX = 48, ICON_RATIO = 2;
+
+  // Canvas is fed the font through an explicitly constructed FontFace rather
+  // than the stylesheet's family. Relying on the @font-face rule means relying
+  // on it having been parsed and matched by the time we rasterise — and when it
+  // has not been, canvas silently falls back to the system colour-emoji font
+  // and bakes a full-colour glyph into the cached image. This also sidesteps
+  // the rule's unicode-range, which canvas font matching need not honour.
+  const CANVAS_EMOJI = "NotoEmojiCanvas";
+  let emojiFontReady = null;
+  function loadEmojiFont() {
+    if (!emojiFontReady) {
+      emojiFontReady = (async () => {
+        const ff = new FontFace(CANVAS_EMOJI,
+          "url('/static/fonts/NotoEmoji-mode.woff2')");
+        await ff.load();
+        document.fonts.add(ff);
+      })().catch(() => { /* fall back to whatever canvas picks */ });
+    }
+    return emojiFontReady;
+  }
+
+  function ensureVehicleIcon(glyph, color) {
+    const id = `veh-${glyph.codePointAt(0).toString(16)}-${color.replace("#", "")}`;
+    if (map.hasImage(id)) return id;
+
+    const c = document.createElement("canvas");
+    c.width = c.height = ICON_PX;
+    const ctx = c.getContext("2d");
+    ctx.font = `${Math.round(ICON_PX * 0.7)}px "${CANVAS_EMOJI}", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // Dark outline first so the glyph stays legible over any basemap colour.
+    ctx.lineJoin = "round";
+    ctx.lineWidth = ICON_PX * 0.14;
+    ctx.strokeStyle = "#0c1013";
+    ctx.strokeText(glyph, ICON_PX / 2, ICON_PX / 2);
+    ctx.fillStyle = color;
+    ctx.fillText(glyph, ICON_PX / 2, ICON_PX / 2);
+
+    map.addImage(id, ctx.getImageData(0, 0, ICON_PX, ICON_PX), {
+      pixelRatio: ICON_RATIO,
+    });
+    return id;
+  }
 
   const FIT_PADDING = 46;   // keeps markers clear of the edges and the controls
   const FIT_MAX_ZOOM = 15;  // stop it diving in when everything is close together
@@ -515,19 +559,28 @@
     const colors = data.__colors || {};
     // __vehicles is the set trimmed to the rows actually on screen.
     const vehicles = data.__vehicles || data.vehicles || [];
+    // route_type rides on the departures, not the vehicles, so look it up.
+    const modeOf = {};
+    data.departures.forEach((d) => { modeOf[d.trip_id] = d.route_type; });
+
     map.getSource("vehicles").setData({
       type: "FeatureCollection",
-      features: vehicles.map((v) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
-        properties: {
-          route: v.route ?? "",
-          headsign: v.headsign ?? "",
-          minutes: v.minutes,
-          color: colors[v.trip_id] || "#3fb950",
-          age: v.timestamp ? now - v.timestamp : null,
-        },
-      })),
+      features: vehicles.map((v) => {
+        const color = colors[v.trip_id] || "#3fb950";
+        const glyph = MODE_EMOJI[modeOf[v.trip_id]] ?? DEFAULT_EMOJI;
+        return {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+          properties: {
+            route: v.route ?? "",
+            headsign: v.headsign ?? "",
+            minutes: v.minutes,
+            color,
+            icon: ensureVehicleIcon(glyph, color),
+            age: v.timestamp ? now - v.timestamp : null,
+          },
+        };
+      }),
     });
 
     fitView(data, vehicles);
@@ -590,7 +643,7 @@
         const badgeStyle = `style="color:${vcolor || UNTRACKED_INK}"`;
         const routeLabel = d.route ?? "";
         const numClass = routeLabel.length > 4 ? "num wide" : "num";
-        const icon = MODE_ICON[d.route_type] ?? ICON_BUS;
+        const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
         const eta = d.minutes <= 0
           ? `<div class="due">DUE</div>`
           : `<div class="num">${d.minutes}</div><div class="unit">MIN</div>`;
@@ -600,7 +653,7 @@
           .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}));
         row.innerHTML = `
           <div class="badge" ${badgeStyle}>
-            <span class="mode">${icon}</span>
+            <span class="mode">${glyph}</span>
             <span class="${numClass}">${routeLabel}</span>
           </div>
           <div class="dest">

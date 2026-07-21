@@ -206,10 +206,28 @@ colour. Prefer separation over palette size, and over stability across
 refreshes.
 
 The route badge is a split plate — mode glyph | route number — on black with a
-white border and divider, both halves inked in the vehicle's colour. The glyphs
-are **inline SVG, deliberately not emoji**: colour-emoji fonts paint their own
-palette and ignore CSS `color`, so an emoji cannot be tinted to match. Cut-outs
-inside the glyphs are filled `#000` to match the plate.
+white border and divider, both halves inked in the vehicle's colour, as is the
+countdown. The glyphs are real emoji (🚆 rail, 🚍 bus, 🚊 tram, ⛴ ferry) drawn
+in **Noto Emoji, the monochrome family** — not Noto Color Emoji, which paints
+its own palette and ignores CSS `color`. Self-hosted, subset to just those four
+codepoints (2.7 KB) via the Google Fonts `text=` parameter.
+
+The map cannot use the same trick: MapLibre renders label text from pre-built
+glyph PBFs and ours cover latin only, so an emoji codepoint would not render at
+all. Instead `ensureVehicleIcon` rasterises the glyph to a canvas in the
+vehicle's colour and registers it with `map.addImage`, one image per
+(glyph, colour) pair, referenced by `icon-image`.
+
+Two traps in that rasterising, both silent:
+
+- **Canvas gets the font via an explicitly constructed `FontFace`**, not the
+  stylesheet family. Going through the `@font-face` rule means depending on it
+  having been parsed and matched when we rasterise; when it has not, canvas
+  falls back to the system colour-emoji font and bakes a full-colour glyph into
+  the cached image. This was observed, not theorised.
+- The four glyphs are astral codepoints, and canvas font matching need not
+  honour the rule's `unicode-range`. The JS-constructed face carries no range,
+  so the question does not arise.
 
 Note a row can read `live` without a coloured stripe: `live` means a realtime
 prediction (TripUpdates), the stripe means a GPS position (VehiclePositions).

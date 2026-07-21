@@ -195,15 +195,26 @@ zoom buttons move the map with no DOM event to test for.
 Layout: board and map sit side by side above 900px and stack below it. The map
 column is sticky so it stays in view against a long board.
 
-Each tracked vehicle gets its own colour, used for the map marker, the row's
-left stripe and the badge ink. The palette is eight hues at 45° spacing, and
-assignment strides it by departure order (`Math.round(i * P / n)`) so the
-colours actually in use are spread around the wheel — four vehicles get
-red/lime/cyan/purple rather than four neighbours. An earlier version had a
-fourteen-colour palette assigned by `trip_id` hash: entries were unique but
-included three pinks and two purples, so distinct services read as the same
-colour. Prefer separation over palette size, and over stability across
-refreshes.
+**Colour identifies a service, and nothing else.** Every departure gets one —
+not just the tracked ones — carried by the row stripe, the badge glyph and
+number, the countdown, and (where there is a live position) the map marker. It
+deliberately does *not* encode live-vs-scheduled: that status flips as feeds
+come and go, and a colour that changes underneath the reader is worse than no
+colour. Where the arrival figure came from is shown separately, by 📶 realtime
+or 📅 timetable after the number.
+
+The palette is twelve hues at 30° spacing, assignment striding it by departure
+order (`Math.round(i * P / n)`) so the colours in use are spread around the
+wheel rather than bunched — four services get red/lime/cyan/purple, not four
+neighbours. An earlier version had a fourteen-colour palette assigned by
+`trip_id` hash: entries were unique but included three pinks and two purples,
+so distinct services read as the same colour. Prefer separation over palette
+size, and over stability across refreshes.
+
+**Landmarks are the stops themselves, always grey**, drawn for every stop on a
+tracked service's route (`landmarks` on the departures response). The one stop
+being viewed is white. Nothing about a landmark encodes a service, so no
+landmark ever takes a service colour.
 
 The route badge is a split plate — mode glyph | route number — on black with a
 white border and divider, both halves inked in the vehicle's colour, as is the
@@ -229,9 +240,16 @@ Two traps in that rasterising, both silent:
   honour the rule's `unicode-range`. The JS-constructed face carries no range,
   so the question does not arise.
 
-Note a row can read `live` without a coloured stripe: `live` means a realtime
-prediction (TripUpdates), the stripe means a GPS position (VehiclePositions).
-Plenty of services have the first and not the second.
+`live` and a map marker are different things: `live` (📶) means TripUpdates gave
+a time prediction, a marker means VehiclePositions gave a GPS fix. Plenty of
+services have the first and not the second, so a row can read 📶 and still have
+nothing on the map — and, less often, the reverse.
+
+The `@font-face` for Noto Emoji carries **no `unicode-range`**, on purpose. The
+file is already subset to exactly the glyphs used, so a range is just a second
+list to keep in sync — and it fell out of sync twice, silently dropping the
+browser back to the colour-emoji font for any codepoint added to the subset but
+forgotten in the range.
 
 Two bugs worth not reintroducing:
 

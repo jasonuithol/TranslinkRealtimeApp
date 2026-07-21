@@ -370,6 +370,37 @@ def departures(stop_id: str):
             }
         )
 
+    # Every stop served by the trips that have a live vehicle, so the map can
+    # draw the route's landmarks rather than just the one stop being viewed.
+    landmarks = []
+    tracked_trips = [v["trip_id"] for v in vehicles]
+    if tracked_trips:
+        marks = ",".join("?" for _ in tracked_trips)
+        con2 = db()
+        landmarks = [
+            {
+                "stop_id": r["stop_id"],
+                "stop_name": r["stop_name"],
+                "lat": r["stop_lat"],
+                "lon": r["stop_lon"],
+                "route_type": r["route_type"],
+            }
+            for r in con2.execute(
+                f"""
+                SELECT DISTINCT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon,
+                       r.route_type
+                FROM stop_times st
+                JOIN stops s  ON s.stop_id = st.stop_id
+                JOIN trips t  ON t.trip_id = st.trip_id
+                JOIN routes r ON r.route_id = t.route_id
+                WHERE st.trip_id IN ({marks})
+                  AND s.stop_lat IS NOT NULL AND s.stop_lon IS NOT NULL
+                """,
+                tracked_trips,
+            )
+        ]
+        con2.close()
+
     return {
         "stop": dict(stop),
         "generated_at": now_epoch,
@@ -381,6 +412,7 @@ def departures(stop_id: str):
         ),
         "departures": shown,
         "vehicles": vehicles,
+        "landmarks": landmarks,
     }
 
 

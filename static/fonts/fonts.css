@@ -37,13 +37,17 @@
 /* Noto Emoji — the MONOCHROME family, not Noto Color Emoji. Colour-emoji fonts
    paint their own palette and ignore CSS `color`; these glyphs are ordinary
    outlines, so they tint like text. Subset to the four transport glyphs used
-   for the mode badges — ⛴ U+26F4, 🚆 U+1F686, 🚊 U+1F68A, 🚍 U+1F68D — plus the
-   two stop markers: 🏫 U+1F3EB station, 🚏 U+1F68F bus stop. */
+   for the mode badges — ⛴ U+26F4, 🚆 U+1F686, 🚊 U+1F68A, 🚍 U+1F68D — the two
+   landmark markers 🏫 U+1F3EB station and 🚏 U+1F68F bus stop, and the two
+   prediction-source marks 📶 U+1F4F6 live and 📅 U+1F4C5 scheduled. */
 @font-face {
   font-family: 'Noto Emoji';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url('/static/fonts/NotoEmoji-mode.woff2') format('woff2');
-  unicode-range: U+26f4, U+1f686, U+1f68a, U+1f68d;
+  /* Deliberately no unicode-range. The file is already subset to exactly these
+     glyphs, so a range adds nothing but a second list to keep in sync — and it
+     silently fell out of sync twice, dropping the browser back to the colour
+     emoji font for any codepoint added here but forgotten there. */
 }

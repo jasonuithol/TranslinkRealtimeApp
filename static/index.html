@@ -139,12 +139,11 @@
     background: var(--live);
     animation: pulse 2s infinite;
   }
-  /* A tracked service is tinted with its own colour, matching its map marker.
-     The left stripe carries the colour at row scale; the dot ties it to the
-     "live" label. Untracked rows keep the plain green dot. */
-  .row.tracked { border-left: 3px solid var(--vcolor); padding-left: 13px; }
-  .row.tracked .live-dot { background: var(--vcolor); }
-  /* Tracked rows are clickable: they ping their vehicle on the map. */
+  /* Every service carries its own colour — that is its identity, and it must
+     not change as the service gains or loses a live position. */
+  .row { border-left: 3px solid var(--vcolor); padding-left: 13px; }
+  .row .live-dot { background: var(--vcolor); }
+  /* Only a tracked row has a marker on the map to ping. */
   .row.tracked { cursor: pointer; }
   .row.tracked:hover { background: #1c242d; }
   .row.tracked:focus-visible { outline: 2px solid var(--vcolor); outline-offset: -2px; }
@@ -172,11 +171,18 @@
   }
   .eta .num { font-size: 30px; font-weight: 600; line-height: 1; }
   .eta .unit { font-size: 11px; color: var(--amber-dim); letter-spacing: 0.1em; }
-  /* A tracked service's countdown carries its vehicle colour too, so the row
-     reads as one object: badge, stripe, countdown and map marker all agree.
-     The amber glow is dropped for those — it would tint the colour. */
-  .row.tracked .eta { color: var(--vcolor); text-shadow: none; }
-  .row.tracked .eta .unit { color: var(--vcolor); opacity: 0.6; }
+  /* The countdown carries the service colour too, so the row reads as one
+     object. The amber glow is dropped — it would tint the colour. */
+  .eta { color: var(--vcolor); text-shadow: none; }
+  .eta .unit { color: var(--vcolor); opacity: 0.6; }
+  /* 📶 realtime / 📅 timetable, after the number. Monochrome face so it takes
+     the countdown's colour; sized down so the number stays dominant. */
+  .eta .src {
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-size: 0.42em; vertical-align: middle; opacity: 0.75;
+    margin-left: 2px;
+  }
+  .eta .due .src { font-size: 0.5em; }
   .eta .due {
     font-size: 22px; font-weight: 600; letter-spacing: 0.06em;
     animation: pulse 1.2s infinite;
@@ -315,22 +321,27 @@
   // theirs — including the +/- buttons, which move the map without a DOM event.
   let autoFit = true, forceFit = true, programmatic = false;
 
-  // Eight hues at 45° spacing. The previous palette packed fourteen colours in,
-  // which put three pinks and two purples in it — unique entries that still
-  // read as the same colour. Spacing matters more than count here: only tracked
-  // vehicles are coloured, and that is rarely more than a handful.
+  // Twelve hues at 30° spacing. Every departure gets one now, not just the
+  // tracked ones, so the palette has to cover a full board. Colour identifies
+  // a *service*; it must not shift when that service gains or loses a live
+  // position, which is why live/scheduled is shown separately.
   const VEHICLE_COLORS = [
     "#ff5a52", // red
-    "#ffa02b", // orange
-    "#b8e02a", // lime
+    "#ff8a2b", // orange
+    "#ffc21f", // amber
+    "#d8e02a", // yellow-lime
+    "#7ee02a", // lime
     "#2fd07a", // green
+    "#25d3b0", // teal
     "#22d3ee", // cyan
     "#4e8cff", // blue
-    "#a06bff", // purple
+    "#8a7bff", // indigo
+    "#c06bff", // purple
     "#ff5fb0", // magenta
   ];
-  // Everything without a live position: no map marker, so no colour to match.
-  const UNTRACKED_INK = "#e8eef4";
+  // Landmarks: the stops themselves, never a service.
+  const LANDMARK_INK = "#8c98a4";          // grey — every landmark
+  const LANDMARK_SELECTED_INK = "#ffffff"; // white — the stop being viewed
 
   // Mode glyphs, rendered in the monochrome Noto Emoji face so they tint with
   // `color` like ordinary text. GTFS route_type: 0 tram, 1 metro, 2 rail,
@@ -344,37 +355,45 @@
   };
   const DEFAULT_EMOJI = MODE_EMOJI[3];
 
-  // The selected stop's own marker, by what actually calls there.
+  // Landmark glyphs — the physical stop, not the service calling at it.
   const STOP_STATION = "\u{1F3EB}";  // 🏫
   const STOP_BUS = "\u{1F68F}";      // 🚏
-  const STOP_INK = "#ffb400";        // board amber: the anchor, not a vehicle
 
+  // Where the arrival time came from, shown after the countdown.
+  const MARK_LIVE = "\u{1F4F6}";      // 📶 realtime prediction
+  const MARK_SCHEDULED = "\u{1F4C5}"; // 📅 timetable only
+
+  function landmarkGlyph(routeType) {
+    switch (Number(routeType)) {
+      case 3: return STOP_BUS;
+      case 4: return MODE_EMOJI[4];
+      case 0: return MODE_EMOJI[0];
+      case 1: case 2: return STOP_STATION;
+      default: return STOP_BUS;
+    }
+  }
+
+  // The stop being viewed, judged by what actually calls there rather than by
+  // location_type, which cannot tell a ferry terminal from a bus stop.
   function stopGlyph(data) {
     const counts = {};
     data.departures.forEach((d) => {
       counts[d.route_type] = (counts[d.route_type] || 0) + 1;
     });
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-    switch (top ? Number(top[0]) : -1) {
-      case 3: return STOP_BUS;
-      case 4: return MODE_EMOJI[4];
-      case 0: return MODE_EMOJI[0];
-      case 1: case 2: return STOP_STATION;
-      // No departures to judge by: fall back to the GTFS record itself.
-      default: return data.stop.location_type === 1 ? STOP_STATION : STOP_BUS;
-    }
+    if (top) return landmarkGlyph(Number(top[0]));
+    return data.stop.location_type === 1 ? STOP_STATION : STOP_BUS;
   }
 
   // Assign in departure order, striding the palette so the colours in use are
-  // spread right around the wheel rather than bunched at one end: four tracked
-  // vehicles get red/lime/cyan/purple, not red/orange/lime/green. Seeding from
-  // a trip_id hash was steadier across refreshes but picked arbitrary entries,
-  // which is how two purples ended up on screen together.
-  function assignColors(vehicles) {
-    const P = VEHICLE_COLORS.length, n = vehicles.length, out = {};
-    vehicles.forEach((v, i) => {
+  // spread right around the wheel rather than bunched at one end. Applied to
+  // every departure, tracked or not: a service's colour is its identity and
+  // must not change when it gains or loses a live position.
+  function assignColors(items) {
+    const P = VEHICLE_COLORS.length, n = items.length, out = {};
+    items.forEach((d, i) => {
       const idx = n > 0 && n <= P ? Math.round((i * P) / n) % P : i % P;
-      out[v.trip_id] = VEHICLE_COLORS[idx];
+      out[d.trip_id] = VEHICLE_COLORS[idx];
     });
     return out;
   }
@@ -426,6 +445,21 @@
     map.on("load", () => {
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
+      map.addSource("landmarks", { type: "geojson", data: emptyFC() });
+
+      // Every stop on a tracked service's route, in grey. Drawn first so the
+      // viewed stop and the vehicles sit above them.
+      map.addLayer({
+        id: "landmarks", type: "symbol", source: "landmarks",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.4, 15, 0.7],
+          "icon-anchor": "bottom",
+          // Unlike the vehicles, these may crowd: let MapLibre thin them out.
+          "icon-allow-overlap": false,
+          "icon-padding": 2,
+        },
+      });
 
       map.addLayer({
         id: "stop-ring", type: "symbol", source: "stop",
@@ -681,10 +715,30 @@
         features: [{
           type: "Feature",
           geometry: { type: "Point", coordinates: [lon, lat] },
-          properties: { icon: ensureVehicleIcon(stopGlyph(data), STOP_INK) },
+          // White: this is the landmark that was searched for.
+          properties: {
+            icon: ensureVehicleIcon(stopGlyph(data), LANDMARK_SELECTED_INK),
+          },
         }],
       });
     }
+
+    // Landmarks on the tracked services' routes, in grey. The viewed stop is
+    // drawn separately in white, so drop it from this set to avoid doubling up.
+    const selfId = data.stop.stop_id;
+    map.getSource("landmarks").setData({
+      type: "FeatureCollection",
+      features: (data.landmarks || [])
+        .filter((l) => l.stop_id !== selfId)
+        .map((l) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [l.lon, l.lat] },
+          properties: {
+            name: l.stop_name,
+            icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
+          },
+        })),
+    });
 
     const now = Math.floor(Date.now() / 1000);
     const colors = data.__colors || {};
@@ -754,9 +808,10 @@
     const shownIds = new Set(shown.map((d) => d.trip_id));
     const vehicles = (data.vehicles || []).filter((v) => shownIds.has(v.trip_id));
 
-    // One colour per tracked vehicle, shared by the row stripe and the map
-    // marker so the two views can be matched by eye.
-    const colors = assignColors(vehicles);
+    // One colour per departure, shared by the row and — where the service has
+    // a live position — its map marker.
+    const colors = assignColors(shown);
+    const trackedTrips = new Set(vehicles.map((v) => v.trip_id));
     data.__colors = colors;
     data.__vehicles = vehicles;
     data.__hidden = data.departures.length - shown.length;
@@ -765,11 +820,12 @@
       shown.forEach((d) => {
         const row = document.createElement("div");
         const vcolor = colors[d.trip_id];
-        row.className = vcolor ? "row tracked" : "row";
+        const isTracked = trackedTrips.has(d.trip_id);
+        // Every row is coloured; only a tracked one has a marker to ping.
+        row.className = isTracked ? "row tracked" : "row";
         row.dataset.trip = d.trip_id;
-        if (vcolor) {
-          row.style.setProperty("--vcolor", vcolor);
-          // Only tracked rows have something on the map to ping.
+        row.style.setProperty("--vcolor", vcolor);
+        if (isTracked) {
           row.tabIndex = 0;
           row.addEventListener("click", () => pingVehicle(d.trip_id));
           row.addEventListener("keydown", (ev) => {
@@ -779,18 +835,18 @@
             }
           });
         }
-        // The badge plate stays black; the glyph and number take the vehicle
-        // colour, so badge, row stripe and map marker all agree. Anything
-        // without a live position is plain white — it has nothing on the map to
-        // match, so giving it a colour only invites a false pairing. This drops
-        // the feed's route_color from the badge deliberately.
-        const badgeStyle = `style="color:${vcolor || UNTRACKED_INK}"`;
+        // The badge plate stays black; the glyph and number take the service's
+        // colour, matching the row stripe and, when tracked, the map marker.
+        const badgeStyle = `style="color:${vcolor}"`;
         const routeLabel = d.route ?? "";
         const numClass = routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
+        // Where the number came from: 📶 a realtime prediction, 📅 the timetable.
+        const mark = `<span class="src" title="${d.realtime ? "realtime prediction" : "timetable"}">` +
+          `${d.realtime ? MARK_LIVE : MARK_SCHEDULED}</span>`;
         const eta = d.minutes <= 0
-          ? `<div class="due">DUE</div>`
-          : `<div class="num">${d.minutes}</div><div class="unit">MIN</div>`;
+          ? `<div class="due">DUE ${mark}</div>`
+          : `<div class="num">${d.minutes} ${mark}</div><div class="unit">MIN</div>`;
         const bits = [MODES[d.route_type] ?? ""];
         if (d.platform) bits.push(`Plat ${d.platform}`);
         bits.push(new Date(d.predicted * 1000)

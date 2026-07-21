@@ -306,6 +306,12 @@ Two bugs worth not reintroducing:
   `.map-empty` overlay rather than hiding it: the map is built and loading
   underneath at a reduced height, so it draws immediately once a stop is
   picked. `selectStop` drops the `awaiting` class and calls `map.resize()`.
+  Before a stop is chosen the board and map show a matched pair of empty-state
+  panels: same size (a shared `.placeholder` at `--ph-height`, equal-width
+  columns), each with a line of text over a monochrome glyph naming its job —
+  🕰 U+1F570 for arrivals, 🌏 U+1F30F for the map. Those two codepoints were
+  added to the `NotoEmoji-mode.woff2` subset so they tint grey like the other
+  glyphs rather than falling back to a colour-emoji font.
 - **`new pmtiles.Protocol({metadata: true})` — the flag is required.** The
   style's source uses `url:`, so MapLibre asks the protocol for TileJSON.
   Without the flag pmtiles ignores that request and the promise never settles:

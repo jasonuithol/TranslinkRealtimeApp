@@ -232,6 +232,22 @@
   }
   .error { color: #ff8a7a; }
 
+  /* Both first-run panels — board and map — share one empty state so they read
+     as a matched pair: same height, text on top, a monochrome glyph naming the
+     panel's job beneath it. --ph-height keeps the two boxes exactly level. */
+  :root { --ph-height: 240px; }
+  .placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; min-height: var(--ph-height); padding: 24px;
+  }
+  .placeholder .ph-icon {
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text;      /* the monochrome outline, tinted like text */
+    font-size: 46px; line-height: 1;
+    color: var(--muted); opacity: 0.6;
+  }
+
   /* --- board + map layout ------------------------------------------------ */
   /* Stacked by default; side by side only when there is room AND a map. The
      board keeps its natural width and the map takes the remaining space. */
@@ -253,19 +269,21 @@
      underneath — MapLibre needs a sized container, and having it warm means it
      draws the moment a stop is picked — but an empty view of Brisbane says
      nothing, so it is not shown. */
+  /* Layout (centering, min-height) comes from .placeholder; this rule only
+     covers the map and matches the board's panel styling. */
   .map-empty {
-    position: absolute; inset: 0; z-index: 2;
-    display: flex; align-items: center; justify-content: center;
-    text-align: center; padding: 0 24px;
+    position: absolute; inset: 0; z-index: 2; text-align: center;
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     color: var(--muted); font-size: 14px;
   }
   .map-empty[hidden] { display: none; }
-  /* While the placeholder is up the map stays short, so the empty column does
-     not tower over the board's own placeholder. Still sized, so MapLibre can
-     measure its container and load underneath. */
+  /* While the placeholder is up the map matches the board placeholder's height
+     exactly, so the two first-run panels sit level. Still sized, so MapLibre
+     can measure its container and load underneath. */
   #map-wrap.awaiting #map,
-  .split.side-by-side #map-wrap.awaiting #map { height: 190px; min-height: 190px; }
+  .split.side-by-side #map-wrap.awaiting #map {
+    height: var(--ph-height); min-height: var(--ph-height);
+  }
   #map {
     height: 360px; border-radius: 10px; overflow: hidden;
     background: #0c1013; border: 1px solid #232c35;
@@ -314,11 +332,17 @@
 
   <div class="split" id="split">
     <div class="board" id="board">
-      <div class="empty">Search for a stop to see departures.</div>
+      <div class="empty placeholder">
+        <div>Search for a stop to see departures.</div>
+        <div class="ph-icon">&#x1F570;&#xFE0E;</div>
+      </div>
     </div>
     <div id="map-wrap" class="awaiting" hidden>
       <div id="map"></div>
-      <div class="map-empty" id="map-empty">Search for a stop to see it on the map.</div>
+      <div class="map-empty placeholder" id="map-empty">
+        <div>Search for a stop to see it on the map.</div>
+        <div class="ph-icon">&#x1F30F;&#xFE0E;</div>
+      </div>
       <!-- `awaiting` is dropped by selectStop, which then resizes the map. -->
       <div class="map-caption" id="map-caption" hidden>
         <span id="map-status">live vehicle positions</span>

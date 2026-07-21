@@ -398,16 +398,63 @@
     return data.stop.location_type === 1 ? STOP_STATION : STOP_BUS;
   }
 
-  // Assign in departure order, striding the palette so the colours in use are
-  // spread right around the wheel rather than bunched at one end. Applied to
-  // every departure, tracked or not: a service's colour is its identity and
-  // must not change when it gains or loses a live position.
+  // A service keeps its colour. Once assigned, a trip_id holds that colour for
+  // as long as it is remembered — across refreshes, as the board advances, and
+  // whether or not it currently has a live position. Insertion-ordered, so the
+  // oldest entry is the first evicted.
+  const colorMemory = new Map();   // trip_id -> palette index
+  const COLOR_MEMORY_MAX = 300;    // a few hours of a busy board
+
+  // Of the colours not already on screen, take the one furthest around the
+  // wheel from those that are — so a newly arriving service is as distinct as
+  // the remaining palette allows, rather than just the next index along.
+  function pickFreeIndex(usedIdx) {
+    const P = VEHICLE_COLORS.length;
+    const free = [];
+    for (let i = 0; i < P; i++) if (!usedIdx.has(i)) free.push(i);
+    if (!free.length) return usedIdx.size % P;   // more services than colours
+    if (!usedIdx.size) return 0;
+    let best = free[0], bestGap = -1;
+    for (const i of free) {
+      let gap = P;
+      for (const j of usedIdx) {
+        const d = Math.abs(i - j);
+        gap = Math.min(gap, Math.min(d, P - d));
+      }
+      if (gap > bestGap) { bestGap = gap; best = i; }
+    }
+    return best;
+  }
+
   function assignColors(items) {
-    const P = VEHICLE_COLORS.length, n = items.length, out = {};
-    items.forEach((d, i) => {
-      const idx = n > 0 && n <= P ? Math.round((i * P) / n) % P : i % P;
+    const out = {}, usedIdx = new Set();
+
+    // Remembered colours win, provided nothing else on screen has taken it.
+    for (const d of items) {
+      const idx = colorMemory.get(d.trip_id);
+      if (idx !== undefined && !usedIdx.has(idx)) {
+        out[d.trip_id] = VEHICLE_COLORS[idx];
+        usedIdx.add(idx);
+      }
+    }
+    // Anything new — or displaced by a collision — takes a free colour.
+    for (const d of items) {
+      if (out[d.trip_id]) continue;
+      const idx = pickFreeIndex(usedIdx);
       out[d.trip_id] = VEHICLE_COLORS[idx];
-    });
+      usedIdx.add(idx);
+      colorMemory.set(d.trip_id, idx);
+    }
+    // Re-insert the ones still on screen so eviction drops genuinely stale
+    // trips first, not the ones currently being looked at.
+    for (const d of items) {
+      const idx = colorMemory.get(d.trip_id);
+      colorMemory.delete(d.trip_id);
+      colorMemory.set(d.trip_id, idx);
+    }
+    while (colorMemory.size > COLOR_MEMORY_MAX) {
+      colorMemory.delete(colorMemory.keys().next().value);
+    }
     return out;
   }
 

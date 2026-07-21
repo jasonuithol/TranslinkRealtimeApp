@@ -204,13 +204,18 @@ come and go, and a colour that changes underneath the reader is worse than no
 colour. Where the arrival figure came from is shown separately, by 📶 realtime
 or 📅 timetable after the number.
 
-The palette is twelve hues at 30° spacing, assignment striding it by departure
-order (`Math.round(i * P / n)`) so the colours in use are spread around the
-wheel rather than bunched — four services get red/lime/cyan/purple, not four
-neighbours. An earlier version had a fourteen-colour palette assigned by
-`trip_id` hash: entries were unique but included three pinks and two purples,
-so distinct services read as the same colour. Prefer separation over palette
-size, and over stability across refreshes.
+The palette is twelve hues at 30° spacing. **Assignment is sticky**: a trip_id
+keeps its colour in `colorMemory` (insertion-ordered, capped at 300, oldest
+evicted) so it survives refreshes, the board advancing, and the service gaining
+or losing a live position. A returning trip gets its original colour back if
+nothing on screen has taken it meanwhile.
+
+New services take the free colour *furthest around the wheel* from those
+already on screen, rather than the next index along — so an arrival is as
+distinct as the remaining palette allows. Two earlier versions were worse:
+assignment by `trip_id` hash over a fourteen-colour palette gave unique entries
+that still looked alike (three pinks, two purples), and index-striding gave good
+separation but recoloured every row whenever the board advanced.
 
 **Route paths** come from GTFS `shapes.txt`, ingested into a `shapes` table with
 `trips.shape_id` joining them. Each tracked vehicle carries a `shape_id`, and

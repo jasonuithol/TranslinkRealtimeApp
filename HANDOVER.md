@@ -63,9 +63,10 @@ is `AutoUpdate=registry`, so a push to `main` rolls out on its own.
 
 ## Architecture
 
-1. `ingest_gtfs.py` loads six GTFS tables into SQLite: stops, routes,
-   trips, stop_times, calendar, calendar_dates. Only the columns needed
-   for a departures board are kept.
+1. `ingest_gtfs.py` loads seven GTFS tables into SQLite: stops, routes,
+   trips, stop_times, calendar, calendar_dates, shapes. Only the columns
+   needed for a departures board are kept. Adding shapes took the ingest
+   from 12s to 16s and the database from 254 MB to 303 MB.
 2. `app.py` runs a background task (started via FastAPI lifespan) that
    polls the TripUpdates protobuf feed every 30 s and keeps an in-memory
    cache shaped `{trip_id: {stop_id: {arrival, delay, skipped}}}`.
@@ -210,6 +211,14 @@ neighbours. An earlier version had a fourteen-colour palette assigned by
 `trip_id` hash: entries were unique but included three pinks and two purples,
 so distinct services read as the same colour. Prefer separation over palette
 size, and over stability across refreshes.
+
+**Route paths** come from GTFS `shapes.txt`, ingested into a `shapes` table with
+`trips.shape_id` joining them. Each tracked vehicle carries a `shape_id`, and
+the geometry is served separately by `GET /api/shape/{shape_id}` — cached a day,
+and cached again in the client by id. It is deliberately *not* on the departures
+response: the geometry never changes, and inlining it put 174 KB on every 15s
+poll for a station board versus 30 KB without. Drawn bottom of the map stack in
+the service's colour at 55% opacity: context for the markers, not the subject.
 
 **Landmarks are the stops themselves, always grey**, drawn for every stop on a
 tracked service's route (`landmarks` on the departures response). The one stop

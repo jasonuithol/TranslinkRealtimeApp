@@ -30,6 +30,7 @@ DROP TABLE IF EXISTS trips;
 DROP TABLE IF EXISTS stop_times;
 DROP TABLE IF EXISTS calendar;
 DROP TABLE IF EXISTS calendar_dates;
+DROP TABLE IF EXISTS shapes;
 
 CREATE TABLE stops (
     stop_id TEXT PRIMARY KEY,
@@ -53,7 +54,8 @@ CREATE TABLE trips (
     route_id TEXT,
     service_id TEXT,
     trip_headsign TEXT,
-    direction_id INTEGER
+    direction_id INTEGER,
+    shape_id TEXT           -- route geometry, for drawing the path on the map
 );
 CREATE TABLE stop_times (
     trip_id TEXT,
@@ -77,6 +79,15 @@ CREATE TABLE calendar_dates (
     exception_type INTEGER
 );
 CREATE INDEX idx_caldates ON calendar_dates (date);
+-- The path a trip physically follows. Many trips share one shape, so this is
+-- keyed by shape_id, not trip_id.
+CREATE TABLE shapes (
+    shape_id TEXT,
+    shape_pt_lat REAL,
+    shape_pt_lon REAL,
+    shape_pt_sequence INTEGER
+);
+CREATE INDEX idx_shapes ON shapes (shape_id, shape_pt_sequence);
 """
 
 # table -> columns we keep (matching CSV header names)
@@ -84,11 +95,13 @@ TABLES = {
     "stops": ["stop_id", "stop_name", "stop_lat", "stop_lon",
               "location_type", "parent_station", "platform_code"],
     "routes": ["route_id", "route_short_name", "route_long_name", "route_type", "route_color"],
-    "trips": ["trip_id", "route_id", "service_id", "trip_headsign", "direction_id"],
+    "trips": ["trip_id", "route_id", "service_id", "trip_headsign", "direction_id",
+              "shape_id"],
     "stop_times": ["trip_id", "arrival_time", "departure_time", "stop_id", "stop_sequence"],
     "calendar": ["service_id", "monday", "tuesday", "wednesday", "thursday",
                  "friday", "saturday", "sunday", "start_date", "end_date"],
     "calendar_dates": ["service_id", "date", "exception_type"],
+    "shapes": ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"],
 }
 
 

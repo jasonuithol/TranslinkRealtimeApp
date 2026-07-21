@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from google.transit import gtfs_realtime_pb2
 
@@ -370,10 +370,28 @@ def departures(stop_id: str):
             }
         )
 
+    # Tag each vehicle with the shape its trip follows. The geometry itself is
+    # fetched separately and cached by the client: it never changes, and
+    # resending several thousand points on every 15s poll would dwarf the
+    # payload that does change.
+    tracked_trips = [v["trip_id"] for v in vehicles]
+    if tracked_trips:
+        con3 = db()
+        marks = ",".join("?" for _ in tracked_trips)
+        shape_of = {
+            r["trip_id"]: r["shape_id"]
+            for r in con3.execute(
+                f"SELECT trip_id, shape_id FROM trips WHERE trip_id IN ({marks})",
+                tracked_trips,
+            )
+        }
+        con3.close()
+        for v in vehicles:
+            v["shape_id"] = shape_of.get(v["trip_id"])
+
     # Every stop served by the trips that have a live vehicle, so the map can
     # draw the route's landmarks rather than just the one stop being viewed.
     landmarks = []
-    tracked_trips = [v["trip_id"] for v in vehicles]
     if tracked_trips:
         marks = ",".join("?" for _ in tracked_trips)
         con2 = db()
@@ -414,6 +432,31 @@ def departures(stop_id: str):
         "vehicles": vehicles,
         "landmarks": landmarks,
     }
+
+
+@app.get("/api/shape/{shape_id}")
+def shape(shape_id: str):
+    """Geometry of one route path, as [lon, lat] pairs.
+
+    Static for the life of a timetable, so it is served apart from the
+    departures poll and marked cacheable.
+    """
+    con = db()
+    pts = [
+        [r["shape_pt_lon"], r["shape_pt_lat"]]
+        for r in con.execute(
+            "SELECT shape_pt_lon, shape_pt_lat FROM shapes "
+            "WHERE shape_id=? ORDER BY shape_pt_sequence",
+            (shape_id,),
+        )
+    ]
+    con.close()
+    if len(pts) < 2:
+        raise HTTPException(404, f"No geometry for shape {shape_id}")
+    return JSONResponse(
+        {"shape_id": shape_id, "points": pts},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/api/config")

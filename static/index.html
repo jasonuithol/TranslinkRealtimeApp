@@ -459,6 +459,19 @@
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
       map.addSource("landmarks", { type: "geojson", data: emptyFC() });
+      map.addSource("routes", { type: "geojson", data: emptyFC() });
+
+      // The path each tracked vehicle is following, in that vehicle's colour.
+      // Bottom of the stack: it is context for the markers, not the subject.
+      map.addLayer({
+        id: "routes", type: "line", source: "routes",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 4],
+          "line-opacity": 0.55,
+        },
+      });
 
       // Every stop on a tracked service's route, in grey. Drawn first so the
       // viewed stop and the vehicles sit above them.
@@ -553,6 +566,45 @@
   }
 
   const emptyFC = () => ({ type: "FeatureCollection", features: [] });
+
+  // Route geometry is static for the life of a timetable, so fetch each shape
+  // once and keep it. `pending` stops a slow fetch being issued repeatedly by
+  // successive polls.
+  const shapeCache = new Map(), shapePending = new Set();
+
+  async function ensureShape(shapeId) {
+    if (!shapeId || shapeCache.has(shapeId) || shapePending.has(shapeId)) return;
+    shapePending.add(shapeId);
+    try {
+      const res = await fetch(`/api/shape/${encodeURIComponent(shapeId)}`);
+      if (res.ok) {
+        shapeCache.set(shapeId, (await res.json()).points);
+        if (lastData) drawRoutes(lastData);   // redraw once it lands
+      } else {
+        shapeCache.set(shapeId, null);        // no geometry; stop asking
+      }
+    } catch {
+      /* leave it unset so a later poll can retry */
+    } finally {
+      shapePending.delete(shapeId);
+    }
+  }
+
+  function drawRoutes(data) {
+    if (!mapReady || !map.getSource("routes")) return;
+    const colors = data.__colors || {};
+    const features = [];
+    for (const v of data.__vehicles || []) {
+      const pts = shapeCache.get(v.shape_id);
+      if (!pts) { ensureShape(v.shape_id); continue; }
+      features.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: pts },
+        properties: { color: colors[v.trip_id] || "#3fb950", trip: v.trip_id },
+      });
+    }
+    map.getSource("routes").setData({ type: "FeatureCollection", features });
+  }
 
   // MapLibre draws label text from pre-built glyph PBFs, and ours cover latin
   // only — an emoji codepoint simply would not render. So the glyph is
@@ -782,6 +834,7 @@
       }),
     });
 
+    drawRoutes(data);
     fitView(data, vehicles);
 
     const shownCount = data.departures.length - (data.__hidden || 0);

@@ -225,6 +225,15 @@ response: the geometry never changes, and inlining it put 174 KB on every 15s
 poll for a station board versus 30 KB without. Drawn bottom of the map stack in
 the service's colour at 55% opacity: context for the markers, not the subject.
 
+Routes are grouped by `shape_id` before drawing, **not** one line per vehicle.
+Several vehicles routinely run the same shape — seven on one Cityglider path —
+and a line each stacked them so only the last colour ever showed. Where a shape
+is shared, `alternateAlong` cuts it into ~110 m runs and deals the competing
+colours round robin, consecutive runs sharing a vertex so the road stays
+unbroken. A shape with one vehicle skips this and stays a single line. Note the
+alternation stops reading below roughly zoom 12, where 110 m is sub-pixel and
+the colours blend.
+
 **Landmarks are the stops themselves, always grey**, drawn for every stop on a
 tracked service's route (`landmarks` on the departures response). The one stop
 being viewed is white. Nothing about a landmark encodes a service, so no

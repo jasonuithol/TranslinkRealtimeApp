@@ -637,18 +637,64 @@
     }
   }
 
+  // Metres between colour changes on a shared path. Short enough to read as
+  // one road in two colours, long enough not to dissolve into mush.
+  const CHUNK_M = 110;
+
+  // Equirectangular approximation — fine over the tens of metres between two
+  // consecutive shape points.
+  function metresBetween(a, b) {
+    const x = (b[0] - a[0]) * 111320 * Math.cos((a[1] * Math.PI) / 180);
+    const y = (b[1] - a[1]) * 110540;
+    return Math.hypot(x, y);
+  }
+
+  // Cut a polyline into runs of roughly CHUNK_M and deal the colours out round
+  // robin. Consecutive runs share their end point, so the road stays unbroken.
+  function alternateAlong(points, colors) {
+    const runs = [];
+    let cur = [points[0]], acc = 0, ci = 0;
+    for (let i = 1; i < points.length; i++) {
+      cur.push(points[i]);
+      acc += metresBetween(points[i - 1], points[i]);
+      if (acc >= CHUNK_M) {
+        runs.push({ coords: cur, color: colors[ci++ % colors.length] });
+        cur = [points[i]];       // shared vertex: no gap between runs
+        acc = 0;
+      }
+    }
+    if (cur.length > 1) runs.push({ coords: cur, color: colors[ci % colors.length] });
+    return runs;
+  }
+
   function drawRoutes(data) {
     if (!mapReady || !map.getSource("routes")) return;
     const colors = data.__colors || {};
-    const features = [];
+
+    // Group by shape first. Several vehicles routinely run the same shape —
+    // seven on one Cityglider path — and drawing one line each stacked them so
+    // only the last colour was ever visible.
+    const byShape = new Map();
     for (const v of data.__vehicles || []) {
-      const pts = shapeCache.get(v.shape_id);
-      if (!pts) { ensureShape(v.shape_id); continue; }
-      features.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: pts },
-        properties: { color: colors[v.trip_id] || "#3fb950", trip: v.trip_id },
-      });
+      if (!v.shape_id) continue;
+      if (!byShape.has(v.shape_id)) byShape.set(v.shape_id, []);
+      byShape.get(v.shape_id).push(colors[v.trip_id] || "#3fb950");
+    }
+
+    const features = [];
+    for (const [shapeId, cols] of byShape) {
+      const pts = shapeCache.get(shapeId);
+      if (!pts) { ensureShape(shapeId); continue; }
+      const runs = cols.length === 1
+        ? [{ coords: pts, color: cols[0] }]
+        : alternateAlong(pts, cols);
+      for (const r of runs) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: r.coords },
+          properties: { color: r.color },
+        });
+      }
     }
     map.getSource("routes").setData({ type: "FeatureCollection", features });
   }

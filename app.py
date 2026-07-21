@@ -18,6 +18,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -40,6 +41,11 @@ BASEMAP_FILE = BASEMAP_DIR / "seq.pmtiles"
 POLL_SECONDS = 30
 LOOKAHEAD_MINUTES = 90
 MAX_RESULTS = 12
+# GTFS times are in the agency's local time, NOT the host's. Pinning this makes
+# the board correct under a UTC container clock, which is the normal case in a
+# container and was previously shifting every scheduled time by 10 hours.
+# Brisbane has no DST, but being explicit costs nothing.
+AGENCY_TZ = ZoneInfo("Australia/Brisbane")
 
 # ---------------------------------------------------------------------------
 # Realtime cache: {trip_id: {stop_id: {"arrival": epoch|None, "delay": s|None}}}
@@ -178,14 +184,17 @@ def active_service_ids(con: sqlite3.Connection, service_date: datetime) -> set[s
 
 
 def gtfs_time_to_epoch(hms: str, service_date: datetime) -> int:
-    """GTFS times can exceed 24:00:00 for after-midnight trips."""
+    """GTFS times can exceed 24:00:00 for after-midnight trips.
+
+    The offset is applied to midnight *in the agency's timezone*: a naive
+    datetime would be interpreted in the host's zone, so a UTC container would
+    read every scheduled time 10 hours late.
+    """
     h, m, s = (int(x) for x in hms.split(":"))
-    return int(
-        (
-            service_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            + timedelta(hours=h, minutes=m, seconds=s)
-        ).timestamp()
+    midnight = service_date.astimezone(AGENCY_TZ).replace(
+        hour=0, minute=0, second=0, microsecond=0
     )
+    return int((midnight + timedelta(hours=h, minutes=m, seconds=s)).timestamp())
 
 
 def scheduled_departures(con, stop_ids: list[str], service_date: datetime) -> list[dict]:
@@ -293,7 +302,7 @@ def departures(stop_id: str):
     ]
     stop_ids.extend(children)
 
-    now = datetime.now()
+    now = datetime.now(AGENCY_TZ)
     # include yesterday's service date to catch after-midnight (25:xx) trips
     sched = scheduled_departures(con, stop_ids, now) + scheduled_departures(
         con, stop_ids, now - timedelta(days=1)
@@ -323,6 +332,22 @@ def departures(stop_id: str):
                     "realtime": realtime,
                 }
             )
+
+    # Both service dates are queried, so a trip whose service runs on each of
+    # them produces two rows 24h apart. The stale one normally falls outside the
+    # window — but an absolute realtime arrival overwrites *both* copies with
+    # the same prediction, so both survive. That is why doubled-up rows only
+    # ever appeared on services carrying realtime. Keep the copy whose schedule
+    # sits closest to the prediction; that is the run actually being reported.
+    best: dict = {}
+    for r in results:
+        key = (r["trip_id"], r["stop_id"])
+        prev = best.get(key)
+        if prev is None or abs(r["predicted"] - r["scheduled"]) < abs(
+            prev["predicted"] - prev["scheduled"]
+        ):
+            best[key] = r
+    results = list(best.values())
 
     results.sort(key=lambda d: d["predicted"])
     shown = results[:MAX_RESULTS]

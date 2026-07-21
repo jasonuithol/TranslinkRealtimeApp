@@ -6,3 +6,5 @@ fastapi==0.139.2
 uvicorn[standard]==0.51.0
 httpx==0.28.1
 gtfs-realtime-bindings==2.1.0
+# zoneinfo needs an IANA database; the slim base image has no system tzdata.
+tzdata==2026.2

@@ -27,7 +27,9 @@
     justify-content: center;
     padding: 24px 16px 48px;
   }
+  /* Narrow by default (board only). Widens once the map is alongside. */
   main { width: 100%; max-width: 620px; }
+  main.wide { max-width: 1180px; }
 
   header { margin-bottom: 20px; }
   .eyebrow {
@@ -118,6 +120,11 @@
     background: var(--live);
     animation: pulse 2s infinite;
   }
+  /* A tracked service is tinted with its own colour, matching its map marker.
+     The left stripe carries the colour at row scale; the dot ties it to the
+     "live" label. Untracked rows keep the plain green dot. */
+  .row.tracked { border-left: 3px solid var(--vcolor); padding-left: 13px; }
+  .row.tracked .live-dot { background: var(--vcolor); }
   @keyframes pulse { 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) {
     .live-dot, .due { animation: none !important; }
@@ -148,8 +155,21 @@
   }
   .error { color: #ff8a7a; }
 
+  /* --- board + map layout ------------------------------------------------ */
+  /* Stacked by default; side by side only when there is room AND a map. The
+     board keeps its natural width and the map takes the remaining space. */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  @media (min-width: 900px) {
+    .split.side-by-side {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: start;
+    }
+    .split.side-by-side #map { height: 100%; min-height: 520px; }
+    /* The map column is sticky so it stays visible against a long board. */
+    .split.side-by-side #map-wrap { position: sticky; top: 24px; }
+  }
+
   /* --- map view ---------------------------------------------------------- */
-  #map-wrap { margin-top: 18px; }
   #map-wrap[hidden] { display: none; }
   #map {
     height: 360px; border-radius: 10px; overflow: hidden;
@@ -189,14 +209,16 @@
     <div class="search-results" id="results" hidden></div>
   </div>
 
-  <div class="board" id="board">
-    <div class="empty">Search for a stop to see departures.</div>
-  </div>
-  <div id="map-wrap" hidden>
-    <div id="map"></div>
-    <div class="map-caption">
-      <span id="map-status">live vehicle positions</span>
-      <span class="hint">tap a vehicle for detail</span>
+  <div class="split" id="split">
+    <div class="board" id="board">
+      <div class="empty">Search for a stop to see departures.</div>
+    </div>
+    <div id="map-wrap" hidden>
+      <div id="map"></div>
+      <div class="map-caption">
+        <span id="map-status">live vehicle positions</span>
+        <span class="hint">tap a vehicle for detail</span>
+      </div>
     </div>
   </div>
 
@@ -248,6 +270,35 @@
   // the board is the product, the map is an enhancement.
   let map = null, mapReady = false, hasBasemap = false, centred = false;
 
+  // Distinct on a dark board, and enough of them that a full board of tracked
+  // services gets a unique colour each. Route colour is not usable here: the
+  // whole point is telling apart several vehicles on the *same* route.
+  const VEHICLE_COLORS = [
+    "#4ea1ff", "#ffb020", "#3fb950", "#ff6b9d", "#a78bfa", "#22d3ee", "#f97316",
+    "#84cc16", "#f472b6", "#38bdf8", "#fbbf24", "#2dd4bf", "#c084fc", "#fb7185",
+  ];
+
+  const hashStr = (s) => {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  };
+
+  // Seed each colour from the trip_id so a vehicle keeps it across refreshes,
+  // but resolve collisions so no two vehicles on screen ever share one.
+  function assignColors(vehicles) {
+    const used = new Set(), out = {};
+    vehicles.forEach((v) => {
+      let i = hashStr(v.trip_id) % VEHICLE_COLORS.length, tries = 0;
+      while (used.has(i) && tries++ < VEHICLE_COLORS.length) {
+        i = (i + 1) % VEHICLE_COLORS.length;
+      }
+      used.add(i);
+      out[v.trip_id] = VEHICLE_COLORS[i];
+    });
+    return out;
+  }
+
   async function initMap() {
     try {
       const cfg = await (await fetch("/api/config")).json();
@@ -259,6 +310,9 @@
     // construction, and a display:none container gives it zero size — the map
     // then never fires 'load' and paints nothing.
     $("map-wrap").hidden = false;
+    // Only go two-column once there is actually a map to put in the second one.
+    $("split").classList.add("side-by-side");
+    document.querySelector("main").classList.add("wide");
 
     // {metadata: true} is required: the style's source uses `url:`, so MapLibre
     // asks the protocol for TileJSON. Without this flag pmtiles ignores that
@@ -289,22 +343,26 @@
       map.addLayer({
         id: "vehicle-dot", type: "circle", source: "vehicles",
         paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 5, 15, 9],
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 6, 15, 10],
+          // Same colour the matching board row is striped with.
           "circle-color": ["coalesce", ["get", "color"], "#3fb950"],
-          "circle-stroke-width": 1.5, "circle-stroke-color": "#0c1013",
+          "circle-stroke-width": 2, "circle-stroke-color": "#0c1013",
         },
       });
       map.addLayer({
         id: "vehicle-label", type: "symbol", source: "vehicles",
         layout: {
-          "text-field": ["get", "route"],
+          // Minutes-away is what ties a dot to its row at a glance; the route
+          // number is often identical across several vehicles here.
+          "text-field": ["concat", ["get", "minutes"], " min"],
           "text-font": ["Noto Sans Medium"],
-          "text-size": 10,
-          "text-offset": [0, 1.3],
+          "text-size": 11,
+          "text-offset": [0, 1.4],
           "text-allow-overlap": false,
         },
         paint: {
-          "text-color": "#c9d4de", "text-halo-color": "#0c1013", "text-halo-width": 1.2,
+          "text-color": ["coalesce", ["get", "color"], "#c9d4de"],
+          "text-halo-color": "#0c1013", "text-halo-width": 1.4,
         },
       });
 
@@ -342,6 +400,7 @@
     }
 
     const now = Math.floor(Date.now() / 1000);
+    const colors = data.__colors || {};
     map.getSource("vehicles").setData({
       type: "FeatureCollection",
       features: (data.vehicles || []).map((v) => ({
@@ -351,7 +410,7 @@
           route: v.route ?? "",
           headsign: v.headsign ?? "",
           minutes: v.minutes,
-          color: v.route_color ? `#${v.route_color}` : null,
+          color: colors[v.trip_id] || "#3fb950",
           age: v.timestamp ? now - v.timestamp : null,
         },
       })),
@@ -379,10 +438,17 @@
       if (data.departures.length === 0) {
         board.innerHTML = `<div class="empty">No services in the next 90 minutes.</div>`;
       }
+      // One colour per tracked vehicle, shared by the row stripe and the map
+      // marker so the two views can be matched by eye.
+      const colors = assignColors(data.vehicles || []);
+      data.__colors = colors;
+
       const MODES = { 0: "Tram", 1: "Metro", 2: "Train", 3: "Bus", 4: "Ferry" };
       data.departures.forEach((d) => {
         const row = document.createElement("div");
-        row.className = "row";
+        const vcolor = colors[d.trip_id];
+        row.className = vcolor ? "row tracked" : "row";
+        if (vcolor) row.style.setProperty("--vcolor", vcolor);
         const badgeStyle = d.route_color
           ? `style="background:#${d.route_color};color:#fff"` : "";
         const routeLabel = d.route ?? "";

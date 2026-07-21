@@ -93,6 +93,19 @@ is `AutoUpdate=registry`, so a push to `main` rolls out on its own.
 - **SKIPPED stops** in TripUpdates are dropped from results.
 - **Delay vs absolute time:** a realtime prediction uses the feed's
   absolute `arrival.time` if present, otherwise `scheduled + delay`.
+- **Timezone:** GTFS times are in the *agency's* local time, so
+  `gtfs_time_to_epoch` pins them to `Australia/Brisbane` rather than trusting
+  the host clock. A naive `datetime` reads them in the system zone, which under
+  a UTC container put every scheduled time 10 hours out — and that shift landed
+  the after-midnight (24:xx) services squarely in the lookahead window, so the
+  board confidently showed last night's trains as this morning's departures.
+  `tzdata` is a runtime dependency: the slim base image ships no system zoneinfo.
+- **Deduplication:** querying both service dates means a trip running on each
+  produces two rows. The stale one normally falls outside the window, but an
+  absolute realtime arrival overwrites *both* copies with the same prediction,
+  so both survive — which is why doubled-up rows only ever appeared on services
+  carrying realtime, and never on trains. The endpoint keeps the copy whose
+  schedule is closest to the prediction. CI guards this.
 - **Platform labels** come from `platform_code`, falling back to a regex
   on the child stop name ("... platform 3").
 
@@ -163,6 +176,17 @@ external requests at all.
   and the board works unchanged. CI asserts that path.
 - `static/map-style.json` is a hand-written dark style matching the board.
   Glyphs, MapLibre and pmtiles.js are vendored under `static/vendor/`.
+
+Layout: board and map sit side by side above 900px and stack below it. The map
+column is sticky so it stays in view against a long board. Each tracked vehicle
+gets its own colour — seeded from `trip_id` so it is stable across refreshes,
+with collisions resolved so no two on screen ever match — used for both the map
+marker and the board row's left stripe. Route colour cannot serve this purpose:
+the common case is several vehicles on the *same* route.
+
+Note a row can read `live` without a coloured stripe: `live` means a realtime
+prediction (TripUpdates), the stripe means a GPS position (VehiclePositions).
+Plenty of services have the first and not the second.
 
 Two bugs worth not reintroducing:
 

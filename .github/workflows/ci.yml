@@ -87,6 +87,38 @@ jobs:
           curl -fsS http://localhost:8000/api/config | grep -q '"basemap":false' \
             || { echo "expected basemap:false with no basemap on the volume"; exit 1; }
 
+      - name: Scheduled times resolve in Brisbane time, not the host's
+        run: |
+          # Regression test. gtfs_time_to_epoch used a naive datetime, so a UTC
+          # container read every scheduled time 10 hours late and surfaced
+          # after-midnight (24:xx) services as if they were departing now.
+          # Forcing TZ=UTC here reproduces the container case exactly.
+          docker run --rm -e TZ=UTC -v ci-data:/data translink:ci python -c "
+          import datetime, zoneinfo, app
+          bne = zoneinfo.ZoneInfo('Australia/Brisbane')
+          day = datetime.datetime(2026, 7, 21, 12, 0, tzinfo=bne)
+          got = datetime.datetime.fromtimestamp(app.gtfs_time_to_epoch('10:16:00', day), bne)
+          assert (got.hour, got.minute) == (10, 16), f'10:16 resolved to {got}'
+          # 24:xx is the *next* morning under the same service date.
+          got = datetime.datetime.fromtimestamp(app.gtfs_time_to_epoch('24:28:00', day), bne)
+          assert (got.day, got.hour, got.minute) == (22, 0, 28), f'24:28 resolved to {got}'
+          print('scheduled times resolve correctly under TZ=UTC')
+          "
+
+      - name: No duplicated trips on the board
+        run: |
+          # Regression test: both service dates are queried, and an absolute
+          # realtime arrival used to overwrite both copies of a trip, so the
+          # stale one survived the window filter and the row appeared twice.
+          curl -fsS "http://localhost:8000/api/departures/place_censta" \
+            | python3 -c "
+          import json, sys, collections
+          deps = json.load(sys.stdin)['departures']
+          dup = [t for t, n in collections.Counter(d['trip_id'] for d in deps).items() if n > 1]
+          assert not dup, f'duplicated trip_ids on the board: {dup}'
+          print(f'{len(deps)} departures, no duplicates')
+          "
+
       - name: Frontend assets are self-hosted
         run: |
           # The board must make no external requests: fonts, map JS and glyphs

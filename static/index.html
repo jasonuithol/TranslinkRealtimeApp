@@ -32,6 +32,18 @@
   main.wide { max-width: 1180px; }
 
   header { margin-bottom: 20px; }
+  .titlebar {
+    display: flex; align-items: baseline; gap: 12px;
+    flex-wrap: wrap; margin-top: 2px;
+  }
+  .titlebar[hidden] { display: none; }
+  .change {
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font: inherit; font-size: 12px;
+    padding: 3px 11px; cursor: pointer; white-space: nowrap;
+  }
+  .change:hover { color: var(--text); border-color: var(--amber-dim); }
+  .change:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   .eyebrow {
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
@@ -43,6 +55,16 @@
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
 
   .search { position: relative; margin-bottom: 22px; }
+  .search[hidden] { display: none; }
+  .search-close {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: none; border: 0; color: var(--muted);
+    font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer;
+  }
+  .search-close:hover { color: var(--text); }
+  .search-close[hidden] { display: none; }
+  /* Keep typed text clear of the close button. */
+  .search:has(.search-close:not([hidden])) input { padding-right: 42px; }
   .search input {
     width: 100%;
     background: var(--panel);
@@ -273,12 +295,20 @@
 <main>
   <header>
     <div class="eyebrow">Translink · South East Queensland</div>
-    <h1 id="stop-name">Next service</h1>
+    <!-- Only once a stop is chosen; before that the name would just say
+         "Next service", which costs a line and tells you nothing. -->
+    <div class="titlebar" id="titlebar" hidden>
+      <h1 id="stop-name"></h1>
+      <button class="change" id="change-stop" type="button">Change stop</button>
+    </div>
   </header>
 
-  <div class="search">
+  <div class="search" id="search-wrap">
     <input id="search" type="search" placeholder="Search for a stop, e.g. Cultural Centre"
            autocomplete="off" aria-label="Search for a stop">
+    <!-- Only offered when there is a stop to go back to. -->
+    <button class="search-close" id="search-close" type="button"
+            aria-label="Close search" hidden>&times;</button>
     <div class="search-results" id="results" hidden></div>
   </div>
 
@@ -306,6 +336,34 @@
   const $ = (id) => document.getElementById(id);
   let stopId = new URLSearchParams(location.search).get("stop");
   let timer = null;
+  // With no stop there is nothing but the search, so it is always open. Once a
+  // stop is chosen the search folds away and "Change stop" brings it back.
+  let searchOpen = !stopId;
+
+  function syncChrome() {
+    $("titlebar").hidden = !stopId;
+    $("search-wrap").hidden = Boolean(stopId) && !searchOpen;
+    $("search-close").hidden = !stopId;   // nothing to return to without one
+    if (!searchOpen) $("results").hidden = true;
+  }
+
+  function openSearch() {
+    searchOpen = true;
+    syncChrome();
+    $("search").focus();
+  }
+
+  function closeSearch() {
+    searchOpen = false;
+    $("search").value = "";
+    syncChrome();
+  }
+
+  $("change-stop").addEventListener("click", openSearch);
+  $("search-close").addEventListener("click", closeSearch);
+  $("search").addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && stopId) closeSearch();
+  });
 
   // --- stop search -------------------------------------------------------
   let searchDebounce;
@@ -341,8 +399,7 @@
     }
     autoFit = true;           // a new stop re-enables auto-fit...
     forceFit = true;          // ...and reframes even if the user had panned
-    $("results").hidden = true;
-    $("search").value = "";
+    closeSearch();            // a stop is chosen: fold the search away
     history.replaceState(null, "", `?stop=${id}`);
     refresh();
     clearInterval(timer);
@@ -1124,6 +1181,7 @@
     }, 150);
   });
 
+  syncChrome();
   initMap();
   if (stopId) selectStop(stopId);
 </script>

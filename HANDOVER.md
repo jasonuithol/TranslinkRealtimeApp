@@ -193,6 +193,13 @@ initiate is treated as the user taking over and disables auto-fit until the
 next stop selection; `programmatic` is what distinguishes the two, since the
 zoom buttons move the map with no DOM event to test for.
 
+Page chrome earns its space. With no stop chosen there is no heading — it would
+only read "Next service" — and the search is open. Once a stop is chosen the
+heading becomes the stop name with a "Change stop" button beside it, and the
+search folds away; that button, or the X in the search itself, toggles it back.
+`syncChrome()` owns all of it, so there is one place to reason about which of
+those three states is showing.
+
 Layout: board and map sit side by side above 900px and stack below it. The map
 column is sticky so it stays in view against a long board.
 

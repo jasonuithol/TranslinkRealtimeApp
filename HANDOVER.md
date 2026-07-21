@@ -222,17 +222,17 @@ separation but recoloured every row whenever the board advanced.
 the geometry is served separately by `GET /api/shape/{shape_id}` — cached a day,
 and cached again in the client by id. It is deliberately *not* on the departures
 response: the geometry never changes, and inlining it put 174 KB on every 15s
-poll for a station board versus 30 KB without. Drawn bottom of the map stack in
-the service's colour at 55% opacity: context for the markers, not the subject.
+poll for a station board versus 30 KB without. **No route is drawn until a service is picked.** Clicking a board row or a map
+vehicle traces that one route, in that service's colour; clicking it again, or
+clicking empty map, clears it. Every departure carries a `shape_id` — not just
+the tracked ones — so a scheduled service can be traced too.
 
-Routes are grouped by `shape_id` before drawing, **not** one line per vehicle.
-Several vehicles routinely run the same shape — seven on one Cityglider path —
-and a line each stacked them so only the last colour ever showed. Where a shape
-is shared, `alternateAlong` cuts it into ~110 m runs and deals the competing
-colours round robin, consecutive runs sharing a vertex so the road stays
-unbroken. A shape with one vehicle skips this and stays a single line. Note the
-alternation stops reading below roughly zoom 12, where 110 m is sub-pixel and
-the colours blend.
+Drawing them all at once was tried and abandoned. Vehicles routinely share a
+shape (seven on one Cityglider path), so identical polylines stacked and only
+the last colour ever showed. Splitting shared paths into alternating coloured
+runs fixed the invisibility but read as noise. One route on demand answers the
+question you actually have — *where is this service going?* — and the whole
+alternating-run machinery went with it.
 
 **Landmarks are the stops themselves, always grey**, drawn for every stop on a
 tracked service's route (`landmarks` on the departures response). The one stop

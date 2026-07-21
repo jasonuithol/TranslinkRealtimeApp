@@ -370,22 +370,26 @@ def departures(stop_id: str):
             }
         )
 
-    # Tag each vehicle with the shape its trip follows. The geometry itself is
-    # fetched separately and cached by the client: it never changes, and
-    # resending several thousand points on every 15s poll would dwarf the
-    # payload that does change.
+    # Tag every departure with the shape its trip follows, so any row on the
+    # board can have its route drawn on demand — not just the tracked ones. The
+    # geometry itself is fetched separately and cached by the client: it never
+    # changes, and resending thousands of points on each 15s poll would dwarf
+    # the part of the payload that does.
     tracked_trips = [v["trip_id"] for v in vehicles]
-    if tracked_trips:
+    shown_trips = [d["trip_id"] for d in shown]
+    if shown_trips:
         con3 = db()
-        marks = ",".join("?" for _ in tracked_trips)
+        marks = ",".join("?" for _ in shown_trips)
         shape_of = {
             r["trip_id"]: r["shape_id"]
             for r in con3.execute(
                 f"SELECT trip_id, shape_id FROM trips WHERE trip_id IN ({marks})",
-                tracked_trips,
+                shown_trips,
             )
         }
         con3.close()
+        for d in shown:
+            d["shape_id"] = shape_of.get(d["trip_id"])
         for v in vehicles:
             v["shape_id"] = shape_of.get(v["trip_id"])
 

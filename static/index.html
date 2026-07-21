@@ -148,10 +148,15 @@
      not change as the service gains or loses a live position. */
   .row { border-left: 3px solid var(--vcolor); padding-left: 13px; }
   .row .live-dot { background: var(--vcolor); }
-  /* Only a tracked row has a marker on the map to ping. */
-  .row.tracked { cursor: pointer; }
-  .row.tracked:hover { background: #1c242d; }
-  .row.tracked:focus-visible { outline: 2px solid var(--vcolor); outline-offset: -2px; }
+  /* Any row can be picked to draw its route. */
+  .row { cursor: pointer; }
+  .row:hover { background: #1c242d; }
+  .row:focus-visible { outline: 2px solid var(--vcolor); outline-offset: -2px; }
+  /* The service whose route is currently drawn. */
+  .row.selected {
+    background: color-mix(in srgb, var(--vcolor) 14%, var(--panel));
+    border-left-width: 6px; padding-left: 10px;
+  }
   /* Flashed when its marker is clicked on the map, in its own colour so the
      pairing is unambiguous. */
   .row.flash { animation: rowflash 0.73s ease-in-out 3; }
@@ -267,7 +272,7 @@
       <div id="map"></div>
       <div class="map-caption">
         <span id="map-status">live vehicle positions</span>
-        <span class="hint">click either side to link them</span>
+        <span class="hint">click a service to trace its route</span>
       </div>
     </div>
   </div>
@@ -305,6 +310,7 @@
 
   function selectStop(id) {
     stopId = id;
+    selectedTrip = null;      // a route from the previous stop is not relevant
     autoFit = true;           // a new stop re-enables auto-fit...
     forceFit = true;          // ...and reframes even if the user had panned
     $("results").hidden = true;
@@ -593,6 +599,13 @@
             `<div class="pop-sub">${p.minutes} min away${p.age ? " · seen " + p.age + "s ago" : ""}</div>`)
           .addTo(map);
         flashRow(p.trip);
+        selectRoute(p.trip);
+      });
+
+      // A click on empty map clears the selection.
+      map.on("click", (e) => {
+        const hit = map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot"] });
+        if (!hit.length && selectedTrip) selectRoute(selectedTrip);
       });
       map.on("mouseenter", "vehicle-dot", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "vehicle-dot", () => map.getCanvas().style.cursor = "");
@@ -637,66 +650,50 @@
     }
   }
 
-  // Metres between colour changes on a shared path. Short enough to read as
-  // one road in two colours, long enough not to dissolve into mush.
-  const CHUNK_M = 110;
-
-  // Equirectangular approximation — fine over the tens of metres between two
-  // consecutive shape points.
-  function metresBetween(a, b) {
-    const x = (b[0] - a[0]) * 111320 * Math.cos((a[1] * Math.PI) / 180);
-    const y = (b[1] - a[1]) * 110540;
-    return Math.hypot(x, y);
-  }
-
-  // Cut a polyline into runs of roughly CHUNK_M and deal the colours out round
-  // robin. Consecutive runs share their end point, so the road stays unbroken.
-  function alternateAlong(points, colors) {
-    const runs = [];
-    let cur = [points[0]], acc = 0, ci = 0;
-    for (let i = 1; i < points.length; i++) {
-      cur.push(points[i]);
-      acc += metresBetween(points[i - 1], points[i]);
-      if (acc >= CHUNK_M) {
-        runs.push({ coords: cur, color: colors[ci++ % colors.length] });
-        cur = [points[i]];       // shared vertex: no gap between runs
-        acc = 0;
-      }
-    }
-    if (cur.length > 1) runs.push({ coords: cur, color: colors[ci % colors.length] });
-    return runs;
-  }
+  // Nothing is drawn until a service is picked. Showing every route at once
+  // stacked identical paths on top of each other and told you nothing; one
+  // route, on demand, is what is actually useful.
+  let selectedTrip = null;
 
   function drawRoutes(data) {
     if (!mapReady || !map.getSource("routes")) return;
-    const colors = data.__colors || {};
-
-    // Group by shape first. Several vehicles routinely run the same shape —
-    // seven on one Cityglider path — and drawing one line each stacked them so
-    // only the last colour was ever visible.
-    const byShape = new Map();
-    for (const v of data.__vehicles || []) {
-      if (!v.shape_id) continue;
-      if (!byShape.has(v.shape_id)) byShape.set(v.shape_id, []);
-      byShape.get(v.shape_id).push(colors[v.trip_id] || "#3fb950");
+    if (!selectedTrip) {
+      map.getSource("routes").setData(emptyFC());
+      return;
     }
-
-    const features = [];
-    for (const [shapeId, cols] of byShape) {
-      const pts = shapeCache.get(shapeId);
-      if (!pts) { ensureShape(shapeId); continue; }
-      const runs = cols.length === 1
-        ? [{ coords: pts, color: cols[0] }]
-        : alternateAlong(pts, cols);
-      for (const r of runs) {
-        features.push({
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: r.coords },
-          properties: { color: r.color },
-        });
-      }
+    const row = (data.departures || []).find((d) => d.trip_id === selectedTrip);
+    const pts = row && shapeCache.get(row.shape_id);
+    if (!pts) {
+      if (row) ensureShape(row.shape_id);
+      map.getSource("routes").setData(emptyFC());
+      return;
     }
-    map.getSource("routes").setData({ type: "FeatureCollection", features });
+    map.getSource("routes").setData({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: pts },
+        properties: { color: (data.__colors || {})[selectedTrip] || "#3fb950" },
+      }],
+    });
+  }
+
+  // Clicking the same service again clears it.
+  function selectRoute(tripId) {
+    selectedTrip = selectedTrip === tripId ? null : tripId;
+    if (selectedTrip) {
+      // Start fetching the geometry now rather than waiting on the map's
+      // draw pass, so it is usually cached by the time the line is wanted.
+      const d = (lastData?.departures || []).find((x) => x.trip_id === selectedTrip);
+      if (d) ensureShape(d.shape_id);
+    }
+    document.querySelectorAll(".row.selected")
+      .forEach((r) => r.classList.remove("selected"));
+    if (selectedTrip) {
+      const el = document.querySelector(`.row[data-trip="${CSS.escape(selectedTrip)}"]`);
+      if (el) el.classList.add("selected");
+    }
+    if (lastData) drawRoutes(lastData);
   }
 
   // MapLibre draws label text from pre-built glyph PBFs, and ours cover latin
@@ -980,20 +977,20 @@
         const row = document.createElement("div");
         const vcolor = colors[d.trip_id];
         const isTracked = trackedTrips.has(d.trip_id);
-        // Every row is coloured; only a tracked one has a marker to ping.
+        // Every row can show its route; only a tracked one has a marker to ping.
         row.className = isTracked ? "row tracked" : "row";
+        if (d.trip_id === selectedTrip) row.classList.add("selected");
         row.dataset.trip = d.trip_id;
         row.style.setProperty("--vcolor", vcolor);
-        if (isTracked) {
-          row.tabIndex = 0;
-          row.addEventListener("click", () => pingVehicle(d.trip_id));
-          row.addEventListener("keydown", (ev) => {
-            if (ev.key === "Enter" || ev.key === " ") {
-              ev.preventDefault();
-              pingVehicle(d.trip_id);
-            }
-          });
-        }
+        row.tabIndex = 0;
+        const activate = () => {
+          selectRoute(d.trip_id);
+          if (isTracked && selectedTrip) pingVehicle(d.trip_id);
+        };
+        row.addEventListener("click", activate);
+        row.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); activate(); }
+        });
         // The badge plate stays black; the glyph and number take the service's
         // colour, matching the row stripe and, when tracked, the map marker.
         const badgeStyle = `style="color:${vcolor}"`;

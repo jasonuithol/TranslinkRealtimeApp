@@ -294,7 +294,11 @@ Two bugs worth not reintroducing:
 
 - **Do not construct the Map inside a hidden container.** MapLibre measures
   its container at construction; `display:none` gives it zero size and it then
-  never fires `load`. Reveal `#map-wrap` *before* `new maplibregl.Map()`.
+  never fires `load`. Reveal `#map-wrap` *before* `new maplibregl.Map()`. This
+  is also why the "search for a stop" state covers the map with an opaque
+  `.map-empty` overlay rather than hiding it: the map is built and loading
+  underneath at a reduced height, so it draws immediately once a stop is
+  picked. `selectStop` drops the `awaiting` class and calls `map.resize()`.
 - **`new pmtiles.Protocol({metadata: true})` — the flag is required.** The
   style's source uses `url:`, so MapLibre asks the protocol for TileJSON.
   Without the flag pmtiles ignores that request and the promise never settles:

@@ -226,6 +226,24 @@
 
   /* --- map view ---------------------------------------------------------- */
   #map-wrap[hidden] { display: none; }
+  #map-wrap { position: relative; }
+  /* Covers the map until a stop is chosen. The map is built and loading
+     underneath — MapLibre needs a sized container, and having it warm means it
+     draws the moment a stop is picked — but an empty view of Brisbane says
+     nothing, so it is not shown. */
+  .map-empty {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 0 24px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--muted); font-size: 14px;
+  }
+  .map-empty[hidden] { display: none; }
+  /* While the placeholder is up the map stays short, so the empty column does
+     not tower over the board's own placeholder. Still sized, so MapLibre can
+     measure its container and load underneath. */
+  #map-wrap.awaiting #map,
+  .split.side-by-side #map-wrap.awaiting #map { height: 190px; min-height: 190px; }
   #map {
     height: 360px; border-radius: 10px; overflow: hidden;
     background: #0c1013; border: 1px solid #232c35;
@@ -268,9 +286,11 @@
     <div class="board" id="board">
       <div class="empty">Search for a stop to see departures.</div>
     </div>
-    <div id="map-wrap" hidden>
+    <div id="map-wrap" class="awaiting" hidden>
       <div id="map"></div>
-      <div class="map-caption">
+      <div class="map-empty" id="map-empty">Search for a stop to see it on the map.</div>
+      <!-- `awaiting` is dropped by selectStop, which then resizes the map. -->
+      <div class="map-caption" id="map-caption" hidden>
         <span id="map-status">live vehicle positions</span>
         <span class="hint">click a service to trace its route</span>
       </div>
@@ -311,6 +331,14 @@
   function selectStop(id) {
     stopId = id;
     selectedTrip = null;      // a route from the previous stop is not relevant
+    // There is something to look at now: uncover the map and give it its full
+    // height, then tell MapLibre the container changed.
+    $("map-empty").hidden = true;
+    $("map-caption").hidden = false;
+    if ($("map-wrap").classList.contains("awaiting")) {
+      $("map-wrap").classList.remove("awaiting");
+      if (mapReady) cameraMove(() => map.resize());
+    }
     autoFit = true;           // a new stop re-enables auto-fit...
     forceFit = true;          // ...and reframes even if the user had panned
     $("results").hidden = true;

@@ -153,10 +153,16 @@ were written in claude.ai and were not preserved.
 ## Frontend design intent
 
 Styled after Brisbane busway passenger information displays: dark board,
-amber LED-style countdowns (IBM Plex Mono), route badges in each route's
-official color from the feed, green pulsing dot = live prediction, "DUE"
-flashes under 1 minute. Respects `prefers-reduced-motion`. Keep this
-identity when extending.
+amber LED-style countdowns (IBM Plex Mono), green pulsing dot = live
+prediction, "DUE" flashes under 1 minute. Respects `prefers-reduced-motion`.
+Keep this identity when extending.
+
+Badges originally carried each route's official colour from the feed. They no
+longer do: colour on this board now means one thing only — *this service has a
+live position, and here it is on the map*. A feed colour on a row with nothing
+on the map competes with that, and in practice collided with the vehicle
+palette (an unrelated pink scheduled service reading like a tracked one).
+Anything without a live position is plain white.
 
 ## Map view with live vehicle positions — built
 
@@ -187,11 +193,17 @@ next stop selection; `programmatic` is what distinguishes the two, since the
 zoom buttons move the map with no DOM event to test for.
 
 Layout: board and map sit side by side above 900px and stack below it. The map
-column is sticky so it stays in view against a long board. Each tracked vehicle
-gets its own colour — seeded from `trip_id` so it is stable across refreshes,
-with collisions resolved so no two on screen ever match — used for both the map
-marker and the board row's left stripe. Route colour cannot serve this purpose:
-the common case is several vehicles on the *same* route.
+column is sticky so it stays in view against a long board.
+
+Each tracked vehicle gets its own colour, used for the map marker, the row's
+left stripe and the badge ink. The palette is eight hues at 45° spacing, and
+assignment strides it by departure order (`Math.round(i * P / n)`) so the
+colours actually in use are spread around the wheel — four vehicles get
+red/lime/cyan/purple rather than four neighbours. An earlier version had a
+fourteen-colour palette assigned by `trip_id` hash: entries were unique but
+included three pinks and two purples, so distinct services read as the same
+colour. Prefer separation over palette size, and over stability across
+refreshes.
 
 The route badge is a split plate — mode glyph | route number — on black with a
 white border and divider, both halves inked in the vehicle's colour. The glyphs

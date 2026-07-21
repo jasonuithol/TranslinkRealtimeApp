@@ -290,13 +290,22 @@
   // theirs — including the +/- buttons, which move the map without a DOM event.
   let autoFit = true, forceFit = true, programmatic = false;
 
-  // Distinct on a dark board, and enough of them that a full board of tracked
-  // services gets a unique colour each. Route colour is not usable here: the
-  // whole point is telling apart several vehicles on the *same* route.
+  // Eight hues at 45° spacing. The previous palette packed fourteen colours in,
+  // which put three pinks and two purples in it — unique entries that still
+  // read as the same colour. Spacing matters more than count here: only tracked
+  // vehicles are coloured, and that is rarely more than a handful.
   const VEHICLE_COLORS = [
-    "#4ea1ff", "#ffb020", "#3fb950", "#ff6b9d", "#a78bfa", "#22d3ee", "#f97316",
-    "#84cc16", "#f472b6", "#38bdf8", "#fbbf24", "#2dd4bf", "#c084fc", "#fb7185",
+    "#ff5a52", // red
+    "#ffa02b", // orange
+    "#b8e02a", // lime
+    "#2fd07a", // green
+    "#22d3ee", // cyan
+    "#4e8cff", // blue
+    "#a06bff", // purple
+    "#ff5fb0", // magenta
   ];
+  // Everything without a live position: no map marker, so no colour to match.
+  const UNTRACKED_INK = "#e8eef4";
 
   // Mode glyphs. Inline SVG rather than emoji: colour-emoji fonts paint their
   // own palette and ignore CSS `color`, so an emoji cannot take the vehicle
@@ -331,23 +340,16 @@
     0: ICON_TRAM, 1: ICON_TRAIN, 2: ICON_TRAIN, 3: ICON_BUS, 4: ICON_FERRY,
   };
 
-  const hashStr = (s) => {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-    return Math.abs(h);
-  };
-
-  // Seed each colour from the trip_id so a vehicle keeps it across refreshes,
-  // but resolve collisions so no two vehicles on screen ever share one.
+  // Assign in departure order, striding the palette so the colours in use are
+  // spread right around the wheel rather than bunched at one end: four tracked
+  // vehicles get red/lime/cyan/purple, not red/orange/lime/green. Seeding from
+  // a trip_id hash was steadier across refreshes but picked arbitrary entries,
+  // which is how two purples ended up on screen together.
   function assignColors(vehicles) {
-    const used = new Set(), out = {};
-    vehicles.forEach((v) => {
-      let i = hashStr(v.trip_id) % VEHICLE_COLORS.length, tries = 0;
-      while (used.has(i) && tries++ < VEHICLE_COLORS.length) {
-        i = (i + 1) % VEHICLE_COLORS.length;
-      }
-      used.add(i);
-      out[v.trip_id] = VEHICLE_COLORS[i];
+    const P = VEHICLE_COLORS.length, n = vehicles.length, out = {};
+    vehicles.forEach((v, i) => {
+      const idx = n > 0 && n <= P ? Math.round((i * P) / n) % P : i % P;
+      out[v.trip_id] = VEHICLE_COLORS[idx];
     });
     return out;
   }
@@ -581,10 +583,11 @@
         row.className = vcolor ? "row tracked" : "row";
         if (vcolor) row.style.setProperty("--vcolor", vcolor);
         // The badge plate stays black; the glyph and number take the vehicle
-        // colour, so badge, row stripe and map marker all agree. Untracked
-        // services fall back to the route's own colour from the feed.
-        const badgeInk = vcolor || (d.route_color ? `#${d.route_color}` : null);
-        const badgeStyle = badgeInk ? `style="color:${badgeInk}"` : "";
+        // colour, so badge, row stripe and map marker all agree. Anything
+        // without a live position is plain white — it has nothing on the map to
+        // match, so giving it a colour only invites a false pairing. This drops
+        // the feed's route_color from the badge deliberately.
+        const badgeStyle = `style="color:${vcolor || UNTRACKED_INK}"`;
         const routeLabel = d.route ?? "";
         const numClass = routeLabel.length > 4 ? "num wide" : "num";
         const icon = MODE_ICON[d.route_type] ?? ICON_BUS;

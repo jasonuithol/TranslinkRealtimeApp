@@ -448,9 +448,11 @@
 
     const now = Math.floor(Date.now() / 1000);
     const colors = data.__colors || {};
+    // __vehicles is the set trimmed to the rows actually on screen.
+    const vehicles = data.__vehicles || data.vehicles || [];
     map.getSource("vehicles").setData({
       type: "FeatureCollection",
-      features: (data.vehicles || []).map((v) => ({
+      features: vehicles.map((v) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [v.lon, v.lat] },
         properties: {
@@ -463,35 +465,52 @@
       })),
     });
 
-    const n = (data.vehicles || []).length;
-    $("map-status").textContent = n === 0
+    const shownCount = data.departures.length - (data.__hidden || 0);
+    $("map-status").textContent = vehicles.length === 0
       ? "no live positions for these services"
-      : `${n} of ${data.departures.length} services tracking live`;
+      : `${vehicles.length} of ${shownCount} services tracking live`;
   }
 
   // --- departures board --------------------------------------------------
   let lastData = null;
 
-  async function refresh() {
-    if (!stopId) return;
-    try {
-      const res = await fetch(`/api/departures/${stopId}`);
-      if (!res.ok) throw new Error((await res.json()).detail || res.status);
-      const data = await res.json();
-      $("stop-name").textContent = data.stop.stop_name;
+  // How many rows fit between the top of the board and the bottom of the
+  // viewport. Null until a row has been measured — the first render draws
+  // everything, measures, then redraws trimmed.
+  let rowHeight = null;
 
-      const board = $("board");
-      board.innerHTML = "";
-      if (data.departures.length === 0) {
-        board.innerHTML = `<div class="empty">No services in the next 90 minutes.</div>`;
-      }
-      // One colour per tracked vehicle, shared by the row stripe and the map
-      // marker so the two views can be matched by eye.
-      const colors = assignColors(data.vehicles || []);
-      data.__colors = colors;
+  function fittingRowCount() {
+    if (!rowHeight) return null;
+    const top = $("board").getBoundingClientRect().top;
+    const avail = window.innerHeight - top - BOARD_BOTTOM_GUTTER;
+    return Math.max(1, Math.floor(avail / rowHeight));
+  }
+  const BOARD_BOTTOM_GUTTER = 28;   // breathing room + the status line
+
+  function renderBoard(data) {
+    $("stop-name").textContent = data.stop.stop_name;
+    const board = $("board");
+    board.innerHTML = "";
+    if (data.departures.length === 0) {
+      board.innerHTML = `<div class="empty">No services in the next 90 minutes.</div>`;
+    }
+
+    // Show only what fits, and cut the map to match: a marker with no row on
+    // screen is exactly the mismatch the vehicles array exists to prevent.
+    const limit = fittingRowCount();
+    const shown = limit ? data.departures.slice(0, limit) : data.departures;
+    const shownIds = new Set(shown.map((d) => d.trip_id));
+    const vehicles = (data.vehicles || []).filter((v) => shownIds.has(v.trip_id));
+
+    // One colour per tracked vehicle, shared by the row stripe and the map
+    // marker so the two views can be matched by eye.
+    const colors = assignColors(vehicles);
+    data.__colors = colors;
+    data.__vehicles = vehicles;
+    data.__hidden = data.departures.length - shown.length;
 
       const MODES = { 0: "Tram", 1: "Metro", 2: "Train", 3: "Bus", 4: "Ferry" };
-      data.departures.forEach((d) => {
+      shown.forEach((d) => {
         const row = document.createElement("div");
         const vcolor = colors[d.trip_id];
         row.className = vcolor ? "row tracked" : "row";
@@ -527,16 +546,50 @@
         board.appendChild(row);
       });
 
-      $("status").textContent = data.realtime_feed_age === null
-        ? "realtime feed: waiting for first fetch"
-        : `realtime feed updated ${data.realtime_feed_age}s ago`;
+    // Measure once from a real row, then redraw now that the count is known.
+    if (!rowHeight) {
+      const first = board.querySelector(".row");
+      if (first) {
+        rowHeight = first.getBoundingClientRect().height;
+        renderBoard(data);
+        return;
+      }
+    }
 
+    const age = data.realtime_feed_age;
+    const feed = age === null
+      ? "realtime feed: waiting for first fetch"
+      : `realtime feed updated ${age}s ago`;
+    $("status").textContent = data.__hidden > 0
+      ? `${feed} · ${data.__hidden} more not shown`
+      : feed;
+  }
+
+  async function refresh() {
+    if (!stopId) return;
+    try {
+      const res = await fetch(`/api/departures/${stopId}`);
+      if (!res.ok) throw new Error((await res.json()).detail || res.status);
+      const data = await res.json();
+      renderBoard(data);
       lastData = data;
       updateMap(data);
     } catch (err) {
       $("board").innerHTML = `<div class="error">${err.message}</div>`;
     }
   }
+
+  // Re-fit the board when the viewport changes; the row count is derived from
+  // available height, so a resize or an orientation change alters it.
+  let resizeDebounce;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+      if (!lastData) return;
+      renderBoard(lastData);
+      updateMap(lastData);
+    }, 150);
+  });
 
   initMap();
   if (stopId) selectStop(stopId);

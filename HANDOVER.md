@@ -184,6 +184,12 @@ with collisions resolved so no two on screen ever match — used for both the ma
 marker and the board row's left stripe. Route colour cannot serve this purpose:
 the common case is several vehicles on the *same* route.
 
+The route badge is a split plate — mode glyph | route number — on black with a
+white border and divider, both halves inked in the vehicle's colour. The glyphs
+are **inline SVG, deliberately not emoji**: colour-emoji fonts paint their own
+palette and ignore CSS `color`, so an emoji cannot be tinted to match. Cut-outs
+inside the glyphs are filled `#000` to match the plate.
+
 Note a row can read `live` without a coloured stripe: `live` means a realtime
 prediction (TripUpdates), the stripe means a GPS position (VehiclePositions).
 Plenty of services have the first and not the second.

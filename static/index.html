@@ -84,7 +84,7 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 64px 1fr 96px;
+    grid-template-columns: 82px 1fr 96px;
     align-items: center;
     gap: 14px;
     padding: 14px 16px;
@@ -93,18 +93,32 @@
   }
   .row:first-child { border-top: 0; }
 
+  /* Split badge: mode glyph | route number. Black plate, white border and
+     divider; the glyph and the number both inherit the vehicle colour via
+     `color`, so the badge matches the row stripe and the map marker. */
   .badge {
     justify-self: start;
-    font-weight: 700;
-    font-size: 15px;
-    padding: 4px 9px;
+    display: inline-flex;
+    align-items: stretch;
+    background: #000;
+    border: 1px solid #fff;
     border-radius: 6px;
-    background: #2a343e;
+    overflow: hidden;
+    font-weight: 700;
     color: var(--text);
-    min-width: 44px;
-    text-align: center;
+    line-height: 1;
   }
-  .badge-wide { font-size: 11px; line-height: 1.2; padding: 5px 7px; }
+  .badge .mode {
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 6px;
+    border-right: 1px solid #fff;
+  }
+  .badge .mode svg { width: 16px; height: 16px; display: block; }
+  .badge .num {
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 7px; font-size: 15px; min-width: 32px;
+  }
+  .badge .num.wide { font-size: 10px; line-height: 1.15; padding: 4px 5px; }
   .dest { min-width: 0; }
   .dest .headsign {
     font-size: 15px; font-weight: 500;
@@ -278,6 +292,39 @@
     "#84cc16", "#f472b6", "#38bdf8", "#fbbf24", "#2dd4bf", "#c084fc", "#fb7185",
   ];
 
+  // Mode glyphs. Inline SVG rather than emoji: colour-emoji fonts paint their
+  // own palette and ignore CSS `color`, so an emoji cannot take the vehicle
+  // colour. Cut-outs are filled #000 to match the badge plate.
+  const ICON_BUS = `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="14" rx="2.5" fill="currentColor"/>
+    <rect x="5" y="5.5" width="6" height="4.5" rx="1" fill="#000"/>
+    <rect x="13" y="5.5" width="6" height="4.5" rx="1" fill="#000"/>
+    <circle cx="7.5" cy="19" r="2" fill="currentColor"/>
+    <circle cx="16.5" cy="19" r="2" fill="currentColor"/></svg>`;
+  const ICON_TRAIN = `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="4" y="2.5" width="16" height="15" rx="3.5" fill="currentColor"/>
+    <rect x="6" y="5" width="12" height="5" rx="1" fill="#000"/>
+    <circle cx="8.5" cy="13.5" r="1.3" fill="#000"/>
+    <circle cx="15.5" cy="13.5" r="1.3" fill="#000"/>
+    <path d="M8 18l-2.5 3M16 18l2.5 3" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" fill="none"/></svg>`;
+  const ICON_FERRY = `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="8" y="3" width="8" height="6" rx="1" fill="currentColor"/>
+    <path d="M2.5 11h19l-2.6 6.4A2.5 2.5 0 0 1 16.6 19H7.4a2.5 2.5 0 0 1-2.3-1.6L2.5 11z"
+          fill="currentColor"/></svg>`;
+  const ICON_TRAM = `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 1v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <rect x="5" y="4" width="14" height="14" rx="3" fill="currentColor"/>
+    <rect x="7" y="6.5" width="10" height="4.5" rx="1" fill="#000"/>
+    <circle cx="9" cy="14.5" r="1.2" fill="#000"/>
+    <circle cx="15" cy="14.5" r="1.2" fill="#000"/>
+    <path d="M8 19l-2 2M16 19l2 2" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" fill="none"/></svg>`;
+  // GTFS route_type: 0 tram, 1 metro, 2 rail, 3 bus, 4 ferry.
+  const MODE_ICON = {
+    0: ICON_TRAM, 1: ICON_TRAIN, 2: ICON_TRAIN, 3: ICON_BUS, 4: ICON_FERRY,
+  };
+
   const hashStr = (s) => {
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -449,10 +496,14 @@
         const vcolor = colors[d.trip_id];
         row.className = vcolor ? "row tracked" : "row";
         if (vcolor) row.style.setProperty("--vcolor", vcolor);
-        const badgeStyle = d.route_color
-          ? `style="background:#${d.route_color};color:#fff"` : "";
+        // The badge plate stays black; the glyph and number take the vehicle
+        // colour, so badge, row stripe and map marker all agree. Untracked
+        // services fall back to the route's own colour from the feed.
+        const badgeInk = vcolor || (d.route_color ? `#${d.route_color}` : null);
+        const badgeStyle = badgeInk ? `style="color:${badgeInk}"` : "";
         const routeLabel = d.route ?? "";
-        const badgeClass = routeLabel.length > 4 ? "badge badge-wide" : "badge";
+        const numClass = routeLabel.length > 4 ? "num wide" : "num";
+        const icon = MODE_ICON[d.route_type] ?? ICON_BUS;
         const eta = d.minutes <= 0
           ? `<div class="due">DUE</div>`
           : `<div class="num">${d.minutes}</div><div class="unit">MIN</div>`;
@@ -461,7 +512,10 @@
         bits.push(new Date(d.predicted * 1000)
           .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}));
         row.innerHTML = `
-          <div class="${badgeClass}" ${badgeStyle}>${routeLabel}</div>
+          <div class="badge" ${badgeStyle}>
+            <span class="mode">${icon}</span>
+            <span class="${numClass}">${routeLabel}</span>
+          </div>
           <div class="dest">
             <div class="headsign">${d.headsign ?? ""}</div>
             <div class="sub">

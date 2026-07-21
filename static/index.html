@@ -652,8 +652,50 @@
 
   // Nothing is drawn until a service is picked. Showing every route at once
   // stacked identical paths on top of each other and told you nothing; one
-  // route, on demand, is what is actually useful.
+  // route, on demand, is what is actually useful. The same goes for the stops
+  // along it — 191 grey pins for a station board was clutter, not context.
   let selectedTrip = null;
+
+  const tripStopsCache = new Map(), tripStopsPending = new Set();
+
+  async function ensureTripStops(tripId) {
+    if (!tripId || tripStopsCache.has(tripId) || tripStopsPending.has(tripId)) return;
+    tripStopsPending.add(tripId);
+    try {
+      const res = await fetch(`/api/trip-stops/${encodeURIComponent(tripId)}`);
+      tripStopsCache.set(tripId, res.ok ? (await res.json()).stops : null);
+      drawLandmarks();
+    } catch {
+      /* leave unset so a later selection retries */
+    } finally {
+      tripStopsPending.delete(tripId);
+    }
+  }
+
+  // Only the selected service's stops, and never the one being viewed — that
+  // is drawn separately in white.
+  function drawLandmarks() {
+    if (!mapReady || !map.getSource("landmarks")) return;
+    const stops = selectedTrip ? tripStopsCache.get(selectedTrip) : null;
+    if (!stops) {
+      map.getSource("landmarks").setData(emptyFC());
+      return;
+    }
+    const selfId = lastData?.stop?.stop_id;
+    map.getSource("landmarks").setData({
+      type: "FeatureCollection",
+      features: stops
+        .filter((l) => l.stop_id !== selfId)
+        .map((l) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [l.lon, l.lat] },
+          properties: {
+            name: l.stop_name,
+            icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
+          },
+        })),
+    });
+  }
 
   function drawRoutes(data) {
     if (!mapReady || !map.getSource("routes")) return;
@@ -682,10 +724,11 @@
   function selectRoute(tripId) {
     selectedTrip = selectedTrip === tripId ? null : tripId;
     if (selectedTrip) {
-      // Start fetching the geometry now rather than waiting on the map's
-      // draw pass, so it is usually cached by the time the line is wanted.
+      // Start fetching now rather than waiting on the map's draw pass, so both
+      // are usually cached by the time they are wanted.
       const d = (lastData?.departures || []).find((x) => x.trip_id === selectedTrip);
       if (d) ensureShape(d.shape_id);
+      ensureTripStops(selectedTrip);
     }
     document.querySelectorAll(".row.selected")
       .forEach((r) => r.classList.remove("selected"));
@@ -694,6 +737,7 @@
       if (el) el.classList.add("selected");
     }
     if (lastData) drawRoutes(lastData);
+    drawLandmarks();
   }
 
   // MapLibre draws label text from pre-built glyph PBFs, and ours cover latin
@@ -878,22 +922,7 @@
       });
     }
 
-    // Landmarks on the tracked services' routes, in grey. The viewed stop is
-    // drawn separately in white, so drop it from this set to avoid doubling up.
-    const selfId = data.stop.stop_id;
-    map.getSource("landmarks").setData({
-      type: "FeatureCollection",
-      features: (data.landmarks || [])
-        .filter((l) => l.stop_id !== selfId)
-        .map((l) => ({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [l.lon, l.lat] },
-          properties: {
-            name: l.stop_name,
-            icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
-          },
-        })),
-    });
+    drawLandmarks();
 
     const now = Math.floor(Date.now() / 1000);
     const colors = data.__colors || {};

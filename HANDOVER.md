@@ -234,10 +234,13 @@ runs fixed the invisibility but read as noise. One route on demand answers the
 question you actually have — *where is this service going?* — and the whole
 alternating-run machinery went with it.
 
-**Landmarks are the stops themselves, always grey**, drawn for every stop on a
-tracked service's route (`landmarks` on the departures response). The one stop
-being viewed is white. Nothing about a landmark encodes a service, so no
-landmark ever takes a service colour.
+**Landmarks are the stops themselves, always grey**, and appear only for the
+selected service — `GET /api/trip-stops/{trip_id}`, fetched on selection and
+cached alongside the shape. They were previously on the departures response for
+every tracked service at once: 191 grey pins on a station board, resent every
+15s, and clutter rather than context. The one stop being viewed is white and
+always shown. Nothing about a landmark encodes a service, so no landmark ever
+takes a service colour.
 
 The route badge is a split plate — mode glyph | route number — on black with a
 white border and divider, both halves inked in the vehicle's colour, as is the

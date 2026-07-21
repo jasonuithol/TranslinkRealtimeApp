@@ -393,36 +393,6 @@ def departures(stop_id: str):
         for v in vehicles:
             v["shape_id"] = shape_of.get(v["trip_id"])
 
-    # Every stop served by the trips that have a live vehicle, so the map can
-    # draw the route's landmarks rather than just the one stop being viewed.
-    landmarks = []
-    if tracked_trips:
-        marks = ",".join("?" for _ in tracked_trips)
-        con2 = db()
-        landmarks = [
-            {
-                "stop_id": r["stop_id"],
-                "stop_name": r["stop_name"],
-                "lat": r["stop_lat"],
-                "lon": r["stop_lon"],
-                "route_type": r["route_type"],
-            }
-            for r in con2.execute(
-                f"""
-                SELECT DISTINCT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon,
-                       r.route_type
-                FROM stop_times st
-                JOIN stops s  ON s.stop_id = st.stop_id
-                JOIN trips t  ON t.trip_id = st.trip_id
-                JOIN routes r ON r.route_id = t.route_id
-                WHERE st.trip_id IN ({marks})
-                  AND s.stop_lat IS NOT NULL AND s.stop_lon IS NOT NULL
-                """,
-                tracked_trips,
-            )
-        ]
-        con2.close()
-
     return {
         "stop": dict(stop),
         "generated_at": now_epoch,
@@ -434,8 +404,46 @@ def departures(stop_id: str):
         ),
         "departures": shown,
         "vehicles": vehicles,
-        "landmarks": landmarks,
     }
+
+
+@app.get("/api/trip-stops/{trip_id}")
+def trip_stops(trip_id: str):
+    """The stops one trip calls at, in order.
+
+    Fetched only when a service is selected, and static for the life of a
+    timetable — so it is served apart from the departures poll and cached.
+    """
+    con = db()
+    stops = [
+        {
+            "stop_id": r["stop_id"],
+            "stop_name": r["stop_name"],
+            "lat": r["stop_lat"],
+            "lon": r["stop_lon"],
+            "route_type": r["route_type"],
+        }
+        for r in con.execute(
+            """
+            SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon, r.route_type
+            FROM stop_times st
+            JOIN stops s  ON s.stop_id = st.stop_id
+            JOIN trips t  ON t.trip_id = st.trip_id
+            JOIN routes r ON r.route_id = t.route_id
+            WHERE st.trip_id = ?
+              AND s.stop_lat IS NOT NULL AND s.stop_lon IS NOT NULL
+            ORDER BY st.stop_sequence
+            """,
+            (trip_id,),
+        )
+    ]
+    con.close()
+    if not stops:
+        raise HTTPException(404, f"No stops for trip {trip_id}")
+    return JSONResponse(
+        {"trip_id": trip_id, "stops": stops},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/api/shape/{shape_id}")

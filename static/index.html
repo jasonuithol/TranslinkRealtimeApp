@@ -180,7 +180,7 @@
   .eta .src {
     font-family: "Noto Emoji", system-ui, sans-serif;
     font-size: 0.42em; vertical-align: middle; opacity: 0.75;
-    margin-left: 2px;
+    margin-right: 5px;
   }
   .eta .due .src { font-size: 0.5em; }
   .eta .due {
@@ -844,9 +844,11 @@
         // Where the number came from: 📶 a realtime prediction, 📅 the timetable.
         const mark = `<span class="src" title="${d.realtime ? "realtime prediction" : "timetable"}">` +
           `${d.realtime ? MARK_LIVE : MARK_SCHEDULED}</span>`;
+        // Mark first, number last: the column is right-aligned, so a trailing
+        // mark pushed the digits left and "MIN" no longer sat under them.
         const eta = d.minutes <= 0
-          ? `<div class="due">DUE ${mark}</div>`
-          : `<div class="num">${d.minutes} ${mark}</div><div class="unit">MIN</div>`;
+          ? `<div class="due">${mark}DUE</div>`
+          : `<div class="num">${mark}${d.minutes}</div><div class="unit">MIN</div>`;
         const bits = [MODES[d.route_type] ?? ""];
         if (d.platform) bits.push(`Plat ${d.platform}`);
         bits.push(new Date(d.predicted * 1000)

@@ -84,7 +84,8 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 82px 1fr 96px;
+    /* badge | destination | time-source | countdown */
+    grid-template-columns: 82px 1fr 26px 96px;
     align-items: center;
     gap: 14px;
     padding: 14px 16px;
@@ -118,6 +119,10 @@
   .badge .mode {
     font-family: "Noto Emoji", "Archivo", system-ui, sans-serif;
     font-size: 15px;
+    /* Belt and braces with the U+FE0E in the markup: newer engines honour this
+       property, older ones only the variation selector. Both say the same
+       thing — render these as text, not as colour emoji. */
+    font-variant-emoji: text;
   }
   .badge .num {
     display: flex; align-items: center; justify-content: center;
@@ -175,14 +180,14 @@
      object. The amber glow is dropped — it would tint the colour. */
   .eta { color: var(--vcolor); text-shadow: none; }
   .eta .unit { color: var(--vcolor); opacity: 0.6; }
-  /* 📶 realtime / 📅 timetable, after the number. Monochrome face so it takes
-     the countdown's colour; sized down so the number stays dominant. */
-  .eta .src {
+  /* 📶 realtime / 📅 timetable — its own column between destination and
+     countdown, so neither the number nor "MIN" is shifted by it. */
+  .src-col {
     font-family: "Noto Emoji", system-ui, sans-serif;
-    font-size: 0.42em; vertical-align: middle; opacity: 0.75;
-    margin-right: 5px;
+    font-size: 15px; line-height: 1;
+    text-align: center; color: var(--vcolor); opacity: 0.85;
+    font-variant-emoji: text;
   }
-  .eta .due .src { font-size: 0.5em; }
   .eta .due {
     font-size: 22px; font-weight: 600; letter-spacing: 0.06em;
     animation: pulse 1.2s infinite;
@@ -359,9 +364,17 @@
   const STOP_STATION = "\u{1F3EB}";  // 🏫
   const STOP_BUS = "\u{1F68F}";      // 🚏
 
-  // Where the arrival time came from, shown after the countdown.
+  // Where the arrival time came from.
   const MARK_LIVE = "\u{1F4F6}";      // 📶 realtime prediction
   const MARK_SCHEDULED = "\u{1F4C5}"; // 📅 timetable only
+
+  // These codepoints default to *emoji presentation*, and browsers hand those
+  // to the system colour-emoji font regardless of font-family — so on a machine
+  // with Noto Color Emoji installed our monochrome face is ignored. U+FE0E
+  // (VARIATION SELECTOR-15) requests text presentation instead, which lets the
+  // font-family stack apply. Only for the DOM: canvas shapes text itself and
+  // already picks the right face.
+  const asText = (glyph) => glyph + "︎";
 
   function landmarkGlyph(routeType) {
     switch (Number(routeType)) {
@@ -841,21 +854,16 @@
         const routeLabel = d.route ?? "";
         const numClass = routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
-        // Where the number came from: 📶 a realtime prediction, 📅 the timetable.
-        const mark = `<span class="src" title="${d.realtime ? "realtime prediction" : "timetable"}">` +
-          `${d.realtime ? MARK_LIVE : MARK_SCHEDULED}</span>`;
-        // Mark first, number last: the column is right-aligned, so a trailing
-        // mark pushed the digits left and "MIN" no longer sat under them.
         const eta = d.minutes <= 0
-          ? `<div class="due">${mark}DUE</div>`
-          : `<div class="num">${mark}${d.minutes}</div><div class="unit">MIN</div>`;
+          ? `<div class="due">DUE</div>`
+          : `<div class="num">${d.minutes}</div><div class="unit">MIN</div>`;
         const bits = [MODES[d.route_type] ?? ""];
         if (d.platform) bits.push(`Plat ${d.platform}`);
         bits.push(new Date(d.predicted * 1000)
           .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}));
         row.innerHTML = `
           <div class="badge" ${badgeStyle}>
-            <span class="mode">${glyph}</span>
+            <span class="mode">${asText(glyph)}</span>
             <span class="${numClass}">${routeLabel}</span>
           </div>
           <div class="dest">
@@ -865,6 +873,8 @@
               · ${bits.filter(Boolean).join(" · ")}
             </div>
           </div>
+          <div class="src-col" title="${d.realtime ? "realtime prediction" : "timetable"}"
+               >${asText(d.realtime ? MARK_LIVE : MARK_SCHEDULED)}</div>
           <div class="eta">${eta}</div>`;
         board.appendChild(row);
       });

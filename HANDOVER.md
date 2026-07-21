@@ -245,6 +245,19 @@ a time prediction, a marker means VehiclePositions gave a GPS fix. Plenty of
 services have the first and not the second, so a row can read 📶 and still have
 nothing on the map — and, less often, the reverse.
 
+Emoji in the DOM are written with a trailing **U+FE0E (VARIATION SELECTOR-15)**
+via `asText()`, and their elements set `font-variant-emoji: text`. These
+codepoints default to *emoji presentation*, and a browser hands those to the
+system colour-emoji font regardless of `font-family` — so on a machine with
+Noto Color Emoji installed the monochrome face is ignored and the glyph comes
+out full colour. U+FE0E asks for text presentation, which lets the font stack
+apply. Canvas does its own shaping and needs neither, so the map icons use the
+bare codepoint.
+
+Note this cannot be reproduced in a container with no system emoji font
+installed: with nothing to fall back to, the webfont wins and everything looks
+correct. Check on a real desktop.
+
 The `@font-face` for Noto Emoji carries **no `unicode-range`**, on purpose. The
 file is already subset to exactly the glyphs used, so a range is just a second
 list to keep in sync — and it fell out of sync twice, silently dropping the

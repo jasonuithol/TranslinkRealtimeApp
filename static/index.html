@@ -27,9 +27,10 @@
     justify-content: center;
     padding: 24px 16px 48px;
   }
-  /* Narrow by default (board only). Widens once the map is alongside. */
+  /* Narrow by default (board only). Widens once the map is alongside, using
+     most of the viewport so a wide monitor isn't mostly empty margin. */
   main { width: 100%; max-width: 620px; }
-  main.wide { max-width: 1180px; }
+  main.wide { max-width: min(1760px, 96vw); }
 
   header { margin-bottom: 20px; }
   .titlebar {
@@ -159,7 +160,7 @@
   .dest .sub {
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px; color: var(--muted); margin-top: 3px;
-    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   /* Every service carries its own colour — that is its identity, and it must
      not change as the service gains or loses a live position. */
@@ -247,11 +248,16 @@
      board keeps its natural width and the map takes the remaining space. */
   .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
   @media (min-width: 900px) {
+    /* The board is a fixed, comfortable reading width on the left; the map takes
+       all the remaining width, so the space a wide screen frees up goes to the
+       map rather than to stretched-out rows. */
     .split.side-by-side {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
       align-items: start;
     }
-    .split.side-by-side #map { height: 100%; min-height: 520px; }
+    /* Fill the viewport height too, so the map is as big as fits without
+       scrolling. The board caps its own rows to what fits (fittingRowCount). */
+    .split.side-by-side #map { height: calc(100vh - 160px); min-height: 460px; }
     /* The map column is sticky so it stays visible against a long board. */
     .split.side-by-side #map-wrap { position: sticky; top: 24px; }
   }

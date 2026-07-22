@@ -107,7 +107,7 @@
   .row {
     display: grid;
     /* badge | destination | time-source | countdown */
-    grid-template-columns: 82px 1fr 26px 96px;
+    grid-template-columns: 118px 1fr 26px 96px;
     align-items: center;
     gap: 14px;
     padding: 14px 16px;
@@ -125,7 +125,7 @@
     align-items: stretch;
     background: #000;
     border: 1px solid #fff;
-    border-radius: 6px;
+    border-radius: 8px;
     overflow: hidden;
     font-weight: 700;
     color: var(--text);
@@ -133,14 +133,14 @@
   }
   .badge .mode {
     display: flex; align-items: center; justify-content: center;
-    padding: 4px 6px;
+    padding: 6px 9px;
     border-right: 1px solid #fff;
   }
   /* Noto Emoji is monochrome, so the glyph inherits the badge's `color`.
      Listing it first means only these codepoints come from it. */
   .badge .mode {
     font-family: "Noto Emoji", "Archivo", system-ui, sans-serif;
-    font-size: 15px;
+    font-size: 22px;
     /* Belt and braces with the U+FE0E in the markup: newer engines honour this
        property, older ones only the variation selector. Both say the same
        thing — render these as text, not as colour emoji. */
@@ -148,9 +148,9 @@
   }
   .badge .num {
     display: flex; align-items: center; justify-content: center;
-    padding: 4px 7px; font-size: 15px; min-width: 32px;
+    padding: 6px 10px; font-size: 22px; min-width: 48px;
   }
-  .badge .num.wide { font-size: 10px; line-height: 1.15; padding: 4px 5px; }
+  .badge .num.wide { font-size: 15px; line-height: 1.15; padding: 6px 8px; }
   .dest { min-width: 0; }
   .dest .headsign {
     font-size: 15px; font-weight: 500;
@@ -665,7 +665,7 @@
         filter: ["!=", ["get", "station"], 1],
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.4, 15, 0.7],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 15, 1.05],
           "icon-anchor": "bottom",
           // Unlike the vehicles, these may crowd: let MapLibre thin them out.
           "icon-allow-overlap": false,
@@ -684,7 +684,7 @@
         minzoom: 11,
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.45, 15, 0.85],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.68, 15, 1.28],
           "icon-anchor": "bottom",
           "icon-allow-overlap": true,
         },
@@ -709,7 +709,7 @@
       map.addLayer({
         id: "ghost-halo", type: "circle", source: "ghosts",
         paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 7, 15, 11],
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 10.5, 15, 16.5],
           "circle-color": "rgba(0,0,0,0)",
           "circle-stroke-width": 1.5,
           "circle-stroke-color": ["get", "color"],
@@ -720,7 +720,7 @@
         id: "ghost-dot", type: "symbol", source: "ghosts",
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 0.82],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.75, 15, 1.23],
           "icon-allow-overlap": true,
         },
         paint: { "icon-opacity": 0.5 },   // estimated, not live
@@ -730,7 +730,7 @@
         layout: {
           "text-field": ["concat", "~", ["get", "minutes"], " min"],
           "text-font": ["Noto Sans Medium"],
-          "text-size": 11, "text-offset": [0, 1.7],
+          "text-size": 11, "text-offset": [0, 2.3],
           "text-allow-overlap": false,
         },
         paint: {
@@ -744,7 +744,7 @@
         id: "stop-ring", type: "symbol", source: "stop",
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.65, 15, 1.05],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.975, 15, 1.575],
           "icon-allow-overlap": true,
           "icon-anchor": "bottom",   // the marker sits on the stop, not over it
         },
@@ -769,7 +769,7 @@
         layout: {
           // The mode emoji, tinted to match the board row's badge and stripe.
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 15, 1],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.9, 15, 1.5],
           "icon-allow-overlap": true,
         },
       });
@@ -781,7 +781,7 @@
           "text-field": ["concat", ["get", "minutes"], " min"],
           "text-font": ["Noto Sans Medium"],
           "text-size": 11,
-          "text-offset": [0, 1.7],
+          "text-offset": [0, 2.3],
           "text-allow-overlap": false,
         },
         paint: {

@@ -65,6 +65,14 @@ jobs:
             || { echo "expected Central station in search results"; exit 1; }
           echo "$search" | grep -q '"is_station":true' \
             || { echo "expected Central station flagged as a station"; exit 1; }
+          # Search results carry the stop's dominant mode, for the row icon.
+          echo "$search" | grep -q '"route_type"' \
+            || { echo "expected route_type on search results"; exit 1; }
+
+          # Regions carry their state — the landing page's cross-region search
+          # labels every result row with it (QLD/VIC).
+          curl -fsS "http://localhost:8000/api/regions" | grep -q '"state":"QLD"' \
+            || { echo "expected state on /api/regions"; exit 1; }
 
           # Departures for the parent station: the mock timetable is fixed in the
           # past, so assert the response shape rather than a non-empty board.

@@ -298,6 +298,38 @@ on the map competes with that, and in practice collided with the vehicle
 palette (an unrelated pink scheduled service reading like a tracked one).
 Anything without a live position is plain white.
 
+## Landing page & cross-region search (2026-07-23)
+
+First load (no stop in the URL) shows **only a logo and the search**: a 🪿
+goose (U+1FABF, in the monochrome emoji subset, inked LED-amber) above the
+search box. `body.landing` (toggled by `syncChrome()`, present in the markup so
+a cold load paints it directly) hides the header/status — but the board/map
+split is **not** `display:none`-d: MapLibre never fires `load` in a zero-size
+container, so the split is parked off-screen (`position:fixed; left:-200vw`,
+still sized, `visibility:hidden`) and the map warms underneath the landing.
+Selecting a stop drops the class and the existing `awaiting`-drop resize takes
+over. Verified headless: landing → click stop → map draws without reload.
+
+The landing names no region, so search fans out over **every ingested region**
+(`/api/regions` now returns `state`: QLD/VIC) — stop-name, nearby and geocode
+alike, current region's results listed first. Every stop row shows its state
+in the sub-line and its stop glyph (from `route_type`, now returned by
+`stops/search` and `stops/nearby` via the all-stops dominant-mode cache)
+right-justified at the row's edge. Picking a stop in another region reloads
+via `?region=X&stop=Y` (per-network map style/caches make a clean start
+correct). Geolocation asks all regions and sorts by distance, so a traveller's
+saved region doesn't hide the city they're standing in. The two concurrent
+geocode calls are serialised server-side behind `_geocode_lock` to keep the
+1 req/s Nominatim promise.
+
+The dropdown can never spill past the bottom of the screen: `fitResults()`
+caps `max-height` to the gap between the dropdown's top and the viewport
+bottom (`visualViewport` where available, so the phone keyboard counts) and
+overflow scrolls inside; re-run on every populate and on resize.
+
+`?q=<text>` deep-links a search (prefills the box and fires it) — added for
+headless UI tests, works for sharing too.
+
 ## Map view with live vehicle positions — built
 
 A MapLibre map sits under the board, showing the live GPS of the vehicles

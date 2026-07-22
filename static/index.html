@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Next Service</title>
-<link href="/static/fonts/fonts.css?v=2" rel="stylesheet">
+<link href="/static/fonts/fonts.css?v=3" rel="stylesheet">
 <link href="/static/vendor/maplibre-gl.css" rel="stylesheet">
 <style>
   :root {
@@ -101,11 +101,15 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 8px;
-    max-height: 260px; overflow-y: auto;
+    /* Never past the bottom of the screen: fitResults() measures the real
+       gap to the viewport edge and tightens this; the vh value is only the
+       pre-measurement fallback. Overflow scrolls inside the dropdown. */
+    max-height: 45vh; overflow-y: auto;
     z-index: 10;
   }
   .search-results button {
-    display: block; width: 100%; text-align: left;
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; text-align: left;
     background: none; border: 0; color: var(--text);
     font: inherit; font-size: 14px;
     padding: 10px 14px; cursor: pointer;
@@ -113,9 +117,47 @@
   .search-results button:hover, .search-results button:focus-visible {
     background: #1f2731; outline: none;
   }
+  .search-results .rmain {
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* A stop result carries its stop glyph, pinned to the row's right edge. */
+  .search-results .ricon {
+    flex: none; margin-left: auto;
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text;
+    font-size: 20px; line-height: 1; color: var(--muted);
+  }
   .search-results .sid {
     font-family: "IBM Plex Mono", monospace;
     color: var(--muted); font-size: 12px; margin-left: 6px;
+  }
+
+  /* --- landing ----------------------------------------------------------- */
+  /* First load, before any stop is chosen: nothing but the logo and the
+     search. The board/map split is NOT display:none-d — MapLibre needs a
+     sized container at construction or it never fires 'load' — it is parked
+     off-screen, still sized, so the map warms up underneath the landing. */
+  body.landing header, body.landing .status { display: none; }
+  body.landing #split {
+    position: fixed; left: -200vw; top: 0;
+    width: min(1200px, 96vw);
+    visibility: hidden; pointer-events: none;
+  }
+  body.landing .search { max-width: 560px; margin: 0 auto; }
+  #hero { display: none; }
+  body.landing #hero {
+    display: flex; flex-direction: column; align-items: center;
+    margin: max(14vh, 48px) 0 34px;
+  }
+  /* The goose: monochrome outline from the emoji subset, inked in the board's
+     LED amber so it reads as part of the signage, not a sticker. */
+  #hero .goose {
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text;
+    font-size: 96px; line-height: 1;
+    color: var(--amber);
+    text-shadow: 0 0 28px rgba(255, 180, 0, 0.35);
   }
 
   .board {
@@ -387,7 +429,10 @@
   .maplibregl-popup-tip { border-top-color: var(--panel) !important; }
 </style>
 </head>
-<body>
+<!-- `landing` in the markup so a cold load paints the landing directly; when
+     the URL already names a stop, syncChrome() removes it before first paint
+     (the script runs synchronously at the end of the body). -->
+<body class="landing">
 <main>
   <header>
     <div class="eyebrow">
@@ -401,6 +446,11 @@
       <button class="change" id="change-stop" type="button">Change stop</button>
     </div>
   </header>
+
+  <!-- Landing logo; only visible while no stop is chosen. -->
+  <div id="hero">
+    <div class="goose" role="img" aria-label="Next Service">&#x1FABF;&#xFE0E;</div>
+  </div>
 
   <div class="search" id="search-wrap">
     <div class="search-row">
@@ -478,8 +528,17 @@
     .then((c) => { regionTz = c.tz; }).catch(() => {});
 
   // The eyebrow names the current network and, when more than one timetable is
-  // ingested, becomes the switcher.
-  fetch("/api/regions").then((r) => r.json()).then((regions) => {
+  // ingested, becomes the switcher. The same list drives the search fan-out:
+  // results can come from ANY ingested region — the landing page names no
+  // region, so each result row carries its state (QLD/VIC) instead.
+  let regionList = [{ id: region, name: "", state: "" }];
+  const stateOf = (rid) =>
+    (regionList.find((r) => r.id === rid) || {}).state || "";
+  // Search order: the remembered region's results list first.
+  const regionOrder = () =>
+    [...regionList].sort((a, b) => (b.id === region) - (a.id === region));
+  const regionsReady = fetch("/api/regions").then((r) => r.json()).then((regions) => {
+    regionList = regions;
     const cur = regions.find((r) => r.id === region) || regions[0];
     $("region-name").textContent = cur.name;
     if (regions.length > 1) {
@@ -497,6 +556,10 @@
   let searchOpen = !stopId;
 
   function syncChrome() {
+    // No stop yet = the landing: just the goose and the search. The class
+    // hides the chrome and parks the board/map split off-screen (still sized,
+    // so the map keeps warming underneath).
+    document.body.classList.toggle("landing", !stopId);
     $("titlebar").hidden = !stopId;
     $("search-wrap").hidden = Boolean(stopId) && !searchOpen;
     $("search-close").hidden = !stopId;   // nothing to return to without one
@@ -544,14 +607,44 @@
     $("results").appendChild(b);
   }
 
+  // The dropdown must never run past the bottom of the screen, on any device:
+  // cap it to the space between its own top edge and the viewport bottom, and
+  // let the overflow scroll inside. visualViewport (where available) tracks
+  // the on-screen keyboard, which window.innerHeight does not.
+  function fitResults() {
+    const box = $("results");
+    if (box.hidden) return;
+    const vh = window.visualViewport ? window.visualViewport.height
+                                     : window.innerHeight;
+    const top = box.getBoundingClientRect().top;
+    box.style.maxHeight = `${Math.max(96, vh - top - 12)}px`;
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", fitResults);
+  }
+
+  // A picked stop in another region: remember the region and reload straight
+  // onto the stop — the map style, caches and colours are all per-network.
+  function openInRegion(rid, sid) {
+    localStorage.setItem("region", rid);
+    location.href =
+      `?region=${encodeURIComponent(rid)}&stop=${encodeURIComponent(sid)}`;
+  }
+
   function stopEntry(s) {
     const bits = [];
     if (s.is_station) bits.push("station");
     if (s.dist_m != null) bits.push(fmtDist(s.dist_m));
     bits.push(s.stop_id);
+    if (s.state) bits.push(s.state);
+    const rid = s.region || region;
     resultButton(
-      `${escapeHtml(s.stop_name)}<span class="sid">${bits.join(" · ")}</span>`,
-      () => selectStop(s.stop_id),
+      `<span class="rmain">${escapeHtml(s.stop_name)}` +
+        `<span class="sid">${bits.join(" · ")}</span></span>` +
+        `<span class="ricon" aria-hidden="true">` +
+        `${asText(landmarkGlyph(s.route_type))}</span>`,
+      () => (rid === region ? selectStop(s.stop_id)
+                            : openInRegion(rid, s.stop_id)),
     );
   }
 
@@ -559,44 +652,77 @@
   const escapeHtml = (t) => String(t).replace(/[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  async function nearbyStops(lat, lon, label) {
+  // rid: the region the point is known to be in (an address hit knows its
+  // region); null means "no idea" (geolocation) — ask every region and let
+  // distance sort it out, since only the right city returns anything close.
+  async function nearbyStops(lat, lon, label, rid = null) {
     const box = $("results");
     box.innerHTML = "";
     resultNote(`Stops near ${label}…`);
     box.hidden = false;
+    fitResults();
     try {
-      const stops = await (await fetch(api(`/stops/nearby?lat=${lat}&lon=${lon}`))).json();
+      await regionsReady.catch(() => {});
+      const rids = rid ? [{ id: rid, state: stateOf(rid) }] : regionOrder();
+      const lists = await Promise.all(rids.map(async (r) => {
+        try {
+          const res = await fetch(
+            `/api/r/${r.id}/stops/nearby?lat=${lat}&lon=${lon}`);
+          return (await res.json())
+            .map((s) => ({ ...s, region: r.id, state: r.state }));
+        } catch { return []; }
+      }));
+      const stops = lists.flat().sort((a, b) => a.dist_m - b.dist_m).slice(0, 10);
       box.innerHTML = "";
       if (!stops.length) { resultNote(`No stops near ${label}.`); return; }
       stops.forEach(stopEntry);
     } catch {
       box.innerHTML = "";
       resultNote("Could not look up nearby stops.");
+    } finally {
+      fitResults();
     }
   }
 
   // Append address candidates to the dropdown (below any stop matches).
+  // Every region is asked — the geocoder is bounded to each region's bbox, so
+  // a Melbourne street typed from a Brisbane browser still resolves. The
+  // server serialises the upstream Nominatim calls to keep its 1 req/s rule.
   async function searchAddress(q, { clear = true } = {}) {
     const box = $("results");
     if (clear) { box.innerHTML = ""; resultNote(`Looking up “${q}”…`); }
     box.hidden = false;
+    fitResults();
     try {
-      const res = await fetch(api(`/geocode?q=${encodeURIComponent(q)}`));
-      if (!res.ok) throw new Error();
-      const places = await res.json();
+      await regionsReady.catch(() => {});
+      const lists = await Promise.all(regionOrder().map(async (r) => {
+        try {
+          const res = await fetch(
+            `/api/r/${r.id}/geocode?q=${encodeURIComponent(q)}`);
+          if (!res.ok) return null;
+          return (await res.json())
+            .map((p) => ({ ...p, region: r.id, state: r.state }));
+        } catch { return null; }
+      }));
+      if (lists.every((l) => l === null)) throw new Error();
+      const places = lists.filter(Boolean).flat();
       if (clear) box.innerHTML = "";
       if (!places.length) {
         if (clear) resultNote(`Nothing found for “${q}”.`);
         return;
       }
       places.forEach((p) => {
+        const sub = p.state ? `address · ${p.state}` : "address";
         resultButton(
-          `${escapeHtml(p.label)}<span class="sid">address</span>`,
-          () => nearbyStops(p.lat, p.lon, "that address"),
+          `<span class="rmain">${escapeHtml(p.label)}` +
+            `<span class="sid">${sub}</span></span>`,
+          () => nearbyStops(p.lat, p.lon, "that address", p.region),
         );
       });
     } catch {
       if (clear) { box.innerHTML = ""; resultNote("Address lookup unavailable right now."); }
+    } finally {
+      fitResults();
     }
   }
 
@@ -604,14 +730,31 @@
   // query has a house number or is long enough that no stop matched it.
   const looksLikeAddress = (q) => /^\d+\s+\S/.test(q);
 
+  // Stop-name search fans out over every ingested region; the row's state
+  // label (QLD/VIC) is what tells two "Central Station"s apart.
+  async function searchStops(q) {
+    await regionsReady.catch(() => {});
+    const lists = await Promise.all(regionOrder().map(async (r) => {
+      try {
+        const res = await fetch(
+          `/api/r/${r.id}/stops/search?q=${encodeURIComponent(q)}`);
+        return (await res.json())
+          .map((s) => ({ ...s, region: r.id, state: r.state }));
+      } catch { return []; }
+    }));
+    return lists.flat();
+  }
+
   let searchDebounce;
+  let searchToken = 0;      // drops stale responses that finish out of order
   $("search").addEventListener("input", (e) => {
     clearTimeout(searchDebounce);
     const q = e.target.value.trim();
     if (q.length < 3) { $("results").hidden = true; return; }
     searchDebounce = setTimeout(async () => {
-      const res = await fetch(api(`/stops/search?q=${encodeURIComponent(q)}`));
-      const stops = await res.json();
+      const token = ++searchToken;
+      const stops = await searchStops(q);
+      if (token !== searchToken) return;
       const box = $("results");
       box.innerHTML = "";
       stops.forEach(stopEntry);
@@ -625,6 +768,7 @@
         await searchAddress(q);
       }
       box.hidden = box.children.length === 0;
+      fitResults();
     }, q.length >= 6 ? 500 : 250);
   });
 
@@ -637,6 +781,7 @@
     box.innerHTML = "";
     resultNote("Locating…");
     box.hidden = false;
+    fitResults();
     navigator.geolocation.getCurrentPosition(
       (pos) => nearbyStops(pos.coords.latitude, pos.coords.longitude, "you"),
       () => {
@@ -1362,7 +1507,7 @@
         // fell back to the system COLOUR emoji font on the canvas, which is
         // exactly the coloured-map-icons bug. A new URL is a guaranteed miss.
         const ff = new FontFace(CANVAS_EMOJI,
-          "url('/static/fonts/NotoEmoji-mode.woff2?v=3')");
+          "url('/static/fonts/NotoEmoji-mode.woff2?v=4')");
         await ff.load();
         document.fonts.add(ff);
       })().catch(() => { /* fall back to whatever canvas picks */ });
@@ -1794,6 +1939,7 @@
   window.addEventListener("resize", () => {
     clearTimeout(resizeDebounce);
     resizeDebounce = setTimeout(() => {
+      fitResults();
       if (!lastData) return;
       renderBoard(lastData);
       updateMap(lastData);
@@ -1803,6 +1949,13 @@
   syncChrome();
   initMap();
   if (stopId) selectStop(stopId);
+  // ?q= deep-links a search: prefill the box and run it as if typed.
+  const preQ = new URLSearchParams(location.search).get("q");
+  if (preQ && !stopId) {
+    const inp = $("search");
+    inp.value = preQ;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 </script>
 </body>
 </html>

@@ -95,6 +95,7 @@ def _mel_headers() -> dict:
 REGIONS: dict = {
     "seq": {
         "name": "Translink · South East Queensland",
+        "state": "QLD",
         "tz": ZoneInfo("Australia/Brisbane"),
         "db": DB_PATH,
         "basemap": BASEMAP_DIR / "seq.pmtiles",
@@ -113,6 +114,7 @@ REGIONS: dict = {
     },
     "mel": {
         "name": "PTV · Melbourne",
+        "state": "VIC",
         "tz": ZoneInfo("Australia/Melbourne"),
         "db": Path(os.environ.get("MEL_GTFS_DB") or DB_PATH.parent / "gtfs-mel.sqlite3"),
         "basemap": BASEMAP_DIR / "mel.pmtiles",
@@ -606,11 +608,13 @@ def search_stops(q: str, region: str = "seq"):
         (f"%{q}%",),
     ).fetchall()
     con.close()
+    modes = stop_modes(region)
     return [
         {
             "stop_id": r["stop_id"],
             "stop_name": r["stop_name"],
             "is_station": r["location_type"] == 1,
+            "route_type": modes.get(r["stop_id"], 3),
         }
         for r in rows
     ]
@@ -644,12 +648,14 @@ def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
              * math.sin(math.radians(lo - lon) / 2) ** 2)
         return 2 * 6371000 * math.asin(math.sqrt(a))
 
+    modes = stop_modes(region)
     out = sorted(
         (
             {
                 "stop_id": r["stop_id"],
                 "stop_name": r["stop_name"],
                 "is_station": r["location_type"] == 1,
+                "route_type": modes.get(r["stop_id"], 3),
                 "dist_m": round(haversine_m(r["stop_lat"], r["stop_lon"])),
             }
             for r in rows
@@ -667,6 +673,9 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_UA = "TranslinkNextArrivalApp/1.0 (https://github.com/jasonuithol/TranslinkRealtimeApp)"
 _geocode_cache: dict = {}          # (region, q) -> (fetched_at, results)
 _geocode_last_call = 0.0
+# The frontend searches every region at once, so two geocode requests arrive
+# together; the lock serialises them so the 1 req/s promise to Nominatim holds.
+_geocode_lock = asyncio.Lock()
 GEOCODE_CACHE_S = 24 * 3600
 
 
@@ -684,34 +693,35 @@ async def geocode(q: str, region: str = "seq"):
     hit = _geocode_cache.get((region, q.lower()))
     if hit and time.time() - hit[0] < GEOCODE_CACHE_S:
         return hit[1]
-    # Enforce the 1 req/s policy even if the client misbehaves.
-    wait = 1.0 - (time.time() - _geocode_last_call)
-    if wait > 0:
-        await asyncio.sleep(wait)
-    _geocode_last_call = time.time()
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                NOMINATIM_URL,
-                params={
-                    "q": q, "format": "jsonv2", "limit": 5,
-                    "countrycodes": "au",
-                    "viewbox": cfg["geocode_viewbox"], "bounded": 1,
-                },
-                headers={"User-Agent": NOMINATIM_UA},
-            )
-            resp.raise_for_status()
-            results = [
-                {
-                    "label": r.get("display_name", ""),
-                    "lat": float(r["lat"]),
-                    "lon": float(r["lon"]),
-                }
-                for r in resp.json()
-            ]
-    except Exception as exc:
-        print(f"[geocode] lookup failed: {exc}")
-        raise HTTPException(502, "address lookup unavailable")
+    async with _geocode_lock:
+        # Enforce the 1 req/s policy even if the client misbehaves.
+        wait = 1.0 - (time.time() - _geocode_last_call)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _geocode_last_call = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    NOMINATIM_URL,
+                    params={
+                        "q": q, "format": "jsonv2", "limit": 5,
+                        "countrycodes": "au",
+                        "viewbox": cfg["geocode_viewbox"], "bounded": 1,
+                    },
+                    headers={"User-Agent": NOMINATIM_UA},
+                )
+                resp.raise_for_status()
+                results = [
+                    {
+                        "label": r.get("display_name", ""),
+                        "lat": float(r["lat"]),
+                        "lon": float(r["lon"]),
+                    }
+                    for r in resp.json()
+                ]
+        except Exception as exc:
+            print(f"[geocode] lookup failed: {exc}")
+            raise HTTPException(502, "address lookup unavailable")
     _geocode_cache[(region, q.lower())] = (time.time(), results)
     # An unbounded cache only grows by distinct queries typed; trim anyway.
     if len(_geocode_cache) > 500:
@@ -1119,6 +1129,19 @@ def all_stops(region: str) -> list[dict]:
     return _all_stops_cache[region]
 
 
+_stop_mode_cache: dict = {}
+
+
+def stop_modes(region: str) -> dict:
+    """stop_id -> dominant route_type, derived from the all_stops cache. Lets
+    the search results carry the right mode glyph without their own GROUP BY."""
+    if region not in _stop_mode_cache:
+        _stop_mode_cache[region] = {
+            s["stop_id"]: s["route_type"] for s in all_stops(region)
+        }
+    return _stop_mode_cache[region]
+
+
 @app.get("/api/r/{region}/all-stops")
 @app.get("/api/all-stops")
 def all_stops_endpoint(region: str = "seq"):
@@ -1146,9 +1169,10 @@ def regions():
     """The regions this deployment can serve (timetable ingested), for the
     frontend's region switcher. The first entry is the default."""
     return [
-        {"id": rid, "name": REGIONS[rid]["name"]}
+        {"id": rid, "name": REGIONS[rid]["name"], "state": REGIONS[rid]["state"]}
         for rid in available_regions()
-    ] or [{"id": "seq", "name": REGIONS["seq"]["name"]}]
+    ] or [{"id": "seq", "name": REGIONS["seq"]["name"],
+           "state": REGIONS["seq"]["state"]}]
 
 
 @app.get("/api/r/{region}/config")

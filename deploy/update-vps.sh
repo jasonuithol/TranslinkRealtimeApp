@@ -67,14 +67,34 @@ fi
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"
-sleep 5
+
+# A restart recreates the container from the newly pulled image; uvicorn can
+# take a while to come up on a small VPS. Wait for the board rather than
+# racing it (a flat sleep raced it, and lost).
+echo "==> Waiting for the board to come up (up to 120 s)…"
+up=0
+for i in $(seq 1 40); do
+  if curl -fsS --max-time 3 "http://localhost:${APP_PORT}/api/config" >/dev/null 2>&1; then
+    up=1; echo "    up after ~$((i * 3))s"; break
+  fi
+  sleep 3
+done
+if [[ $up -ne 1 ]]; then
+  echo "Board did not come up within 120 s. Logs:"
+  as_deploy "podman logs --tail 30 translink" || true
+  exit 1
+fi
 
 echo "==> Health checks…"
 fail=0
 check() {
   local label="$1" url="$2" want="$3"
-  local got
-  got=$(curl -fsS --max-time 20 "$url" 2>/dev/null) || { echo "  FAIL $label: no response"; fail=1; return; }
+  local got attempt
+  for attempt in 1 2 3; do
+    got=$(curl -fsS --max-time 20 "$url" 2>/dev/null) && break
+    sleep 3
+  done
+  if [[ -z "${got:-}" ]]; then echo "  FAIL $label: no response"; fail=1; return; fi
   if grep -q "$want" <<<"$got"; then
     echo "  ok   $label"
   else

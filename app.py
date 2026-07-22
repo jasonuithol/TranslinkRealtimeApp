@@ -53,23 +53,23 @@ STAGING_WINDOW_S = 10 * 60
 AGENCY_TZ = ZoneInfo("Australia/Brisbane")   # SEQ; kept module-level for tests
 
 
-def _mel_rt_feeds(kind: str) -> list[dict]:
-    """Melbourne GTFS-R endpoints, entirely env-driven.
+def _env_rt_feeds(env_prefix: str, kind: str) -> list[dict]:
+    """Keyed regions' GTFS-R endpoints, entirely env-driven.
 
-    Victoria's realtime feeds need a (free) registered API key and the host has
-    moved between portals over the years, so nothing is hardcoded. Format:
+    Melbourne's and Sydney's realtime feeds need a (free) registered API key
+    and the hosts have moved between portals over the years, so nothing is
+    hardcoded. Format (same for SYD_*):
 
         MEL_TRIP_UPDATES="2|https://host/metrotrain-tripupdates;3|https://host/yarratrams-tripupdates"
         MEL_VEHICLE_POSITIONS / MEL_ALERTS  — same shape
-        MEL_API_KEY=...            (sent as MEL_API_KEY_HEADER, default
-        MEL_API_KEY_HEADER=Ocp-Apim-Subscription-Key)
 
-    The `2|` is the mode prefix: PTV's nested GTFS is one feed per mode with
-    ids that are only unique within the mode, so the ingest prefixes every id
-    with "<mode>:" and each realtime feed declares which mode it speaks for.
-    Unset means static-only — the board and the timetable ghosts still work.
+    The `2|` is the feed prefix: these regions' static GTFS is one feed per
+    mode with ids that are only unique within the feed, so the ingest prefixes
+    every id with "<prefix>:" and each realtime feed declares which feed it
+    speaks for. Unset means static-only — the board and the timetable ghosts
+    still work.
     """
-    raw = os.environ.get(f"MEL_{kind}", "").strip()
+    raw = os.environ.get(f"{env_prefix}_{kind}", "").strip()
     feeds = []
     for part in raw.split(";"):
         part = part.strip()
@@ -85,6 +85,18 @@ def _mel_headers() -> dict:
     if not key:
         return {}
     return {os.environ.get("MEL_API_KEY_HEADER", "Ocp-Apim-Subscription-Key"): key}
+
+
+def _syd_headers() -> dict:
+    """TfNSW auth: `Authorization: apikey <token>` (their scheme word really
+    is lowercase 'apikey'). Accepts the bare token in SYD_API_KEY and adds
+    the scheme, or a full 'apikey …' value as-is."""
+    key = os.environ.get("SYD_API_KEY", "").strip()
+    if not key:
+        return {}
+    if not key.lower().startswith("apikey "):
+        key = f"apikey {key}"
+    return {"Authorization": key}
 
 
 # ---------------------------------------------------------------------------
@@ -118,12 +130,25 @@ REGIONS: dict = {
         "tz": ZoneInfo("Australia/Melbourne"),
         "db": Path(os.environ.get("MEL_GTFS_DB") or DB_PATH.parent / "gtfs-mel.sqlite3"),
         "basemap": BASEMAP_DIR / "mel.pmtiles",
-        "trip_updates": _mel_rt_feeds("TRIP_UPDATES"),
-        "vehicle_positions": _mel_rt_feeds("VEHICLE_POSITIONS"),
-        "alerts": _mel_rt_feeds("ALERTS"),
+        "trip_updates": _env_rt_feeds("MEL", "TRIP_UPDATES"),
+        "vehicle_positions": _env_rt_feeds("MEL", "VEHICLE_POSITIONS"),
+        "alerts": _env_rt_feeds("MEL", "ALERTS"),
         "headers": _mel_headers(),
         "geocode_viewbox": "144.4,-38.5,145.8,-37.4",
         "center": [144.9631, -37.8136],
+    },
+    "syd": {
+        "name": "TfNSW · Sydney",
+        "state": "NSW",
+        "tz": ZoneInfo("Australia/Sydney"),
+        "db": Path(os.environ.get("SYD_GTFS_DB") or DB_PATH.parent / "gtfs-syd.sqlite3"),
+        "basemap": BASEMAP_DIR / "syd.pmtiles",
+        "trip_updates": _env_rt_feeds("SYD", "TRIP_UPDATES"),
+        "vehicle_positions": _env_rt_feeds("SYD", "VEHICLE_POSITIONS"),
+        "alerts": _env_rt_feeds("SYD", "ALERTS"),
+        "headers": _syd_headers(),
+        "geocode_viewbox": "150.5,-34.25,151.4,-33.35",
+        "center": [151.2093, -33.8688],
     },
 }
 
@@ -1111,8 +1136,17 @@ def all_stops(region: str) -> list[dict]:
     static for the life of a timetable."""
     if region not in _all_stops_cache:
         con = db(region)
-        # Dominant route_type per stop in one pass.
-        dominant = {}
+        # Dominant route_type per stop in one pass. Parent stations carry no
+        # stop_times of their own, so each child's counts also accrue to its
+        # parent — otherwise every ferry terminal and bus interchange (parents
+        # whose platforms hold the departures) would default to "bus stop".
+        parent_of = {
+            r["stop_id"]: r["parent_station"]
+            for r in con.execute(
+                "SELECT stop_id, parent_station FROM stops "
+                "WHERE parent_station IS NOT NULL AND parent_station != ''")
+        }
+        counts: dict = {}
         for r in con.execute(
             """
             SELECT st.stop_id AS sid, rt.route_type AS rtype, COUNT(*) AS c
@@ -1122,9 +1156,12 @@ def all_stops(region: str) -> list[dict]:
             GROUP BY st.stop_id, rt.route_type
             """
         ):
-            cur = dominant.get(r["sid"])
-            if cur is None or r["c"] > cur[1]:
-                dominant[r["sid"]] = (r["rtype"], r["c"])
+            for sid in {r["sid"], parent_of.get(r["sid"])} - {None, ""}:
+                counts[(sid, r["rtype"])] = counts.get((sid, r["rtype"]), 0) + r["c"]
+        dominant = {}
+        for (sid, rtype), c in counts.items():
+            if sid not in dominant or c > dominant[sid][1]:
+                dominant[sid] = (rtype, c)
         # Rail stations are parent records with no stop_times of their own
         # (their platforms carry the departures), so the dominant-mode lookup
         # misses them and they would read as bus stops. Tag them rail instead —

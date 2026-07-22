@@ -20,10 +20,12 @@ CACHE_DIR="${CACHE_DIR:-/cache}"
 # override BBOX/OUT_NAME directly for anything else.
 #   REGION=seq (default)  Gympie/Noosa to the NSW border, Toowoomba in the west
 #   REGION=mel            greater Melbourne, Werribee to the Dandenongs
+#   REGION=syd            greater Sydney, Penrith to Palm Beach to Cronulla
 REGION="${REGION:-seq}"
 case "$REGION" in
   seq) DEFAULT_BBOX="151.8,-28.3,153.6,-26.0" ;;
   mel) DEFAULT_BBOX="144.4,-38.5,145.8,-37.4" ;;
+  syd) DEFAULT_BBOX="150.5,-34.3,151.5,-33.3" ;;
   *)   echo "Unknown REGION '$REGION' — set BBOX and OUT_NAME yourself." >&2
        DEFAULT_BBOX="" ;;
 esac

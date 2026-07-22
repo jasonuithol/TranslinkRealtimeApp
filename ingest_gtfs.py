@@ -6,6 +6,8 @@ Usage:
     python ingest_gtfs.py SEQ_GTFS.zip             # SEQ: ingest a local zip
     python ingest_gtfs.py --region mel             # Melbourne: download + ingest
     python ingest_gtfs.py --region mel gtfs.zip    # Melbourne: local zip
+    python ingest_gtfs.py --region syd --key K     # Sydney: download + ingest
+    python ingest_gtfs.py --region syd DIR/        # Sydney: dir of <prefix>.zip
 
 Regions:
   seq  Translink South East Queensland — one flat GTFS zip, ids globally unique.
@@ -13,6 +15,11 @@ Regions:
        (2 = metro train, 3 = tram, 4 = metro bus, …). Ids are only unique
        within a mode, so every id is prefixed "<mode>:" on the way in; the
        realtime pollers apply the same prefix per feed (see app.py REGIONS).
+  syd  TfNSW Sydney — one flat "Timetables For Realtime" zip per mode,
+       each downloaded separately and each needing the (free) TfNSW key
+       (--key or SYD_API_KEY; sent as `Authorization: apikey <key>`). Same
+       per-feed prefixing as mel. A source that 404s is skipped with a
+       warning, so an endpoint moving doesn't sink the whole ingest.
 
 The static feeds change roughly weekly; re-run this to refresh.
 Only the tables needed for a departures board are loaded.
@@ -49,7 +56,36 @@ REGIONS = {
         # train/coach/bus — add them here if the board should cover Victoria.)
         "modes": ["2", "3", "4"],
     },
+    "syd": {
+        "db": Path(os.environ.get("SYD_GTFS_DB") or SEQ_DB.parent / "gtfs-syd.sqlite3"),
+        "modes": None,
+        # One flat "For Realtime" GTFS zip per mode, downloaded separately.
+        # The prefix is the contract with app.py's SYD_* realtime env config:
+        # ids in feed "t" become "t:...", and the trip-updates feed declared
+        # "t|<url>" maps its ids onto them. Greater Sydney modes only
+        # (nswtrains/regionbuses are intercity and out of scope).
+        "sources": [
+            ("t",  "https://api.transport.nsw.gov.au/v2/gtfs/schedule/sydneytrains"),
+            ("m",  "https://api.transport.nsw.gov.au/v2/gtfs/schedule/metro"),
+            ("b",  "https://api.transport.nsw.gov.au/v1/gtfs/schedule/buses"),
+            ("f",  "https://api.transport.nsw.gov.au/v1/gtfs/schedule/ferries/sydneyferries"),
+            ("lw", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail/innerwest"),
+            ("lc", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail/cbdandsoutheast"),
+            ("lp", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail/parramatta"),
+        ],
+    },
 }
+
+
+def syd_headers(key: str) -> dict:
+    """TfNSW auth: `Authorization: apikey <token>` — scheme word really is
+    lowercase 'apikey'. Accepts a bare token or a full 'apikey …' value."""
+    key = key.strip()
+    if not key:
+        return {}
+    if not key.lower().startswith("apikey "):
+        key = f"apikey {key}"
+    return {"Authorization": key}
 
 SCHEMA = """
 DROP TABLE IF EXISTS stops;
@@ -171,9 +207,10 @@ def normalize_route_type(value: str | None) -> str | None:
     return "3"                            # anything exotic reads as a bus
 
 
-def download_feed(url: str, dest: Path) -> Path:
+def download_feed(url: str, dest: Path, headers: dict | None = None) -> Path:
     print(f"Downloading {url} ...")
-    with httpx.stream("GET", url, timeout=300, follow_redirects=True) as r:
+    with httpx.stream("GET", url, timeout=300, follow_redirects=True,
+                      headers=headers or {}) as r:
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_bytes():
@@ -214,11 +251,13 @@ def load_feed_zip(con: sqlite3.Connection, zf: zipfile.ZipFile, prefix: str = ""
         con.commit()
 
 
-def ingest(region: str, zip_path: Path) -> None:
+def ingest(region: str, zips: list[tuple[str, Path]]) -> None:
     # Build into a temp file and swap it in atomically. SCHEMA drops every table
     # first, so ingesting over a live DB would leave the running server querying
     # half-dropped tables for the duration. app.py opens a fresh connection per
     # request, so a rename moves readers onto the finished DB between requests.
+    # `zips` is [(prefix, path)]: one flat zip per entry — several for a
+    # multi-download region (syd), a single ("", path) otherwise.
     cfg = REGIONS[region]
     db_path = cfg["db"]
     tmp_path = Path(str(db_path) + ".tmp")
@@ -226,30 +265,31 @@ def ingest(region: str, zip_path: Path) -> None:
     con = sqlite3.connect(tmp_path)
     con.executescript(SCHEMA)
 
-    with zipfile.ZipFile(zip_path) as zf:
-        if cfg["modes"] is None:
-            load_feed_zip(con, zf)
-        else:
-            # PTV nests one zip per mode inside the outer zip. Inner zips are
-            # large (metro bus stop_times especially), so spool each to disk
-            # rather than holding it in memory.
-            names = zf.namelist()
-            for mode in cfg["modes"]:
-                inner_name = next(
-                    (n for n in names
-                     if n.strip("/").startswith(f"{mode}/") and n.endswith(".zip")),
-                    None,
-                )
-                if inner_name is None:
-                    print(f"  (mode {mode}: no inner zip found, skipping)")
-                    continue
-                print(f"  mode {mode}: {inner_name}")
-                with tempfile.NamedTemporaryFile(suffix=".zip") as tmp_zip:
-                    with zf.open(inner_name) as src:
-                        shutil.copyfileobj(src, tmp_zip)
-                    tmp_zip.flush()
-                    with zipfile.ZipFile(tmp_zip.name) as inner:
-                        load_feed_zip(con, inner, prefix=f"{mode}:")
+    for prefix, zip_path in zips:
+        with zipfile.ZipFile(zip_path) as zf:
+            if cfg["modes"] is None:
+                load_feed_zip(con, zf, prefix=f"{prefix}:" if prefix else "")
+            else:
+                # PTV nests one zip per mode inside the outer zip. Inner zips
+                # are large (metro bus stop_times especially), so spool each
+                # to disk rather than holding it in memory.
+                names = zf.namelist()
+                for mode in cfg["modes"]:
+                    inner_name = next(
+                        (n for n in names
+                         if n.strip("/").startswith(f"{mode}/") and n.endswith(".zip")),
+                        None,
+                    )
+                    if inner_name is None:
+                        print(f"  (mode {mode}: no inner zip found, skipping)")
+                        continue
+                    print(f"  mode {mode}: {inner_name}")
+                    with tempfile.NamedTemporaryFile(suffix=".zip") as tmp_zip:
+                        with zf.open(inner_name) as src:
+                            shutil.copyfileobj(src, tmp_zip)
+                        tmp_zip.flush()
+                        with zipfile.ZipFile(tmp_zip.name) as inner:
+                            load_feed_zip(con, inner, prefix=f"{mode}:")
 
     n = con.execute("SELECT COUNT(*) FROM stop_times").fetchone()[0]
     con.close()
@@ -259,14 +299,50 @@ def ingest(region: str, zip_path: Path) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("zip", nargs="?", help="already-downloaded feed zip")
+    ap.add_argument("zip", nargs="?",
+                    help="already-downloaded feed zip (or, for a multi-source "
+                         "region, a directory of <prefix>.zip files)")
     ap.add_argument("--region", default="seq", choices=sorted(REGIONS))
+    ap.add_argument("--key", default=os.environ.get("SYD_API_KEY", ""),
+                    help="API key for regions whose downloads need one "
+                         "(syd; default $SYD_API_KEY)")
     args = ap.parse_args()
 
     cfg = REGIONS[args.region]
-    if args.zip:
-        zpath = Path(args.zip)
+    if "sources" in cfg:
+        pairs: list[tuple[str, Path]] = []
+        if args.zip:
+            src_dir = Path(args.zip)
+            if not src_dir.is_dir():
+                sys.exit(f"{args.region} takes a DIRECTORY of <prefix>.zip files")
+            for prefix, _url in cfg["sources"]:
+                p = src_dir / f"{prefix}.zip"
+                if p.exists():
+                    pairs.append((prefix, p))
+                else:
+                    print(f"  ({prefix}: no {p.name} in {src_dir}, skipping)")
+        else:
+            headers = syd_headers(args.key)
+            if not headers:
+                sys.exit("Sydney downloads need a TfNSW open data key: "
+                         "--key or SYD_API_KEY (free at "
+                         "https://opendata.transport.nsw.gov.au/)")
+            for prefix, url in cfg["sources"]:
+                dest = cfg["db"].parent / f"{args.region}_{prefix}.zip"
+                try:
+                    download_feed(url, dest, headers=headers)
+                except httpx.HTTPStatusError as e:
+                    print(f"  ({prefix}: HTTP {e.response.status_code} from "
+                          f"{url} — skipping)")
+                    continue
+                pairs.append((prefix, dest))
+        if not pairs:
+            sys.exit("nothing to ingest")
+        ingest(args.region, pairs)
     else:
-        zpath = cfg["db"].parent / f"{args.region}_gtfs.zip"
-        download_feed(cfg["url"], zpath)
-    ingest(args.region, zpath)
+        if args.zip:
+            zpath = Path(args.zip)
+        else:
+            zpath = cfg["db"].parent / f"{args.region}_gtfs.zip"
+            download_feed(cfg["url"], zpath)
+        ingest(args.region, [("", zpath)])

@@ -21,7 +21,11 @@ DEPLOY_USER="${DEPLOY_USER:-deploy}"
 IMAGE_REF="${IMAGE_REF:-ghcr.io/jasonuithol/translink-departures:latest}"
 APP_PORT="${APP_PORT:-8000}"
 MEL_BASEMAP_SRC="${MEL_BASEMAP_SRC:-/tmp/mel.pmtiles}"
+SYD_BASEMAP_SRC="${SYD_BASEMAP_SRC:-/tmp/syd.pmtiles}"
 INGEST_MEL="${INGEST_MEL:-yes}"
+# Sydney's static downloads need the TfNSW key; 'auto' ingests only when the
+# quadlet already carries SYD_API_KEY (i.e. enable-syd-vps.sh has run).
+INGEST_SYD="${INGEST_SYD:-auto}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "This script must be run as root." >&2
@@ -51,19 +55,41 @@ if [[ "${INGEST_MEL}" == "yes" ]]; then
     python ingest_gtfs.py --region mel"
 fi
 
-if [[ -f "${MEL_BASEMAP_SRC}" ]]; then
-  echo "==> Installing Melbourne basemap from ${MEL_BASEMAP_SRC}…"
-  # World-readable so the deploy user's container can read it from /tmp.
-  chmod 0644 "${MEL_BASEMAP_SRC}"
-  as_deploy "podman run --rm -v translink-data:/data -v /tmp:/in:ro alpine \
-    sh -c 'cp /in/$(basename "${MEL_BASEMAP_SRC}") /data/basemap/mel.pmtiles.new \
-           && mv /data/basemap/mel.pmtiles.new /data/basemap/mel.pmtiles \
-           && chown 1000:1000 /data/basemap/mel.pmtiles'"
-  rm -f "${MEL_BASEMAP_SRC}"
+# The Sydney downloads are authenticated, so the ingest needs the key the
+# quadlet holds (written there by enable-syd-vps.sh).
+QUADLET="$(getent passwd "${DEPLOY_USER}" | cut -d: -f6)/.config/containers/systemd/translink.container"
+SYD_KEY="$(grep -oP '^Environment=SYD_API_KEY=\K.*' "$QUADLET" 2>/dev/null || true)"
+if [[ "${INGEST_SYD}" == "yes" || ( "${INGEST_SYD}" == "auto" && -n "$SYD_KEY" ) ]]; then
+  if [[ -n "$SYD_KEY" ]]; then
+    echo "==> Ingesting the Sydney timetable (per-mode TfNSW zips; a few minutes)…"
+    as_deploy "podman run --rm -v translink-data:/data -e SYD_API_KEY='${SYD_KEY}' \
+      '${IMAGE_REF}' python ingest_gtfs.py --region syd"
+  else
+    echo "==> INGEST_SYD requested but no SYD_API_KEY in the quadlet — run"
+    echo "    deploy/enable-syd-vps.sh first. Skipping the Sydney ingest."
+  fi
 else
-  echo "==> No ${MEL_BASEMAP_SRC} found — skipping the Melbourne basemap."
-  echo "    (The Melbourne board still works; only its map stays hidden.)"
+  echo "==> Sydney ingest skipped (no SYD_API_KEY in the quadlet yet)."
 fi
+
+install_basemap() {
+  local src="$1" name="$2"
+  if [[ -f "$src" ]]; then
+    echo "==> Installing ${name} basemap from ${src}…"
+    # World-readable so the deploy user's container can read it from /tmp.
+    chmod 0644 "$src"
+    as_deploy "podman run --rm -v translink-data:/data -v /tmp:/in:ro alpine \
+      sh -c 'cp /in/$(basename "$src") /data/basemap/${name}.pmtiles.new \
+             && mv /data/basemap/${name}.pmtiles.new /data/basemap/${name}.pmtiles \
+             && chown 1000:1000 /data/basemap/${name}.pmtiles'"
+    rm -f "$src"
+  else
+    echo "==> No ${src} found — skipping the ${name} basemap."
+    echo "    (That region's board still works; only its map stays hidden.)"
+  fi
+}
+install_basemap "${MEL_BASEMAP_SRC}" mel
+install_basemap "${SYD_BASEMAP_SRC}" syd
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"
@@ -108,6 +134,11 @@ if [[ "${INGEST_MEL}" == "yes" ]]; then
   check "mel region"      "http://localhost:${APP_PORT}/api/regions"         '"mel"'
   check "mel departures"  "http://localhost:${APP_PORT}/api/r/mel/departures/2:vic:rail:FSS" '"departures"'
   check "mel config"      "http://localhost:${APP_PORT}/api/r/mel/config"    '"basemap"'
+fi
+# Only meaningful once the Sydney timetable has been ingested at least once.
+if curl -fsS --max-time 10 "http://localhost:${APP_PORT}/api/regions" 2>/dev/null | grep -q '"syd"'; then
+  check "syd config"      "http://localhost:${APP_PORT}/api/r/syd/config"    '"basemap"'
+  check "syd search"      "http://localhost:${APP_PORT}/api/r/syd/stops/search?q=Circular" '"stop_id"'
 fi
 
 echo

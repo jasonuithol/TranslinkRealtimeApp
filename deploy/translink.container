@@ -22,6 +22,19 @@ Environment=GTFS_DB=/data/gtfs.sqlite3
 #Environment=MEL_TRIP_UPDATES=2|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/trip-updates;3|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/trip-updates;4|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/bus/trip-updates
 #Environment=MEL_VEHICLE_POSITIONS=2|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/vehicle-positions;3|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/vehicle-positions;4|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/bus/vehicle-positions
 #Environment=MEL_ALERTS=2|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/service-alerts;3|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/service-alerts
+# ── Sydney realtime (OPTIONAL — static-only works without it) ───────────────
+# Needs ONE free key from https://opendata.transport.nsw.gov.au/ (create an
+# application, copy its API key). Sent as `Authorization: apikey <key>` —
+# paste just the token below, the app adds the scheme. Prefixes are the
+# ingest's per-feed ids: t trains, m metro, b buses, f ferries, lw/lc/lp
+# light rail (Inner West / CBD-South East / Parramatta). Verify endpoints
+# first with deploy/probe-syd.sh — v1/v2 split is TfNSW's current layout.
+# No light-rail alerts: TfNSW publishes one alerts feed for all LR lines,
+# which cannot be mapped onto the three per-line id prefixes.
+#Environment=SYD_API_KEY=PASTE_KEY_HERE
+#Environment=SYD_TRIP_UPDATES=t|https://api.transport.nsw.gov.au/v2/gtfs/realtime/sydneytrains;m|https://api.transport.nsw.gov.au/v2/gtfs/realtime/metro;b|https://api.transport.nsw.gov.au/v1/gtfs/realtime/buses;f|https://api.transport.nsw.gov.au/v1/gtfs/realtime/ferries/sydneyferries;lw|https://api.transport.nsw.gov.au/v2/gtfs/realtime/lightrail/innerwest;lc|https://api.transport.nsw.gov.au/v1/gtfs/realtime/lightrail/cbdandsoutheast;lp|https://api.transport.nsw.gov.au/v1/gtfs/realtime/lightrail/parramatta
+#Environment=SYD_VEHICLE_POSITIONS=t|https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/sydneytrains;m|https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/metro;b|https://api.transport.nsw.gov.au/v1/gtfs/vehiclepos/buses;f|https://api.transport.nsw.gov.au/v1/gtfs/vehiclepos/ferries/sydneyferries;lw|https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/lightrail/innerwest;lc|https://api.transport.nsw.gov.au/v1/gtfs/vehiclepos/lightrail/cbdandsoutheast;lp|https://api.transport.nsw.gov.au/v1/gtfs/vehiclepos/lightrail/parramatta
+#Environment=SYD_ALERTS=t|https://api.transport.nsw.gov.au/v2/gtfs/alerts/sydneytrains;m|https://api.transport.nsw.gov.au/v2/gtfs/alerts/metro;b|https://api.transport.nsw.gov.au/v2/gtfs/alerts/buses;f|https://api.transport.nsw.gov.au/v2/gtfs/alerts/ferries
 # Let 'podman auto-update' pull a newer :latest and restart this container,
 # matching how iq-pod-app is managed.
 AutoUpdate=registry

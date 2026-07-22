@@ -152,6 +152,26 @@ times and the map shows timetable-estimated ghosts.
 - Basemaps per region: `REGION=mel podman run … translink-basemap` (bbox
   presets in `basemap/build-basemap.sh`). Melbourne DB: `/data/gtfs-mel.sqlite3`
   (`MEL_GTFS_DB` to override); basemap `mel.pmtiles`.
+- **Sydney (`syd`, added 2026-07-23 — endpoints NOT yet key-verified)**: TfNSW
+  publishes one flat "Timetables For Realtime" zip *per mode*, each download
+  authenticated (`Authorization: apikey <key>`, free key from
+  opendata.transport.nsw.gov.au). `ingest_gtfs.py --region syd` (key via
+  `--key`/`SYD_API_KEY`) downloads and merges them with per-feed prefixes —
+  `t:` Sydney Trains, `m:` metro, `b:` buses, `f:` ferries, `lw:`/`lc:`/`lp:`
+  light rail Inner West / CBD-SE / Parramatta; a source that 404s is skipped
+  with a warning (TfNSW moves endpoints between /v1 and /v2). For testing
+  without a key it also accepts a *directory* of `<prefix>.zip` files.
+  Realtime is `SYD_*` env, same `prefix|url;…` format as Melbourne (generic
+  `_env_rt_feeds`); pre-wired URLs in `deploy/translink.container` and
+  `deploy/run-local.sh` follow TfNSW's current v1/v2 split (trains/metro/LR-IW
+  on v2, rest on v1) — **run `deploy/probe-syd.sh <key>` to verify before
+  enabling**, and fix any moved URL in env/ingest, nothing else hardcodes
+  them. Known gap: TfNSW's light-rail *alerts* are one feed for all LR lines,
+  which cannot map onto three per-line prefixes — LR alerts are not wired.
+  Ferry stops draw ☸ (vehicles stay ⛴) — `landmarkGlyph` case 4, glyph in the
+  emoji subset since v5. Verified end-to-end against mock per-mode zips:
+  ingest → three-region search (NSW rows, ☸/🏫 icons) → ferry board with ⛴
+  badges and harbour ghosts on the self-built `syd.pmtiles`.
 
 ## Keys & credentials needed for full functionality
 
@@ -159,6 +179,7 @@ times and the map shows timetable-estimated ghosts.
 | --- | --- | --- | --- |
 | **VIC open data API key** | ☑ OBTAINED (2026-07-22), not yet deployed | Melbourne realtime: live vehicle dots (incl. train occupancy), realtime arrival times, ⚠ disruption alerts | The "Data Platform API Token" from the portal profile. Auth header is `KeyID` (verified; the OpenAPI specs wrongly say Ocp-Apim-Subscription-Key). Paste into the commented `MEL_*` lines in `deploy/translink.container` — incl. `MEL_API_KEY_HEADER=KeyID` — then daemon-reload + restart |
 | **HTTPS on the VPS** | ☐ NOT SET UP (not a key, but gates a feature) | The "near me" geolocation button — browsers block geolocation on plain http (localhost excepted) | Reverse proxy + Let's Encrypt, or Caddy; shared host with inventoryquest, so coordinate ports |
+| **NSW open data API key** | ☐ NOT OBTAINED | ALL of Sydney: even the static timetable download is authenticated (plus realtime + alerts once ingested) | Free: register at opendata.transport.nsw.gov.au, create an application, copy its API key. Then `deploy/probe-syd.sh <key>` to verify endpoints, ingest with `SYD_API_KEY`, `deploy/enable-syd-vps.sh` for the VPS |
 
 Everything else runs keyless by design: SEQ static+realtime (Translink, open),
 PTV static GTFS (public), Nominatim geocoding (identified UA + enforced rate
@@ -172,6 +193,9 @@ limit), GHCR image pulls (public), Protomaps→self-built basemaps (none).
 - SEQ realtime: `.../SEQ/Alerts` (disruptions — the ⚠ marks)
 - MEL static: `https://data.ptv.vic.gov.au/downloads/gtfs.zip` (292 MB, keyless)
 - MEL realtime: env-configured, needs a registered key (see Regions above)
+- SYD static + realtime: `https://api.transport.nsw.gov.au/{v1,v2}/gtfs/…`,
+  ALL keyed (`Authorization: apikey <key>`); exact per-mode URLs live in
+  `ingest_gtfs.py` (static) and the `SYD_*` env (realtime) — probe first
 - Geocoding: `nominatim.openstreetmap.org`, proxied via `/api/r/{region}/geocode`
   — identified UA, server-enforced 1 req/s, 24 h cache, bounded to the region
   bbox, explicit user action only (the "Search as an address" row). Fair-use

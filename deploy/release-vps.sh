@@ -25,22 +25,24 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKIP_BASEMAP="${SKIP_BASEMAP:-no}"
 
 if [[ "$SKIP_BASEMAP" != "yes" ]]; then
-  # The basemap lives inside the local rootless volume; cat it out via a
+  # The basemaps live inside the local rootless volume; cat each out via a
   # throwaway container rather than poking at the storage path directly.
-  if podman run --rm -v translink-data:/data alpine test -f /data/basemap/mel.pmtiles 2>/dev/null; then
-    TMP_MAP="$(mktemp /tmp/mel.pmtiles.XXXXXX)"
-    trap 'rm -f "${TMP_MAP:-}"' EXIT
-    echo "==> Exporting Melbourne basemap from the local volume…"
-    podman run --rm -v translink-data:/data alpine cat /data/basemap/mel.pmtiles > "$TMP_MAP"
-    echo "==> Copying basemap to ${VPS}:/tmp/mel.pmtiles ($(du -h "$TMP_MAP" | cut -f1))…"
-    scp -q "$TMP_MAP" "${VPS}:/tmp/mel.pmtiles"
-  else
-    echo "==> No mel.pmtiles in the local volume — skipping the basemap."
-    echo "    (Build it first with: podman run --rm -e REGION=mel \\"
-    echo "       -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap)"
-  fi
+  for region in mel syd; do
+    if podman run --rm -v translink-data:/data alpine test -f "/data/basemap/${region}.pmtiles" 2>/dev/null; then
+      TMP_MAP="$(mktemp "/tmp/${region}.pmtiles.XXXXXX")"
+      trap 'rm -f /tmp/mel.pmtiles.?????? /tmp/syd.pmtiles.??????' EXIT
+      echo "==> Exporting ${region} basemap from the local volume…"
+      podman run --rm -v translink-data:/data alpine cat "/data/basemap/${region}.pmtiles" > "$TMP_MAP"
+      echo "==> Copying basemap to ${VPS}:/tmp/${region}.pmtiles ($(du -h "$TMP_MAP" | cut -f1))…"
+      scp -q "$TMP_MAP" "${VPS}:/tmp/${region}.pmtiles"
+    else
+      echo "==> No ${region}.pmtiles in the local volume — skipping that basemap."
+      echo "    (Build it first with: podman run --rm -e REGION=${region} \\"
+      echo "       -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap)"
+    fi
+  done
 fi
 
 echo "==> Copying update-vps.sh and running it on ${VPS}…"
 scp -q "${HERE}/update-vps.sh" "${VPS}:/tmp/update-vps.sh"
-ssh -t "$VPS" "INGEST_MEL='${INGEST_MEL:-yes}' bash /tmp/update-vps.sh"
+ssh -t "$VPS" "INGEST_MEL='${INGEST_MEL:-yes}' INGEST_SYD='${INGEST_SYD:-auto}' bash /tmp/update-vps.sh"

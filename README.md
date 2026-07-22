@@ -1,9 +1,10 @@
-# Next Service — a live departures board for Brisbane & Melbourne
+# Next Service — a live departures board for Brisbane, Melbourne & Sydney
 
 A "next service arriving in X minutes" board with a live map, for any public
-transport stop in **South East Queensland (Translink)** or **metropolitan
-Melbourne (PTV)** — trains, trams, buses and ferries. One codebase, one UI,
-a region switcher in the header.
+transport stop in **South East Queensland (Translink)**, **metropolitan
+Melbourne (PTV)** or **Sydney (TfNSW)** — trains, metro, trams, buses and
+ferries. One codebase, one UI, a region switcher in the header, and a search
+that spans every region (each result row carries its state).
 
 - **Live departures board** — realtime arrival predictions overlaid on the
   timetable, refreshing every 15 s, with per-service colours that stay stable
@@ -26,12 +27,19 @@ a region switcher in the header.
 | Region | Static GTFS | Realtime | Key needed |
 | --- | --- | --- | --- |
 | `seq` — Translink South East Queensland | public | TripUpdates + VehiclePositions + Alerts | none |
-| `mel` — PTV Melbourne (metro train, tram, metro bus) | public | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.vic.gov.au](https://opendata.transport.vic.gov.au/) |
+| `mel` — PTV Melbourne (metro train, tram, metro bus) | public | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.vic.gov.au](https://opendata.transport.vic.gov.au/) (realtime only) |
+| `syd` — TfNSW Sydney (train, metro, bus, ferry, light rail) | keyed | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.nsw.gov.au](https://opendata.transport.nsw.gov.au/) (static **and** realtime) |
 
 Melbourne works **without** a key as a schedule-only board (arrival times from
 the timetable, map positions estimated). With a key, it's fully live — set the
 `MEL_*` environment variables (see `deploy/translink.container` for the exact,
 verified endpoints; the auth header is `KeyID`).
+
+Sydney needs its key even for the timetable download (`Authorization: apikey
+<key>` — pass `--key` or `SYD_API_KEY` to the ingest). Realtime is the `SYD_*`
+environment variables, pre-wired in `deploy/translink.container`; run
+`deploy/probe-syd.sh <key>` first to confirm TfNSW's current v1/v2 endpoint
+split before enabling.
 
 A region is offered in the UI once its timetable has been ingested. The API is
 region-scoped under `/api/r/{region}/…`; bare `/api/…` paths alias to SEQ.
@@ -42,15 +50,18 @@ region-scoped under `/api/r/{region}/…`; bare `/api/…` paths alias to SEQ.
 podman build -t translink-departures .
 podman volume create translink-data
 
-# Timetables (SEQ ~1 min after download; Melbourne's zip is 292 MB)
+# Timetables (SEQ ~1 min after download; Melbourne's zip is 292 MB;
+# Sydney downloads one zip per mode and needs your TfNSW key)
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region mel
+podman run --rm -v translink-data:/data -e SYD_API_KEY=<key> translink-departures python ingest_gtfs.py --region syd
 
 # Self-built vector basemaps (Planetiler, separate builder image; the first
 # build downloads ~2 GB of OSM/Natural Earth sources into the cache volume)
 podman build -f basemap/Containerfile -t translink-basemap .
 podman run --rm -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 podman run --rm -e REGION=mel -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
+podman run --rm -e REGION=syd -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 
 podman run -d -p 8000:8000 -v translink-data:/data translink-departures
 ```
@@ -67,7 +78,9 @@ one the map hides and the board works unchanged.
 
 - `ingest_gtfs.py` loads a region's GTFS into SQLite (atomic swap, safe under
   a running server). The Melbourne adapter merges PTV's nested per-mode zips,
-  prefixing ids `<mode>:` and normalising extended route types to basic GTFS.
+  prefixing ids `<mode>:` and normalising extended route types to basic GTFS;
+  the Sydney adapter downloads TfNSW's separate per-mode "For Realtime" zips
+  (authenticated) and merges them the same way.
 - `app.py` (FastAPI) polls each region's GTFS-RT feeds in background tasks:
   TripUpdates (arrival predictions, with spec-correct **delay propagation** to
   later stops — Melbourne trams publish only the next stop or two),
@@ -96,12 +109,16 @@ timetable.
 - `deploy/update-vps.sh` — image pull, Melbourne ingest, basemap install,
   restart, health checks
 - `deploy/enable-mel-vps.sh root@host KEY` — switch on Melbourne realtime
+- `deploy/enable-syd-vps.sh root@host KEY` — switch on Sydney (ingest + realtime)
+- `deploy/probe-syd.sh KEY` — verify every TfNSW endpoint before enabling
 
 ## Data licensing
 
 - SEQ data © Translink / Queensland Government (CC BY 4.0 at time of writing).
 - Victorian data © Department of Transport and Planning (CC BY 4.0 at time of
   writing) via the Transport Victoria Open Data portal.
+- NSW data © Transport for NSW (CC BY 4.0 at time of writing) via the TfNSW
+  Open Data Hub.
 - Basemap © OpenMapTiles © OpenStreetMap contributors; geocoding by
   OpenStreetMap/Nominatim.
 

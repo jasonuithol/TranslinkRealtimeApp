@@ -10,7 +10,7 @@
     }
   },
   "layers": [
-    { "id": "bg", "type": "background", "paint": { "background-color": "#10161b" } },
+    { "id": "bg", "type": "background", "paint": { "background-color": "#2e88cf" } },
     { "id": "earth", "type": "fill", "source": "protomaps", "source-layer": "earth",
       "paint": { "fill-color": "#3c4a57" } },
     { "id": "landuse", "type": "fill", "source": "protomaps", "source-layer": "landuse",

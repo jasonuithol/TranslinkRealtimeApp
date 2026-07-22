@@ -514,6 +514,13 @@
   // The stop being viewed, judged by what actually calls there rather than by
   // location_type, which cannot tell a ferry terminal from a bus stop.
   function stopGlyph(data) {
+    // If trains call here it is a train station, even when buses out-number
+    // them — Varsity Lakes is a station with 10 bus bays, not a bus stop. The
+    // majority vote below is only for deciding between the non-rail modes.
+    const railStation = railStations.some((s) => s.stop_id === data.stop.stop_id);
+    if (railStation || data.departures.some((d) => [1, 2].includes(Number(d.route_type)))) {
+      return STOP_STATION;
+    }
     const counts = {};
     data.departures.forEach((d) => {
       counts[d.route_type] = (counts[d.route_type] || 0) + 1;
@@ -811,24 +818,25 @@
         selectRoute(p.trip);
       });
 
-      // A grey landmark or a train station is itself a stop — click it to make
-      // it the stop being viewed, the same as picking it from search.
+      // One handler decides what a map click does, so overlapping markers
+      // resolve deterministically. Two per-layer handlers used to both fire
+      // when a bus stop and an always-on station overlapped, and the station's
+      // won — so the bus stop "did nothing". Priority now: a vehicle/ghost keeps
+      // its own popup handler; else a route bus stop beats a background station
+      // (you are clicking the stop you traced); else empty map clears the route.
       const stopLayers = ["landmarks", "rail-stations"];
-      for (const lyr of stopLayers) {
-        map.on("click", lyr, (e) => {
-          const p = e.features[0].properties;
-          if (p.stop_id) selectStop(p.stop_id);
-        });
-      }
-
-      // A click on empty map clears the selection — but a marker or a landmark
-      // is not empty map.
-      const clickableLayers = ["vehicle-dot", "ghost-dot", ...stopLayers];
       map.on("click", (e) => {
-        const hit = map.queryRenderedFeatures(e.point, { layers: clickableLayers });
-        if (!hit.length && selectedTrip) selectRoute(selectedTrip);
+        // Vehicles and ghosts have their own handlers below; leave those to them.
+        if (map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot", "ghost-dot"] }).length) return;
+        const stops = map.queryRenderedFeatures(e.point, { layers: stopLayers });
+        if (stops.length) {
+          const pick = stops.find((f) => f.layer.id === "landmarks") || stops[0];
+          if (pick.properties.stop_id) selectStop(pick.properties.stop_id);
+          return;
+        }
+        if (selectedTrip) selectRoute(selectedTrip);   // empty map → clear route
       });
-      for (const lyr of clickableLayers) {
+      for (const lyr of ["vehicle-dot", "ghost-dot", ...stopLayers]) {
         map.on("mouseenter", lyr, () => map.getCanvas().style.cursor = "pointer");
         map.on("mouseleave", lyr, () => map.getCanvas().style.cursor = "");
       }

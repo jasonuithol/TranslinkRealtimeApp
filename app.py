@@ -41,6 +41,11 @@ BASEMAP_FILE = BASEMAP_DIR / "seq.pmtiles"
 POLL_SECONDS = 30
 LOOKAHEAD_MINUTES = 90
 MAX_RESULTS = 12
+# A trip with no GPS that hasn't left its origin is drawn at that origin only if
+# it departs within this window — "staging to start". Earlier than that it is
+# not on the road and gets no marker, which keeps imminent departures visible
+# without piling far-future runs onto the origin point.
+GHOST_STAGE_WINDOW_S = 15 * 60
 # GTFS times are in the agency's local time, NOT the host's. Pinning this makes
 # the board correct under a UTC container clock, which is the normal case in a
 # container and was previously shifting every scheduled time by 10 hours.
@@ -299,15 +304,22 @@ def _seconds_into_day(hms: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def _interpolate_along(nodes: list[tuple[int, float, float]], now: int):
+def _interpolate_along(
+    nodes: list[tuple[int, float, float]], now: int, stage_window: int = 0
+):
     """nodes = [(epoch, lat, lon), ...] in schedule order. Return the point the
     timetable places the vehicle at `now`, linearly interpolated between the two
-    stops that bracket it — or None when the trip is not on the road: before it
-    departs its origin, or after it reaches its final stop. Not clamping to the
-    origin is deliberate: a run scheduled to start in 40 minutes is not sitting
-    at the depot to be drawn — showing it there just piles phantom buses on the
-    route start."""
-    if now < nodes[0][0] or now >= nodes[-1][0]:
+    stops that bracket it — or None when the trip is not on the road.
+
+    Before the origin departure the trip has no en-route position. It is drawn at
+    its origin only if it leaves within `stage_window` seconds ("staging to
+    start"); earlier than that it gets no marker, so a run scheduled to start in
+    40 minutes does not pile a phantom bus on the route start. After the final
+    stop the trip has finished and returns None."""
+    first = nodes[0][0]
+    if now < first:
+        return {"lat": nodes[0][1], "lon": nodes[0][2]} if first - now <= stage_window else None
+    if now >= nodes[-1][0]:
         return None
     for (t0, a0, o0), (t1, a1, o1) in zip(nodes, nodes[1:]):
         if t0 <= now < t1:
@@ -363,7 +375,7 @@ def estimate_ghost_positions(con, deps: list[dict], now_epoch: int) -> dict:
             nodes.append((midnight + _seconds_into_day(hms), r["stop_lat"], r["stop_lon"]))
         if len(nodes) < 2:
             continue
-        pos = _interpolate_along(nodes, now_epoch)
+        pos = _interpolate_along(nodes, now_epoch, GHOST_STAGE_WINDOW_S)
         if pos:
             out[tid] = pos
     return out

@@ -301,12 +301,19 @@ one from the timetable: `estimate_ghost_positions()` anchors the trip's clock to
 the board departure we already resolved (`midnight = board_scheduled −
 seconds_into_day(board_hms)`, correct across the 24:00 boundary and for either
 service date), then `_interpolate_along()` linearly interpolates between the two
-scheduled stops that bracket *now*. Returns nothing when the trip is not on the
-road — before it departs its origin or after it reaches its last stop. Not
-drawing not-yet-started runs is deliberate: otherwise a stop far down a frequent
-route piles a stack of phantom buses on the route start (arrivals 55, 70, 85 min
-out all "parked" at the origin). These come back in a separate `ghosts` array
-(kept out of `vehicles` so "vehicles = real GPS" stays true).
+scheduled stops that bracket *now*. A not-yet-departed trip is drawn at its
+origin only if it leaves within `GHOST_STAGE_WINDOW_S` (15 min) — "staging to
+start" — otherwise nothing, so a stop far down a frequent route does not pile a
+stack of phantom buses on the route start (the failure at 301440: arrivals 55,
+70, 85 min out all "parked" at the origin). A run that has departed is drawn en
+route; one past its last stop is gone. These come back in a separate `ghosts`
+array (kept out of `vehicles` so "vehicles = real GPS" stays true).
+
+Why a window rather than all-or-nothing: a trip can read 📶 *live* (TripUpdates
+predicts it) while its bus has not left the origin — so "hide everything
+not-departed" hid buses about to start, but "show everything not-departed"
+brought back the origin pile. 15 min shows the imminent ones where they're
+staging and hides the rest.
 
 The frontend draws them on their own `ghosts` source in dedicated layers —
 `ghost-halo` (a hollow ring), `ghost-dot` (the same colour/emoji as the live

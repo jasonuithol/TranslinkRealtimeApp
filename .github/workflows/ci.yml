@@ -121,11 +121,16 @@ jobs:
           assert abs(mid['lon'] - 153.05) < 1e-9 and abs(mid['lat'] + 27.0) < 1e-9, mid
           # At the origin departure time: on the road, drawn at the origin.
           assert app._interpolate_along(nodes, 1000) == {'lat': -27.0, 'lon': 153.0}
-          # Before it departs: not on the road yet, so no position (no phantom
+          # Before it departs, with no staging window: no position (no phantom
           # bus parked at the route start).
           assert app._interpolate_along(nodes, 500) is None
+          # Staging window: within it, a not-yet-departed trip shows at origin...
+          assert app._interpolate_along(nodes, 500, 600) == {'lat': -27.0, 'lon': 153.0}
+          # ...but outside it (leaves in 700s > 600s window), still nothing.
+          assert app._interpolate_along(nodes, 300, 600) is None
           # After the last stop: the trip has finished, so no position.
           assert app._interpolate_along(nodes, 3000) is None
+          assert app._interpolate_along(nodes, 3000, 600) is None
           # Anchoring by seconds-into-day stays monotonic across 24:00.
           assert app._seconds_into_day('24:28:00') == 88080
           print('ghost interpolation: midpoint, origin-clamp and end-of-trip all correct')

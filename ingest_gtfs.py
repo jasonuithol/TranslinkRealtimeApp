@@ -1,27 +1,55 @@
 """
-Ingest Translink's static SEQ GTFS feed into a local SQLite database.
+Ingest a region's static GTFS feed into a local SQLite database.
 
 Usage:
-    python ingest_gtfs.py                  # downloads the feed, then ingests
-    python ingest_gtfs.py SEQ_GTFS.zip     # ingest an already-downloaded zip
+    python ingest_gtfs.py                          # SEQ: download + ingest
+    python ingest_gtfs.py SEQ_GTFS.zip             # SEQ: ingest a local zip
+    python ingest_gtfs.py --region mel             # Melbourne: download + ingest
+    python ingest_gtfs.py --region mel gtfs.zip    # Melbourne: local zip
 
-The static feed changes roughly weekly; re-run this to refresh.
+Regions:
+  seq  Translink South East Queensland — one flat GTFS zip, ids globally unique.
+  mel  PTV Victoria — one outer zip containing a *nested* zip per mode
+       (2 = metro train, 3 = tram, 4 = metro bus, …). Ids are only unique
+       within a mode, so every id is prefixed "<mode>:" on the way in; the
+       realtime pollers apply the same prefix per feed (see app.py REGIONS).
+
+The static feeds change roughly weekly; re-run this to refresh.
 Only the tables needed for a departures board are loaded.
 """
 
+import argparse
 import csv
 import io
 import os
+import shutil
 import sqlite3
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
 import httpx
 
-GTFS_URL = "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip"
-# Overridable so the DB can live on a mounted volume (see Containerfile).
-DB_PATH = Path(os.environ.get("GTFS_DB") or Path(__file__).parent / "gtfs.sqlite3")
+BASE = Path(__file__).parent
+SEQ_DB = Path(os.environ.get("GTFS_DB") or BASE / "gtfs.sqlite3")
+
+REGIONS = {
+    "seq": {
+        "url": "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip",
+        "db": SEQ_DB,
+        # One flat zip, no prefixing.
+        "modes": None,
+    },
+    "mel": {
+        "url": "https://data.ptv.vic.gov.au/downloads/gtfs.zip",
+        "db": Path(os.environ.get("MEL_GTFS_DB") or SEQ_DB.parent / "gtfs-mel.sqlite3"),
+        # Inner zips to load: PTV numbers them by mode. Metropolitan Melbourne:
+        # 2 = metro train, 3 = tram, 4 = metro bus. (1/5/6 are regional
+        # train/coach/bus — add them here if the board should cover Victoria.)
+        "modes": ["2", "3", "4"],
+    },
+}
 
 SCHEMA = """
 DROP TABLE IF EXISTS stops;
@@ -104,10 +132,48 @@ TABLES = {
     "shapes": ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"],
 }
 
+# Columns that hold feed-local identifiers. For a multi-feed region every value
+# here gets the mode prefix, keeping ids unique after the feeds are merged and
+# keeping every cross-table reference (trip -> stops, trip -> shape, …) intact.
+ID_COLS = {
+    "stops": ["stop_id", "parent_station"],
+    "routes": ["route_id"],
+    "trips": ["trip_id", "route_id", "service_id", "shape_id"],
+    "stop_times": ["trip_id", "stop_id"],
+    "calendar": ["service_id"],
+    "calendar_dates": ["service_id"],
+    "shapes": ["shape_id"],
+}
 
-def download_feed(dest: Path) -> Path:
-    print(f"Downloading {GTFS_URL} ...")
-    with httpx.stream("GET", GTFS_URL, timeout=120, follow_redirects=True) as r:
+
+def normalize_route_type(value: str | None) -> str | None:
+    """Collapse Google's extended route types onto the basic GTFS set.
+
+    PTV publishes extended types (400 = urban railway for metro trains,
+    701 = regional bus, 900s = tram); Translink uses the basic 0-4. The whole
+    app — rail-station detection, mode emoji, labels — keys on the basic set,
+    so normalise once here rather than teaching every consumer both schemes.
+    """
+    if not value:
+        return value
+    try:
+        t = int(value)
+    except ValueError:
+        return value
+    if t <= 12:
+        return value                      # already basic
+    if 100 <= t < 200:  return "2"        # railway service
+    if 200 <= t < 300:  return "3"        # coach
+    if 400 <= t < 500:  return "1"        # urban railway / metro
+    if 700 <= t < 800:  return "3"        # bus
+    if 900 <= t < 1000: return "0"        # tram
+    if 1000 <= t < 1100: return "4"       # water transport
+    return "3"                            # anything exotic reads as a bus
+
+
+def download_feed(url: str, dest: Path) -> Path:
+    print(f"Downloading {url} ...")
+    with httpx.stream("GET", url, timeout=300, follow_redirects=True) as r:
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_bytes():
@@ -116,45 +182,91 @@ def download_feed(dest: Path) -> Path:
     return dest
 
 
-def ingest(zip_path: Path) -> None:
+def load_feed_zip(con: sqlite3.Connection, zf: zipfile.ZipFile, prefix: str = "") -> None:
+    """Load one flat GTFS zip into the tables, prefixing identifier columns."""
+    for table, cols in TABLES.items():
+        fname = f"{table}.txt"
+        if fname not in zf.namelist():
+            print(f"  (skipping {fname}, not in feed)")
+            continue
+        print(f"  loading {fname}{f' [{prefix}]' if prefix else ''} ...")
+        id_idx = [cols.index(c) for c in ID_COLS[table]]
+        rt_idx = cols.index("route_type") if table == "routes" else None
+        with zf.open(fname) as raw:
+            reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8-sig"))
+            placeholders = ",".join("?" for _ in cols)
+            sql = f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({placeholders})"
+            batch = []
+            for row in reader:
+                vals = [row.get(c) for c in cols]
+                if prefix:
+                    for i in id_idx:
+                        if vals[i]:   # empty parent_station stays empty
+                            vals[i] = prefix + vals[i]
+                if rt_idx is not None:
+                    vals[rt_idx] = normalize_route_type(vals[rt_idx])
+                batch.append(tuple(vals))
+                if len(batch) >= 50_000:
+                    con.executemany(sql, batch)
+                    batch.clear()
+            if batch:
+                con.executemany(sql, batch)
+        con.commit()
+
+
+def ingest(region: str, zip_path: Path) -> None:
     # Build into a temp file and swap it in atomically. SCHEMA drops every table
     # first, so ingesting over a live DB would leave the running server querying
     # half-dropped tables for the duration. app.py opens a fresh connection per
     # request, so a rename moves readers onto the finished DB between requests.
-    tmp_path = Path(str(DB_PATH) + ".tmp")
+    cfg = REGIONS[region]
+    db_path = cfg["db"]
+    tmp_path = Path(str(db_path) + ".tmp")
     tmp_path.unlink(missing_ok=True)
     con = sqlite3.connect(tmp_path)
     con.executescript(SCHEMA)
+
     with zipfile.ZipFile(zip_path) as zf:
-        for table, cols in TABLES.items():
-            fname = f"{table}.txt"
-            if fname not in zf.namelist():
-                print(f"  (skipping {fname}, not in feed)")
-                continue
-            print(f"  loading {fname} ...")
-            with zf.open(fname) as raw:
-                reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8-sig"))
-                placeholders = ",".join("?" for _ in cols)
-                sql = f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})"
-                batch = []
-                for row in reader:
-                    batch.append(tuple(row.get(c) for c in cols))
-                    if len(batch) >= 50_000:
-                        con.executemany(sql, batch)
-                        batch.clear()
-                if batch:
-                    con.executemany(sql, batch)
-            con.commit()
+        if cfg["modes"] is None:
+            load_feed_zip(con, zf)
+        else:
+            # PTV nests one zip per mode inside the outer zip. Inner zips are
+            # large (metro bus stop_times especially), so spool each to disk
+            # rather than holding it in memory.
+            names = zf.namelist()
+            for mode in cfg["modes"]:
+                inner_name = next(
+                    (n for n in names
+                     if n.strip("/").startswith(f"{mode}/") and n.endswith(".zip")),
+                    None,
+                )
+                if inner_name is None:
+                    print(f"  (mode {mode}: no inner zip found, skipping)")
+                    continue
+                print(f"  mode {mode}: {inner_name}")
+                with tempfile.NamedTemporaryFile(suffix=".zip") as tmp_zip:
+                    with zf.open(inner_name) as src:
+                        shutil.copyfileobj(src, tmp_zip)
+                    tmp_zip.flush()
+                    with zipfile.ZipFile(tmp_zip.name) as inner:
+                        load_feed_zip(con, inner, prefix=f"{mode}:")
+
     n = con.execute("SELECT COUNT(*) FROM stop_times").fetchone()[0]
     con.close()
-    os.replace(tmp_path, DB_PATH)
-    print(f"Done. {n:,} stop_times rows in {DB_PATH}")
+    os.replace(tmp_path, db_path)
+    print(f"Done. {n:,} stop_times rows in {db_path}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        zpath = Path(sys.argv[1])
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("zip", nargs="?", help="already-downloaded feed zip")
+    ap.add_argument("--region", default="seq", choices=sorted(REGIONS))
+    args = ap.parse_args()
+
+    cfg = REGIONS[args.region]
+    if args.zip:
+        zpath = Path(args.zip)
     else:
-        zpath = DB_PATH.parent / "SEQ_GTFS.zip"
-        download_feed(zpath)
-    ingest(zpath)
+        zpath = cfg["db"].parent / f"{args.region}_gtfs.zip"
+        download_feed(cfg["url"], zpath)
+    ingest(args.region, zpath)

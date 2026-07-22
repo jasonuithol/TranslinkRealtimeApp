@@ -115,12 +115,77 @@ is `AutoUpdate=registry`, so a push to `main` rolls out on its own.
 - **Platform labels** come from `platform_code`, falling back to a regex
   on the child stop name ("... platform 3").
 
+## Regions (multi-network support — branch `regions`, NOT yet deployed)
+
+One board, many networks. `app.py` has a `REGIONS` registry — per region: a
+static GTFS SQLite DB, lists of GTFS-RT feeds (each with an id prefix), a
+timezone, a basemap file, a geocoder bbox and a map centre — plus a `STATE` map
+holding that region's realtime caches and feed-health stats. Pollers are
+spawned per region per configured feed kind; a region with no realtime
+configured is *static-only* and still fully works: the board shows scheduled
+times and the map shows timetable-estimated ghosts.
+
+- API is region-scoped under `/api/r/{region}/…`; every original `/api/…` path
+  remains as an alias for `seq`, so old bookmarks and the deployed VPS keep
+  working. `/api/regions` lists ingested regions for the frontend switcher.
+- A region is only offered once its DB exists — no Melbourne ingest, no
+  switcher, zero behaviour change for a SEQ-only deployment.
+- **Melbourne (`mel`)**: PTV's static GTFS is one outer zip with a *nested* zip
+  per mode (2 = metro train, 3 = tram, 4 = metro bus; ids only unique within a
+  mode). `ingest_gtfs.py --region mel` loads modes 2/3/4 and prefixes every id
+  `<mode>:`; the RT poller config carries the same prefix per feed so realtime
+  ids land on the ingested ones. PTV uses Google's *extended* route types
+  (400 = metro rail, 701 = bus, 900s = tram) — `normalize_route_type()`
+  collapses them to the basic 0-4 set at ingest so rail-station detection, mode
+  emoji and labels all just work. 11.6 M stop_times; ~4 min ingest.
+- **Melbourne realtime needs a (free) registered key** and the host has moved
+  between VIC data portals, so it is entirely env-driven — unset means
+  static-only: `MEL_TRIP_UPDATES="2|https://…;3|https://…"` (mode prefix per
+  feed), same for `MEL_VEHICLE_POSITIONS` / `MEL_ALERTS`, `MEL_API_KEY`,
+  `MEL_API_KEY_HEADER` (default `Ocp-Apim-Subscription-Key`).
+- Frontend: region comes from `?region=` / localStorage; all API calls go
+  through `api(path)`; the eyebrow shows the region name and (when 2+ regions
+  are ingested) a `⇄` switch button that reloads into the other region. The
+  map style is one file — the client points its `omt` source at the region's
+  pmtiles from `/api/r/{region}/config` (`basemap_url`, `center`). Board times
+  render in the *region's* timezone (`tz` from config), not the viewer's.
+- Basemaps per region: `REGION=mel podman run … translink-basemap` (bbox
+  presets in `basemap/build-basemap.sh`). Melbourne DB: `/data/gtfs-mel.sqlite3`
+  (`MEL_GTFS_DB` to override); basemap `mel.pmtiles`.
+
 ## Data endpoints
 
-- Static: `https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip`
-- Realtime: `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates`
-- Realtime: `.../SEQ/VehiclePositions` (live GPS, drives the map)
-- Not yet used: `.../SEQ/Alerts` (disruptions)
+- SEQ static: `https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip`
+- SEQ realtime: `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates`
+- SEQ realtime: `.../SEQ/VehiclePositions` (live GPS, drives the map)
+- SEQ realtime: `.../SEQ/Alerts` (disruptions — the ⚠ marks)
+- MEL static: `https://data.ptv.vic.gov.au/downloads/gtfs.zip` (292 MB, keyless)
+- MEL realtime: env-configured, needs a registered key (see Regions above)
+- Geocoding: `nominatim.openstreetmap.org`, proxied via `/api/r/{region}/geocode`
+  — identified UA, server-enforced 1 req/s, 24 h cache, bounded to the region
+  bbox, explicit user action only (the "Search as an address" row). Fair-use
+  community service: keep it that way.
+
+## Disruption alerts
+
+`poll_alerts` (5-min cycle) keeps only alerts *active now* (the feed carries
+future planned works too). SEQ keys them by route_id (mostly) and stop_id —
+no trip-level entries. `/api/…/departures` attaches `alert_ids` per row and
+one deduplicated response-level `alerts` map (a network-wide alert can span
+half the board; it is sent once). Frontend: an amber ⚠ (U+26A0, in the
+monochrome subset) beside the source mark — amber deliberately, a warning is
+not part of the service's colour identity — opens a popup built with DOM APIs
+only (feed text is untrusted). `/api/feeds` reports alert counts per region.
+
+## Nearest stops ("which stop is closest to home?")
+
+Two entry points, one dropdown: the **near me** button (browser geolocation —
+NOTE: browsers require HTTPS for geolocation, localhost excepted, so on a plain
+http VPS the button degrades with an explanatory message) and typed **address
+search** (an explicit "Search as an address" row under the stop-name results,
+so the shared geocoder is never hit automatically). Both feed
+`/api/r/{region}/stops/nearby?lat&lon` — bbox prefilter + haversine, child
+platforms collapsed to their parent station, distances in the dropdown.
 
 **Feed QC.** Each poll logs a one-line summary (`[vp] N vehicles: P positioned,
 C cached, …`, `[tu] N trip updates`) and stores it for `/api/feeds`, so the

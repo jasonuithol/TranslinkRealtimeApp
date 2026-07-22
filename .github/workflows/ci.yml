@@ -94,6 +94,36 @@ jobs:
           curl -fsS http://localhost:8000/api/rail-stations | grep -q '"stations"' \
             || { echo "rail-stations response missing the stations array"; exit 1; }
 
+          # Disruption alerts ride along too (an empty map before the first
+          # alert poll, but the key must exist).
+          deps2=$(curl -fsS "http://localhost:8000/api/departures/place_censta")
+          echo "$deps2" | grep -q '"alerts"' \
+            || { echo "departures response missing the alerts map"; exit 1; }
+
+          # Region scoping: the same data must be reachable under /api/r/seq/…
+          # (the frontend's only path family) and /api/regions must list seq.
+          curl -fsS "http://localhost:8000/api/regions" | grep -q '"seq"' \
+            || { echo "regions endpoint missing seq"; exit 1; }
+          curl -fsS "http://localhost:8000/api/r/seq/departures/place_censta" \
+            | grep -q '"departures"' \
+            || { echo "region-scoped departures path broken"; exit 1; }
+          curl -sS -o /dev/null -w '%{http_code}\n' \
+            "http://localhost:8000/api/r/nowhere/config" | grep -q 404 \
+            || { echo "expected 404 for an unknown region"; exit 1; }
+
+      - name: Extended route types normalise to the basic GTFS set
+        run: |
+          # PTV (Melbourne) publishes Google extended route types; the whole app
+          # keys on basic 0-4, so the ingest collapses them. 400=metro rail -> 1,
+          # 701=bus -> 3, 900s=tram -> 0; basic values pass through untouched.
+          docker run --rm translink:ci python -c "
+          from ingest_gtfs import normalize_route_type as n
+          assert n('400') == '1' and n('701') == '3' and n('900') == '0'
+          assert n('101') == '2' and n('1000') == '4'
+          assert n('2') == '2' and n('0') == '0' and n('') == '' and n(None) is None
+          print('route type normalisation correct')
+          "
+
       - name: Scheduled times resolve in Brisbane time, not the host's
         run: |
           # Regression test. gtfs_time_to_epoch used a naive datetime, so a UTC

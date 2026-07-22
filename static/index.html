@@ -909,10 +909,12 @@
           // Stations slightly larger, and placed FIRST (lower sort key wins
           // collisions): a station sits exactly where bus stops cluster, and
           // without priority the overlap thinning can drop the 🏫 in favour of
-          // an adjacent 🚏 — the least useful stop winning the tie.
-          "icon-size": ["case", ["==", ["get", "rt"], 2],
-            ["interpolate", ["linear"], ["zoom"], 15, 0.7, 17, 1.1],
-            ["interpolate", ["linear"], ["zoom"], 15, 0.55, 17, 0.9]],
+          // an adjacent 🚏. NOTE: the zoom interpolate must be the OUTERMOST
+          // expression — a feature `case` wrapped around it fails validation
+          // and MapLibre silently drops the whole layer.
+          "icon-size": ["interpolate", ["linear"], ["zoom"],
+            15, ["case", ["==", ["get", "rt"], 2], 0.7, 0.55],
+            17, ["case", ["==", ["get", "rt"], 2], 1.1, 0.9]],
           "symbol-sort-key": ["case", ["==", ["get", "rt"], 2], 0, 1],
           // Near-coincident stops carry a computed offset so they fan out into
           // a row instead of colliding (see maybeLoadAllStops).
@@ -1112,7 +1114,8 @@
         const s = map.getStyle();
         const counts = {};
         for (const id of ["water", "road-major", "road-secondary", "road-minor",
-                          "busway", "rail", "place", "landcover-green"]) {
+                          "busway", "rail", "place", "landcover-green",
+                          "all-stops", "landmarks", "vehicle-dot", "ghost-dot"]) {
           try {
             counts[id] = map.getLayer(id)
               ? map.queryRenderedFeatures({ layers: [id] }).length

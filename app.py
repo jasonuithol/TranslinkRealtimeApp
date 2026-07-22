@@ -41,11 +41,14 @@ BASEMAP_FILE = BASEMAP_DIR / "seq.pmtiles"
 POLL_SECONDS = 30
 LOOKAHEAD_MINUTES = 90
 MAX_RESULTS = 12
-# A trip with no GPS that hasn't left its origin is drawn at that origin only if
-# it departs within this window — "staging to start". Earlier than that it is
-# not on the road and gets no marker, which keeps imminent departures visible
-# without piling far-future runs onto the origin point.
-GHOST_STAGE_WINDOW_S = 15 * 60
+# A service is shown — on the board AND the map, which must agree — only if we
+# can place it: it has live GPS, it is en route, or it is staging to leave its
+# origin within this window. A run that hasn't started (its bus still finishing
+# an earlier trip under another trip_id, which this feed gives no way to follow)
+# has no position and appears in neither. This is the single "is it underway?"
+# threshold; widen it to list departures further ahead, at the cost of drawing
+# not-yet-moving buses guessed onto their origin.
+STAGING_WINDOW_S = 5 * 60
 # GTFS times are in the agency's local time, NOT the host's. Pinning this makes
 # the board correct under a UTC container clock, which is the normal case in a
 # container and was previously shifting every scheduled time by 10 hours.
@@ -375,7 +378,7 @@ def estimate_ghost_positions(con, deps: list[dict], now_epoch: int) -> dict:
             nodes.append((midnight + _seconds_into_day(hms), r["stop_lat"], r["stop_lon"]))
         if len(nodes) < 2:
             continue
-        pos = _interpolate_along(nodes, now_epoch, GHOST_STAGE_WINDOW_S)
+        pos = _interpolate_along(nodes, now_epoch, STAGING_WINDOW_S)
         if pos:
             out[tid] = pos
     return out
@@ -485,36 +488,38 @@ def departures(stop_id: str):
     results = list(best.values())
 
     results.sort(key=lambda d: d["predicted"])
-    shown = results[:MAX_RESULTS]
 
-    # Live positions for exactly the trips on the board, so the map never shows
-    # a vehicle the user has no row for. Most trips have no GPS at any moment.
-    vehicles = []
-    for dep in shown:
-        v = vp_cache.get(dep["trip_id"])
-        if not v:
-            continue
-        vehicles.append(
-            {
-                "trip_id": dep["trip_id"],
-                "route": dep["route"],
-                "route_color": dep["route_color"],
-                "headsign": dep["headsign"],
-                "minutes": dep["minutes"],
-                **v,
-            }
-        )
-
-    # Every remaining board trip has a schedule but no GPS. Dead-reckon a
-    # position from its timetable so the map can show it as a *ghost* — distinct
-    # from a live fix — instead of leaving the row with no marker at all. This is
-    # what reconciles the board and the map: live where GPS exists, estimated
-    # where only the timetable does.
-    gps_trips = {v["trip_id"] for v in vehicles}
-    need_estimate = [d for d in shown if d["trip_id"] not in gps_trips]
+    # Board == map: a departure is listed only if we can put it on the map. Work
+    # out a position for every candidate first — live GPS, else a timetable
+    # estimate (which yields a point only when the trip is en route or staging
+    # within STAGING_WINDOW_S) — then keep just the ones we can place, and cut to
+    # MAX_RESULTS from those. A not-yet-departed run with no position is shown in
+    # neither the board nor the map, so the two never disagree and a wobbling
+    # time boundary moves a service in and out of both together.
+    gps = {d["trip_id"]: vp_cache.get(d["trip_id"]) for d in results}
+    gps = {tid: v for tid, v in gps.items() if v}
+    need_estimate = [d for d in results if d["trip_id"] not in gps]
     con_e = db()
     estimated = estimate_ghost_positions(con_e, need_estimate, now_epoch)
     con_e.close()
+
+    trackable = [d for d in results if d["trip_id"] in gps or d["trip_id"] in estimated]
+    shown = trackable[:MAX_RESULTS]
+
+    vehicles = [
+        {
+            "trip_id": d["trip_id"],
+            "route": d["route"],
+            "route_color": d["route_color"],
+            "headsign": d["headsign"],
+            "minutes": d["minutes"],
+            **gps[d["trip_id"]],
+        }
+        for d in shown
+        if d["trip_id"] in gps
+    ]
+    # The rest are en route or staging: a ghost, dead-reckoned from the timetable
+    # and drawn distinct from a live fix.
     ghosts = [
         {
             "trip_id": d["trip_id"],
@@ -525,8 +530,8 @@ def departures(stop_id: str):
             "lon": estimated[d["trip_id"]]["lon"],
             "estimated": True,
         }
-        for d in need_estimate
-        if d["trip_id"] in estimated
+        for d in shown
+        if d["trip_id"] not in gps
     ]
 
     # Tag every departure with the shape its trip follows, so any row on the

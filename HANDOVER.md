@@ -301,19 +301,29 @@ one from the timetable: `estimate_ghost_positions()` anchors the trip's clock to
 the board departure we already resolved (`midnight = board_scheduled −
 seconds_into_day(board_hms)`, correct across the 24:00 boundary and for either
 service date), then `_interpolate_along()` linearly interpolates between the two
-scheduled stops that bracket *now*. A not-yet-departed trip is drawn at its
-origin only if it leaves within `GHOST_STAGE_WINDOW_S` (15 min) — "staging to
-start" — otherwise nothing, so a stop far down a frequent route does not pile a
-stack of phantom buses on the route start (the failure at 301440: arrivals 55,
-70, 85 min out all "parked" at the origin). A run that has departed is drawn en
-route; one past its last stop is gone. These come back in a separate `ghosts`
-array (kept out of `vehicles` so "vehicles = real GPS" stays true).
+scheduled stops that bracket *now*. A not-yet-departed trip is placed at its
+origin only if it leaves within `STAGING_WINDOW_S` (5 min) — "staging to start";
+earlier than that it has no position at all. A run that has departed is placed
+en route; one past its last stop is gone.
 
-Why a window rather than all-or-nothing: a trip can read 📶 *live* (TripUpdates
-predicts it) while its bus has not left the origin — so "hide everything
-not-departed" hid buses about to start, but "show everything not-departed"
-brought back the origin pile. 15 min shows the imminent ones where they're
-staging and hides the rest.
+**The board shows exactly what the map can place.** This is the key invariant:
+`/api/departures` computes a position for every candidate first (live GPS, else
+the timetable estimate), keeps only the ones it can place, and *then* cuts to
+`MAX_RESULTS`. A service the map cannot show — a run whose bus has not started,
+still finishing an earlier trip under another trip_id that this feed gives no way
+to follow — is listed on neither the board nor the map. So the two never
+disagree, and a service near the time boundary moves in and out of *both*
+together. `vehicles` and `ghosts` are then just the shown set split by whether
+the position is a live fix or an estimate.
+
+`STAGING_WINDOW_S` is the single "is it underway?" knob. It barely affects busy
+hubs (they have far more than `MAX_RESULTS` trackable services at any window) —
+it only sets how sparse a route-*origin* stop looks, where most listed services
+haven't started. Widen it to list further ahead, at the cost of drawing
+not-yet-moving buses guessed onto their origins (the 301440 pile: arrivals 55,
+70, 85 min out all "parked" at the origin was the failure that a tight window
+prevents). A trip can read 📶 *live* (TripUpdates predicts a time) while its bus
+has not left the origin, so `live` on a row never by itself means "mappable".
 
 The frontend draws them on their own `ghosts` source in dedicated layers —
 `ghost-halo` (a hollow ring), `ghost-dot` (the same colour/emoji as the live

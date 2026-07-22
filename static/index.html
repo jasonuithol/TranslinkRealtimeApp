@@ -906,7 +906,14 @@
         minzoom: 15,
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 15, 0.55, 17, 0.9],
+          // Stations slightly larger, and placed FIRST (lower sort key wins
+          // collisions): a station sits exactly where bus stops cluster, and
+          // without priority the overlap thinning can drop the 🏫 in favour of
+          // an adjacent 🚏 — the least useful stop winning the tie.
+          "icon-size": ["case", ["==", ["get", "rt"], 2],
+            ["interpolate", ["linear"], ["zoom"], 15, 0.7, 17, 1.1],
+            ["interpolate", ["linear"], ["zoom"], 15, 0.55, 17, 0.9]],
+          "symbol-sort-key": ["case", ["==", ["get", "rt"], 2], 0, 1],
           "icon-anchor": "bottom",
           "icon-allow-overlap": false,
           "icon-padding": 2,
@@ -1205,7 +1212,11 @@
     if (allStopsLoaded || allStopsLoading || !mapReady) return;
     if (map.getZoom() < 14.5) return;   // fetch just ahead of the threshold
     allStopsLoading = true;
-    fetch(api("/all-stops"))
+    // ?v bumped when the payload schema changes — the endpoint is cached for a
+    // day (rightly: 1-2.5 MB, changes weekly), so a schema change served under
+    // the same URL leaves clients on the old shape until the cache expires.
+    // v2: rail stations included, tagged rt=2.
+    fetch(api("/all-stops?v=2"))
       .then((r) => r.json())
       .then((d) => {
         map.getSource("all-stops").setData({
@@ -1216,6 +1227,7 @@
             properties: {
               stop_id: s.stop_id,
               name: s.name,
+              rt: Number(s.route_type),
               icon: ensureVehicleIcon(landmarkGlyph(s.route_type), LANDMARK_INK),
             },
           })),

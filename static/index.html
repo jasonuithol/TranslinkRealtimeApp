@@ -914,6 +914,9 @@
             ["interpolate", ["linear"], ["zoom"], 15, 0.7, 17, 1.1],
             ["interpolate", ["linear"], ["zoom"], 15, 0.55, 17, 0.9]],
           "symbol-sort-key": ["case", ["==", ["get", "rt"], 2], 0, 1],
+          // Near-coincident stops carry a computed offset so they fan out into
+          // a row instead of colliding (see maybeLoadAllStops).
+          "icon-offset": ["coalesce", ["get", "off"], ["literal", [0, 0]]],
           "icon-anchor": "bottom",
           "icon-allow-overlap": false,
           "icon-padding": 2,
@@ -1219,15 +1222,60 @@
     fetch(api("/all-stops?v=2"))
       .then((r) => r.json())
       .then((d) => {
+        const stops = d.stops || [];
+        // Near-coincident stops (a station beside its bus interchange,
+        // kerbside pairs) would collide and thin each other out. Cluster by
+        // true proximity — union-find over a coarse cell index, linking stops
+        // within ~28 m even across cell boundaries (a plain grid hash missed
+        // exactly the station-next-to-stop case) — then fan each cluster out
+        // into a little row so neighbours sit next to each other instead of
+        // fighting for one spot. Offsets are icon pixels (scaled by icon-size).
+        const CELL = 0.0004, LINK_M = 28;
+        const cells = new Map();
+        stops.forEach((s, i) => {
+          const key = `${Math.round(s.lat / CELL)},${Math.round(s.lon / CELL)}`;
+          (cells.get(key) || cells.set(key, []).get(key)).push(i);
+        });
+        const root = stops.map((_, i) => i);
+        const find = (i) => root[i] === i ? i : (root[i] = find(root[i]));
+        const metres = (a, b) => {
+          const kx = 111320 * Math.cos(a.lat * Math.PI / 180);
+          return Math.hypot((a.lon - b.lon) * kx, (a.lat - b.lat) * 110540);
+        };
+        stops.forEach((s, i) => {
+          const cy = Math.round(s.lat / CELL), cx = Math.round(s.lon / CELL);
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            for (const j of cells.get(`${cy + dy},${cx + dx}`) || []) {
+              if (j > i && metres(s, stops[j]) <= LINK_M) root[find(j)] = find(i);
+            }
+          }
+        });
+        const groups = new Map();
+        stops.forEach((s, i) => {
+          const r = find(i);
+          (groups.get(r) || groups.set(r, []).get(r)).push(s);
+        });
+        const offsetOf = new Map();
+        for (const g of groups.values()) {
+          if (g.length < 2) continue;
+          g.sort((a, b) => (a.route_type ?? 9) - (b.route_type ?? 9)
+                        || String(a.stop_id).localeCompare(String(b.stop_id)));
+          g.forEach((s, i) => {
+            // rows of three, centred
+            const row = Math.floor(i / 3), col = i % 3, n = Math.min(g.length - row * 3, 3);
+            offsetOf.set(s.stop_id, [(col - (n - 1) / 2) * 30, row * 30]);
+          });
+        }
         map.getSource("all-stops").setData({
           type: "FeatureCollection",
-          features: (d.stops || []).map((s) => ({
+          features: stops.map((s) => ({
             type: "Feature",
             geometry: { type: "Point", coordinates: [s.lon, s.lat] },
             properties: {
               stop_id: s.stop_id,
               name: s.name,
               rt: Number(s.route_type),
+              off: offsetOf.get(s.stop_id) || [0, 0],
               icon: ensureVehicleIcon(landmarkGlyph(s.route_type), LANDMARK_INK),
             },
           })),

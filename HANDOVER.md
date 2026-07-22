@@ -188,6 +188,29 @@ search**, which runs automatically: a query starting with a house number, or a
 feed `/api/r/{region}/stops/nearby?lat&lon` — bbox prefilter + haversine, child
 platforms collapsed to their parent station, distances in the dropdown.
 
+## OUTSTANDING BUG — one stop's icon suppressed near the viewed stop
+
+Reported on the all-stops layer at Varsity Lakes: viewing "Varsity Lakes
+station, stop A" (300051), the station marker (`place_varsta`, ~23 m away)
+does not draw even past zoom 15 — it only appears when a route whose landmarks
+include it is traced. Everything else on the layer renders. Two fixes did NOT
+cure it: (1) `symbol-sort-key` priority + cache-busted payload; (2)
+`icon-ignore-placement: true` on stop-ring/vehicle-dot/ghost-dot (the
+cross-layer collision-suppression theory — markers no longer claim collision
+space, verified present in the deployed build, still reproduces per user).
+
+Facts established: `place_varsta` IS in the `/all-stops?v=2` payload with
+route_type 2; the layer definition validates and adds in a real MapLibre
+engine (headless blank-style test); the failure is specific to this icon, not
+the layer. Next diagnostic step when picked up again: load with `&mapdebug=1`
+at the Varsity view and read the per-layer counts, and
+`map.queryRenderedFeatures({layers:["all-stops"]})` vs
+`querySourceFeatures("all-stops")` around that coordinate to separate
+"feature missing from source" from "feature present but not placed".
+Also worth checking: text/label collision (labels still participate), and
+whether the landmarks-layer paired stop at the same spot wins placement and
+the all-stops twin is then culled as a same-layer duplicate.
+
 ## Stop landmarks on the map
 
 Three grey landmark tiers, all clickable to select (tram stops draw 🚉,

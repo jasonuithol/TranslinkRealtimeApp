@@ -153,6 +153,17 @@ times and the map shows timetable-estimated ghosts.
   presets in `basemap/build-basemap.sh`). Melbourne DB: `/data/gtfs-mel.sqlite3`
   (`MEL_GTFS_DB` to override); basemap `mel.pmtiles`.
 
+## Keys & credentials needed for full functionality
+
+| What | Status | Unlocks | How |
+| --- | --- | --- | --- |
+| **VIC open data API key** | ☐ NOT YET OBTAINED | Melbourne realtime: live vehicle dots (incl. train occupancy), realtime arrival times, ⚠ disruption alerts | Free: register at https://opendata.transport.vic.gov.au/, subscribe to the GTFS Realtime APIs, paste into the commented `MEL_*` lines in `deploy/translink.container` |
+| **HTTPS on the VPS** | ☐ NOT SET UP (not a key, but gates a feature) | The "near me" geolocation button — browsers block geolocation on plain http (localhost excepted) | Reverse proxy + Let's Encrypt, or Caddy; shared host with inventoryquest, so coordinate ports |
+
+Everything else runs keyless by design: SEQ static+realtime (Translink, open),
+PTV static GTFS (public), Nominatim geocoding (identified UA + enforced rate
+limit), GHCR image pulls (public), Protomaps→self-built basemaps (none).
+
 ## Data endpoints
 
 - SEQ static: `https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip`

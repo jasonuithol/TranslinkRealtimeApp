@@ -10,14 +10,15 @@ Volume=translink-data.volume:/data
 Environment=GTFS_DB=/data/gtfs.sqlite3
 
 # ── Melbourne realtime (OPTIONAL — static-only works without it) ────────────
-# Needs ONE free API key: register at https://opendata.transport.vic.gov.au/
-# (sign up, subscribe to the GTFS Realtime APIs), then uncomment these four
+# Needs ONE free key: the "Data Platform API Token" (subscription key) from
+# your profile at https://opendata.transport.vic.gov.au/. Uncomment these five
 # lines, paste the key, `systemctl --user daemon-reload` and restart.
 # The 2|/3|/4| prefixes are the PTV mode ids the ingest used (metro train /
-# tram / metro bus); the auth header default (Ocp-Apim-Subscription-Key)
-# already matches this platform. Rate limits (~24/min/mode) comfortably fit
-# our 2/min per feed polling.
+# tram / metro bus). Header verified 2026-07-22: this platform authenticates
+# with `KeyID`, NOT the Ocp-Apim-Subscription-Key its OpenAPI specs claim.
+# Rate limits (~24/min/mode) comfortably fit our 2/min per feed polling.
 #Environment=MEL_API_KEY=PASTE_KEY_HERE
+#Environment=MEL_API_KEY_HEADER=KeyID
 #Environment=MEL_TRIP_UPDATES=2|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/trip-updates;3|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/trip-updates;4|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/bus/trip-updates
 #Environment=MEL_VEHICLE_POSITIONS=2|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/vehicle-positions;3|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/vehicle-positions;4|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/bus/vehicle-positions
 #Environment=MEL_ALERTS=2|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/service-alerts;3|https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/service-alerts

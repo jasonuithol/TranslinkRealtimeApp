@@ -157,7 +157,7 @@ times and the map shows timetable-estimated ghosts.
 
 | What | Status | Unlocks | How |
 | --- | --- | --- | --- |
-| **VIC open data API key** | ☐ NOT YET OBTAINED | Melbourne realtime: live vehicle dots (incl. train occupancy), realtime arrival times, ⚠ disruption alerts | Free: register at https://opendata.transport.vic.gov.au/, subscribe to the GTFS Realtime APIs, paste into the commented `MEL_*` lines in `deploy/translink.container` |
+| **VIC open data API key** | ☑ OBTAINED (2026-07-22), not yet deployed | Melbourne realtime: live vehicle dots (incl. train occupancy), realtime arrival times, ⚠ disruption alerts | The "Data Platform API Token" from the portal profile. Auth header is `KeyID` (verified; the OpenAPI specs wrongly say Ocp-Apim-Subscription-Key). Paste into the commented `MEL_*` lines in `deploy/translink.container` — incl. `MEL_API_KEY_HEADER=KeyID` — then daemon-reload + restart |
 | **HTTPS on the VPS** | ☐ NOT SET UP (not a key, but gates a feature) | The "near me" geolocation button — browsers block geolocation on plain http (localhost excepted) | Reverse proxy + Let's Encrypt, or Caddy; shared host with inventoryquest, so coordinate ports |
 
 Everything else runs keyless by design: SEQ static+realtime (Translink, open),

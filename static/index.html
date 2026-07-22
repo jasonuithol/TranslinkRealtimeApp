@@ -627,6 +627,7 @@
 
     map.on("load", () => {
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
+      map.addSource("ghosts", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
       map.addSource("landmarks", { type: "geojson", data: emptyFC() });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
@@ -654,6 +655,56 @@
           // Unlike the vehicles, these may crowd: let MapLibre thin them out.
           "icon-allow-overlap": false,
           "icon-padding": 2,
+        },
+      });
+
+      // Ghosts: timetable-estimated positions for board trips with no live GPS.
+      // Drawn below the real vehicles and the viewed stop — an estimate must
+      // never outrank a fix. Faded icon + a dashed-looking hollow ring + a "~N"
+      // label all say "approximate".
+      map.addLayer({
+        id: "ghost-ping", type: "circle", source: "ghosts",
+        filter: PING_OFF,
+        paint: {
+          "circle-radius": 10, "circle-color": ["get", "color"],
+          "circle-opacity": 0.2,
+          "circle-stroke-width": 2, "circle-stroke-color": ["get", "color"],
+          "circle-stroke-opacity": 0.7,
+        },
+      });
+      // A hollow ring under every ghost, so it reads as a placeholder rather
+      // than a solid presence even before you notice the faded glyph.
+      map.addLayer({
+        id: "ghost-halo", type: "circle", source: "ghosts",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 7, 15, 11],
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-opacity": 0.55,
+        },
+      });
+      map.addLayer({
+        id: "ghost-dot", type: "symbol", source: "ghosts",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 0.82],
+          "icon-allow-overlap": true,
+        },
+        paint: { "icon-opacity": 0.5 },   // estimated, not live
+      });
+      map.addLayer({
+        id: "ghost-label", type: "symbol", source: "ghosts",
+        layout: {
+          "text-field": ["concat", "~", ["get", "minutes"], " min"],
+          "text-font": ["Noto Sans Medium"],
+          "text-size": 11, "text-offset": [0, 1.7],
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": ["coalesce", ["get", "color"], "#c9d4de"],
+          "text-opacity": 0.75,
+          "text-halo-color": "#0c1013", "text-halo-width": 1.4,
         },
       });
 
@@ -719,13 +770,28 @@
         selectRoute(p.trip);
       });
 
-      // A click on empty map clears the selection.
+      // Same as a vehicle click, but the popup owns up to being an estimate.
+      map.on("click", "ghost-dot", (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup({ closeButton: false, offset: 12 })
+          .setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(
+            `<div class="pop-route">${p.route ?? ""} · ${p.headsign ?? ""}</div>` +
+            `<div class="pop-sub">~${p.minutes} min · estimated from timetable (no live GPS)</div>`)
+          .addTo(map);
+        flashRow(p.trip);
+        selectRoute(p.trip);
+      });
+
+      // A click on empty map clears the selection — but a ghost is not empty map.
       map.on("click", (e) => {
-        const hit = map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot"] });
+        const hit = map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot", "ghost-dot"] });
         if (!hit.length && selectedTrip) selectRoute(selectedTrip);
       });
-      map.on("mouseenter", "vehicle-dot", () => map.getCanvas().style.cursor = "pointer");
-      map.on("mouseleave", "vehicle-dot", () => map.getCanvas().style.cursor = "");
+      for (const lyr of ["vehicle-dot", "ghost-dot"]) {
+        map.on("mouseenter", lyr, () => map.getCanvas().style.cursor = "pointer");
+        map.on("mouseleave", lyr, () => map.getCanvas().style.cursor = "");
+      }
 
       // Only a move carrying a DOM event is the user taking control — a drag,
       // a wheel, a pinch. Testing `programmatic` instead looked equivalent but
@@ -917,27 +983,36 @@
   // --- linking the two views ---------------------------------------------
   let pingRaf = null, pingTimer = null;
 
-  // Board row -> map. Expanding ring on that vehicle, panning to it first if it
-  // has drifted out of view.
+  // Board row -> map. Expanding ring on that marker, panning to it first if it
+  // has drifted out of view. Works for a live vehicle or an estimated ghost —
+  // whichever holds the trip — pinging on that source's own ring layer.
   function pingVehicle(tripId) {
     if (!mapReady || !map.getLayer("vehicle-ping")) return;
-    const v = (lastData?.__vehicles || []).find((x) => x.trip_id === tripId);
-    if (!v) return;
+    let target = (lastData?.__vehicles || []).find((x) => x.trip_id === tripId);
+    let layer = "vehicle-ping";
+    if (!target) {
+      target = (lastData?.__ghosts || []).find((x) => x.trip_id === tripId);
+      layer = "ghost-ping";
+    }
+    if (!target) return;
 
-    if (!map.getBounds().contains([v.lon, v.lat])) {
-      cameraMove(() => map.easeTo({ center: [v.lon, v.lat], duration: 600 }));
+    if (!map.getBounds().contains([target.lon, target.lat])) {
+      cameraMove(() => map.easeTo({ center: [target.lon, target.lat], duration: 600 }));
     }
 
     cancelAnimationFrame(pingRaf);
     clearTimeout(pingTimer);
-    map.setFilter("vehicle-ping", ["==", ["get", "trip"], tripId]);
+    // Only one ping at a time, on either layer.
+    map.setFilter("vehicle-ping", PING_OFF);
+    map.setFilter("ghost-ping", PING_OFF);
+    map.setFilter(layer, ["==", ["get", "trip"], tripId]);
 
     if (REDUCED_MOTION.matches) {
       // Static ring instead of a pulse, then clear.
-      map.setPaintProperty("vehicle-ping", "circle-radius", 20);
-      map.setPaintProperty("vehicle-ping", "circle-opacity", 0.3);
-      map.setPaintProperty("vehicle-ping", "circle-stroke-opacity", 0.9);
-      pingTimer = setTimeout(() => map.setFilter("vehicle-ping", PING_OFF), 1600);
+      map.setPaintProperty(layer, "circle-radius", 20);
+      map.setPaintProperty(layer, "circle-opacity", 0.3);
+      map.setPaintProperty(layer, "circle-stroke-opacity", 0.9);
+      pingTimer = setTimeout(() => map.setFilter(layer, PING_OFF), 1600);
       return;
     }
 
@@ -945,13 +1020,13 @@
     const step = (t) => {
       const elapsed = t - START;
       if (elapsed > TOTAL) {
-        map.setFilter("vehicle-ping", PING_OFF);
+        map.setFilter(layer, PING_OFF);
         return;
       }
       const p = (elapsed % CYCLE) / CYCLE;      // 0..1 within each pulse
-      map.setPaintProperty("vehicle-ping", "circle-radius", 9 + p * 26);
-      map.setPaintProperty("vehicle-ping", "circle-opacity", 0.32 * (1 - p));
-      map.setPaintProperty("vehicle-ping", "circle-stroke-opacity", 0.95 * (1 - p));
+      map.setPaintProperty(layer, "circle-radius", 9 + p * 26);
+      map.setPaintProperty(layer, "circle-opacity", 0.32 * (1 - p));
+      map.setPaintProperty(layer, "circle-stroke-opacity", 0.95 * (1 - p));
       pingRaf = requestAnimationFrame(step);
     };
     pingRaf = requestAnimationFrame(step);
@@ -977,16 +1052,18 @@
     fn();
   }
 
-  // Frame the stop and every tracked vehicle. Called on each poll, but only
-  // actually moves when it needs to: re-animating a map every 15 seconds while
-  // someone is reading it is worse than a slightly stale frame.
-  function fitView(data, vehicles) {
+  // Frame the stop and every marker — live and estimated alike, since the point
+  // is that the board and the map show the same set. Called on each poll, but
+  // only actually moves when it needs to: re-animating a map every 15 seconds
+  // while someone is reading it is worse than a slightly stale frame.
+  function fitView(data, vehicles, ghosts = []) {
     if (!mapReady || (!autoFit && !forceFit)) return;
 
     const pts = [];
     const { stop_lat: lat, stop_lon: lon } = data.stop;
     if (lat != null && lon != null) pts.push([lon, lat]);
     vehicles.forEach((v) => pts.push([v.lon, v.lat]));
+    ghosts.forEach((g) => pts.push([g.lon, g.lat]));
     if (!pts.length) return;
 
     if (pts.length === 1) {
@@ -1070,13 +1147,38 @@
       }),
     });
 
+    // Ghosts: same icon and colour as the live dots so the pairing to a row is
+    // identical, but the layers render them faded and ringed.
+    const ghosts = data.__ghosts || data.ghosts || [];
+    map.getSource("ghosts").setData({
+      type: "FeatureCollection",
+      features: ghosts.map((g) => {
+        const color = colors[g.trip_id] || "#3fb950";
+        const glyph = MODE_EMOJI[modeOf[g.trip_id]] ?? DEFAULT_EMOJI;
+        return {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [g.lon, g.lat] },
+          properties: {
+            trip: g.trip_id,
+            route: g.route ?? "",
+            headsign: g.headsign ?? "",
+            minutes: g.minutes,
+            color,
+            icon: ensureVehicleIcon(glyph, color),
+          },
+        };
+      }),
+    });
+
     drawRoutes(data);
-    fitView(data, vehicles);
+    fitView(data, vehicles, ghosts);
 
     const shownCount = data.departures.length - (data.__hidden || 0);
-    $("map-status").textContent = vehicles.length === 0
-      ? "no live positions for these services"
-      : `${vehicles.length} of ${shownCount} services tracking live`;
+    const live = vehicles.length, est = ghosts.length;
+    $("map-status").textContent =
+      live + est === 0 ? "no positions for these services"
+      : est === 0 ? `${live} of ${shownCount} tracking live`
+      : `${live} live · ${est} estimated`;
   }
 
   // --- departures board --------------------------------------------------
@@ -1109,13 +1211,16 @@
     const shown = limit ? data.departures.slice(0, limit) : data.departures;
     const shownIds = new Set(shown.map((d) => d.trip_id));
     const vehicles = (data.vehicles || []).filter((v) => shownIds.has(v.trip_id));
+    const ghosts = (data.ghosts || []).filter((g) => shownIds.has(g.trip_id));
 
     // One colour per departure, shared by the row and — where the service has
     // a live position — its map marker.
     const colors = assignColors(shown);
     const trackedTrips = new Set(vehicles.map((v) => v.trip_id));
+    const ghostTrips = new Set(ghosts.map((g) => g.trip_id));
     data.__colors = colors;
     data.__vehicles = vehicles;
+    data.__ghosts = ghosts;
     data.__hidden = data.departures.length - shown.length;
 
       const MODES = { 0: "Tram", 1: "Metro", 2: "Train", 3: "Bus", 4: "Ferry" };
@@ -1123,15 +1228,17 @@
         const row = document.createElement("div");
         const vcolor = colors[d.trip_id];
         const isTracked = trackedTrips.has(d.trip_id);
-        // Every row can show its route; only a tracked one has a marker to ping.
-        row.className = isTracked ? "row tracked" : "row";
+        const isGhost = ghostTrips.has(d.trip_id);
+        // Every row can show its route; a live or estimated one has a marker to
+        // ping. (isTracked is kept as its own class for possible styling.)
+        row.className = "row" + (isTracked ? " tracked" : "") + (isGhost ? " ghost" : "");
         if (d.trip_id === selectedTrip) row.classList.add("selected");
         row.dataset.trip = d.trip_id;
         row.style.setProperty("--vcolor", vcolor);
         row.tabIndex = 0;
         const activate = () => {
           selectRoute(d.trip_id);
-          if (isTracked && selectedTrip) pingVehicle(d.trip_id);
+          if ((isTracked || isGhost) && selectedTrip) pingVehicle(d.trip_id);
         };
         row.addEventListener("click", activate);
         row.addEventListener("keydown", (ev) => {

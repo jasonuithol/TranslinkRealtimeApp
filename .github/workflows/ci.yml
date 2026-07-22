@@ -78,9 +78,12 @@ jobs:
             "http://localhost:8000/api/departures/nonexistent" | grep -q 404 \
             || { echo "expected 404 for an unknown stop_id"; exit 1; }
 
-          # The map rides along on the departures response.
+          # The map rides along on the departures response: live GPS vehicles
+          # and timetable-estimated ghosts for the trips without any.
           echo "$deps" | grep -q '"vehicles"' \
             || { echo "departures response missing the vehicles array"; exit 1; }
+          echo "$deps" | grep -q '"ghosts"' \
+            || { echo "departures response missing the ghosts array"; exit 1; }
 
           # No basemap is built in CI, so the frontend must be told to hide the
           # map rather than fail. This is the degradation path on a fresh volume.
@@ -103,6 +106,27 @@ jobs:
           got = datetime.datetime.fromtimestamp(app.gtfs_time_to_epoch('24:28:00', day), bne)
           assert (got.day, got.hour, got.minute) == (22, 0, 28), f'24:28 resolved to {got}'
           print('scheduled times resolve correctly under TZ=UTC')
+          "
+
+      - name: Estimated (ghost) positions interpolate along the timetable
+        run: |
+          # Regression test for the schedule-based dead reckoning that places a
+          # marker for trips with no live GPS. Exercises the pure geometry so it
+          # does not depend on the mock feed's timing.
+          docker run --rm -v ci-data:/data translink:ci python -c "
+          import app
+          # Two stops 0.1 deg apart in longitude, 1000s apart in time.
+          nodes = [(1000, -27.0, 153.0), (2000, -27.0, 153.1)]
+          mid = app._interpolate_along(nodes, 1500)
+          assert abs(mid['lon'] - 153.05) < 1e-9 and abs(mid['lat'] + 27.0) < 1e-9, mid
+          # Before the first stop: clamped to the origin, not extrapolated.
+          pre = app._interpolate_along(nodes, 500)
+          assert pre == {'lat': -27.0, 'lon': 153.0}, pre
+          # After the last stop: the trip has finished, so no position.
+          assert app._interpolate_along(nodes, 3000) is None
+          # Anchoring by seconds-into-day stays monotonic across 24:00.
+          assert app._seconds_into_day('24:28:00') == 88080
+          print('ghost interpolation: midpoint, origin-clamp and end-of-trip all correct')
           "
 
       - name: No duplicated trips on the board

@@ -246,6 +246,83 @@ def platform_label(platform_code: str | None, stop_name: str | None) -> str | No
     return None
 
 
+def _seconds_into_day(hms: str) -> int:
+    """GTFS clock string to seconds past the service day's midnight. Values can
+    exceed 24h for after-midnight trips; kept as an offset so it composes with a
+    single midnight anchor and stays monotonic across the 24:00 boundary."""
+    h, m, s = (int(x) for x in hms.split(":"))
+    return h * 3600 + m * 60 + s
+
+
+def _interpolate_along(nodes: list[tuple[int, float, float]], now: int):
+    """nodes = [(epoch, lat, lon), ...] in schedule order. Return the point the
+    timetable places the vehicle at `now`, linearly interpolated between the two
+    stops that bracket it. Clamp to the first stop before the trip starts; return
+    None once it has finished."""
+    if now <= nodes[0][0]:
+        return {"lat": nodes[0][1], "lon": nodes[0][2]}
+    if now >= nodes[-1][0]:
+        return None
+    for (t0, a0, o0), (t1, a1, o1) in zip(nodes, nodes[1:]):
+        if t0 <= now < t1:
+            f = (now - t0) / (t1 - t0) if t1 > t0 else 0.0
+            return {"lat": a0 + (a1 - a0) * f, "lon": o0 + (o1 - o0) * f}
+    return None
+
+
+def estimate_ghost_positions(con, deps: list[dict], now_epoch: int) -> dict:
+    """Where the timetable *says* each trip should be right now — for trips with
+    no live GPS. Interpolates along the trip's scheduled stops, anchored to the
+    board departure we already resolved (so the service date, incl. after-
+    midnight runs, is correct without re-deriving it). Returns {trip_id: {lat,
+    lon}}. An estimate, not a fix: it assumes the service is running to time."""
+    if not deps:
+        return {}
+    trip_ids = [d["trip_id"] for d in deps]
+    marks = ",".join("?" for _ in trip_ids)
+    rows = con.execute(
+        f"""
+        SELECT st.trip_id, st.stop_id, st.stop_sequence,
+               st.departure_time, st.arrival_time, s.stop_lat, s.stop_lon
+        FROM stop_times st
+        JOIN stops s ON s.stop_id = st.stop_id
+        WHERE st.trip_id IN ({marks})
+          AND s.stop_lat IS NOT NULL AND s.stop_lon IS NOT NULL
+        ORDER BY st.trip_id, st.stop_sequence
+        """,
+        trip_ids,
+    ).fetchall()
+
+    by_trip: dict = {}
+    for r in rows:
+        by_trip.setdefault(r["trip_id"], []).append(r)
+
+    anchor = {d["trip_id"]: d for d in deps}
+    out: dict = {}
+    for tid, strows in by_trip.items():
+        d = anchor[tid]
+        # Anchor the whole trip's clock to real epochs using the one stop whose
+        # epoch we already know: midnight = board_scheduled - board_offset.
+        board = next((r for r in strows if r["stop_id"] == d["stop_id"]), None)
+        board_hms = board and (board["departure_time"] or board["arrival_time"])
+        if not board_hms:
+            continue
+        midnight = d["scheduled"] - _seconds_into_day(board_hms)
+
+        nodes = []
+        for r in strows:
+            hms = r["departure_time"] or r["arrival_time"]
+            if not hms:
+                continue
+            nodes.append((midnight + _seconds_into_day(hms), r["stop_lat"], r["stop_lon"]))
+        if len(nodes) < 2:
+            continue
+        pos = _interpolate_along(nodes, now_epoch)
+        if pos:
+            out[tid] = pos
+    return out
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -370,6 +447,30 @@ def departures(stop_id: str):
             }
         )
 
+    # Every remaining board trip has a schedule but no GPS. Dead-reckon a
+    # position from its timetable so the map can show it as a *ghost* — distinct
+    # from a live fix — instead of leaving the row with no marker at all. This is
+    # what reconciles the board and the map: live where GPS exists, estimated
+    # where only the timetable does.
+    gps_trips = {v["trip_id"] for v in vehicles}
+    need_estimate = [d for d in shown if d["trip_id"] not in gps_trips]
+    con_e = db()
+    estimated = estimate_ghost_positions(con_e, need_estimate, now_epoch)
+    con_e.close()
+    ghosts = [
+        {
+            "trip_id": d["trip_id"],
+            "route": d["route"],
+            "headsign": d["headsign"],
+            "minutes": d["minutes"],
+            "lat": estimated[d["trip_id"]]["lat"],
+            "lon": estimated[d["trip_id"]]["lon"],
+            "estimated": True,
+        }
+        for d in need_estimate
+        if d["trip_id"] in estimated
+    ]
+
     # Tag every departure with the shape its trip follows, so any row on the
     # board can have its route drawn on demand — not just the tracked ones. The
     # geometry itself is fetched separately and cached by the client: it never
@@ -404,6 +505,7 @@ def departures(stop_id: str):
         ),
         "departures": shown,
         "vehicles": vehicles,
+        "ghosts": ghosts,
     }
 
 

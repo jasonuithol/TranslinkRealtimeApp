@@ -273,10 +273,37 @@ Two traps in that rasterising, both silent:
   honour the rule's `unicode-range`. The JS-constructed face carries no range,
   so the question does not arise.
 
-`live` and a map marker are different things: `live` (📶) means TripUpdates gave
-a time prediction, a marker means VehiclePositions gave a GPS fix. Plenty of
-services have the first and not the second, so a row can read 📶 and still have
-nothing on the map — and, less often, the reverse.
+`live` and a *live* map marker are different things: `live` (📶) means
+TripUpdates gave a time prediction, a solid marker means VehiclePositions gave a
+GPS fix. These are two independent feeds. Plenty of services have the first and
+not the second — verified: swept 26 stops, and every "live-but-no-dot" row was
+genuinely absent from the raw VehiclePositions feed (0 were present-but-dropped),
+so it is a coverage split, not a matching bug. The trip_id namespaces of the two
+RT feeds and the static schedule are identical.
+
+### Ghost markers — schedule-estimated positions
+
+Because a trip can be on the board with no GPS, the map would show far fewer
+markers than the board has rows (e.g. 2 dots for 10 arrivals), which read as a
+bug. So for every shown trip *without* a live position, the backend dead-reckons
+one from the timetable: `estimate_ghost_positions()` anchors the trip's clock to
+the board departure we already resolved (`midnight = board_scheduled −
+seconds_into_day(board_hms)`, correct across the 24:00 boundary and for either
+service date), then `_interpolate_along()` linearly interpolates between the two
+scheduled stops that bracket *now*. Clamps to the origin before the trip starts;
+returns nothing once it has finished. These come back in a separate `ghosts`
+array (kept out of `vehicles` so "vehicles = real GPS" stays true).
+
+The frontend draws them on their own `ghosts` source in dedicated layers —
+`ghost-halo` (a hollow ring), `ghost-dot` (the same colour/emoji as the live
+marker but `icon-opacity: 0.5`), `ghost-label` (`~N min`) and `ghost-ping` — all
+below the real vehicle layers and the viewed stop, because an estimate must
+never outrank a fix. Clicking one, or its board row, selects/pings it just like a
+live vehicle; the popup says "estimated from timetable (no live GPS)". `fitView`
+frames ghosts too, so the board and map finally show the same set. It is an
+estimate: it assumes the service is running to time, and it interpolates
+straight between stops rather than projecting onto the road shape (a reasonable
+first cut — shape-projection is the obvious refinement).
 
 Emoji in the DOM are written with a trailing **U+FE0E (VARIATION SELECTOR-15)**
 via `asText()`, and their elements set `font-variant-emoji: text`. These

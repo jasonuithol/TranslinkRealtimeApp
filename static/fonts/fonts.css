@@ -38,9 +38,11 @@
    paint their own palette and ignore CSS `color`; these glyphs are ordinary
    outlines, so they tint like text. Subset to the four transport glyphs used
    for the mode badges — ⛴ U+26F4, 🚆 U+1F686, 🚊 U+1F68A, 🚍 U+1F68D — the two
-   landmark markers 🏫 U+1F3EB station and 🚏 U+1F68F bus stop, the two
-   prediction-source marks 🛜 U+1F6DC live and 📅 U+1F4C5 scheduled, and the two
-   empty-state icons 🕰 U+1F570 arrivals and 🌏 U+1F30F map. */
+   landmark markers 🏫 U+1F3EB station, 🚏 U+1F68F bus stop and 🚉 U+1F689
+   tram stop, the two
+   prediction-source marks 🛜 U+1F6DC live and 📅 U+1F4C5 scheduled, the two
+   empty-state icons 🕰 U+1F570 arrivals and 🌏 U+1F30F map, and the disruption
+   mark ⚠ U+26A0. */
 @font-face {
   font-family: 'Noto Emoji';
   font-style: normal;
@@ -49,7 +51,7 @@
   /* ?v bumped whenever the subset changes, to dodge a heuristically-cached old
      copy that is missing a newly-added glyph (a stale subset silently drops the
      browser back to the colour-emoji font for the new codepoint). */
-  src: url('/static/fonts/NotoEmoji-mode.woff2?v=2') format('woff2');
+  src: url('/static/fonts/NotoEmoji-mode.woff2?v=3') format('woff2');
   /* Deliberately no unicode-range. The file is already subset to exactly these
      glyphs, so a range adds nothing but a second list to keep in sync — and it
      silently fell out of sync twice, dropping the browser back to the colour

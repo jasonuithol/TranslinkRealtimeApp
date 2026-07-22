@@ -115,12 +115,118 @@ is `AutoUpdate=registry`, so a push to `main` rolls out on its own.
 - **Platform labels** come from `platform_code`, falling back to a regex
   on the child stop name ("... platform 3").
 
+## Regions (multi-network support — branch `regions`, NOT yet deployed)
+
+One board, many networks. `app.py` has a `REGIONS` registry — per region: a
+static GTFS SQLite DB, lists of GTFS-RT feeds (each with an id prefix), a
+timezone, a basemap file, a geocoder bbox and a map centre — plus a `STATE` map
+holding that region's realtime caches and feed-health stats. Pollers are
+spawned per region per configured feed kind; a region with no realtime
+configured is *static-only* and still fully works: the board shows scheduled
+times and the map shows timetable-estimated ghosts.
+
+- API is region-scoped under `/api/r/{region}/…`; every original `/api/…` path
+  remains as an alias for `seq`, so old bookmarks and the deployed VPS keep
+  working. `/api/regions` lists ingested regions for the frontend switcher.
+- A region is only offered once its DB exists — no Melbourne ingest, no
+  switcher, zero behaviour change for a SEQ-only deployment.
+- **Melbourne (`mel`)**: PTV's static GTFS is one outer zip with a *nested* zip
+  per mode (2 = metro train, 3 = tram, 4 = metro bus; ids only unique within a
+  mode). `ingest_gtfs.py --region mel` loads modes 2/3/4 and prefixes every id
+  `<mode>:`; the RT poller config carries the same prefix per feed so realtime
+  ids land on the ingested ones. PTV uses Google's *extended* route types
+  (400 = metro rail, 701 = bus, 900s = tram) — `normalize_route_type()`
+  collapses them to the basic 0-4 set at ingest so rail-station detection, mode
+  emoji and labels all just work. 11.6 M stop_times; ~4 min ingest.
+- **Melbourne realtime needs a (free) registered key** and the host has moved
+  between VIC data portals, so it is entirely env-driven — unset means
+  static-only: `MEL_TRIP_UPDATES="2|https://…;3|https://…"` (mode prefix per
+  feed), same for `MEL_VEHICLE_POSITIONS` / `MEL_ALERTS`, `MEL_API_KEY`,
+  `MEL_API_KEY_HEADER` (default `Ocp-Apim-Subscription-Key`).
+- Frontend: region comes from `?region=` / localStorage; all API calls go
+  through `api(path)`; the eyebrow shows the region name and (when 2+ regions
+  are ingested) a `⇄` switch button that reloads into the other region. The
+  map style is one file — the client points its `omt` source at the region's
+  pmtiles from `/api/r/{region}/config` (`basemap_url`, `center`). Board times
+  render in the *region's* timezone (`tz` from config), not the viewer's.
+- Basemaps per region: `REGION=mel podman run … translink-basemap` (bbox
+  presets in `basemap/build-basemap.sh`). Melbourne DB: `/data/gtfs-mel.sqlite3`
+  (`MEL_GTFS_DB` to override); basemap `mel.pmtiles`.
+
 ## Data endpoints
 
-- Static: `https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip`
-- Realtime: `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates`
-- Realtime: `.../SEQ/VehiclePositions` (live GPS, drives the map)
-- Not yet used: `.../SEQ/Alerts` (disruptions)
+- SEQ static: `https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip`
+- SEQ realtime: `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates`
+- SEQ realtime: `.../SEQ/VehiclePositions` (live GPS, drives the map)
+- SEQ realtime: `.../SEQ/Alerts` (disruptions — the ⚠ marks)
+- MEL static: `https://data.ptv.vic.gov.au/downloads/gtfs.zip` (292 MB, keyless)
+- MEL realtime: env-configured, needs a registered key (see Regions above)
+- Geocoding: `nominatim.openstreetmap.org`, proxied via `/api/r/{region}/geocode`
+  — identified UA, server-enforced 1 req/s, 24 h cache, bounded to the region
+  bbox, explicit user action only (the "Search as an address" row). Fair-use
+  community service: keep it that way.
+
+## Disruption alerts
+
+`poll_alerts` (5-min cycle) keeps only alerts *active now* (the feed carries
+future planned works too). SEQ keys them by route_id (mostly) and stop_id —
+no trip-level entries. `/api/…/departures` attaches `alert_ids` per row and
+one deduplicated response-level `alerts` map (a network-wide alert can span
+half the board; it is sent once). Frontend: an amber ⚠ (U+26A0, in the
+monochrome subset) beside the source mark — amber deliberately, a warning is
+not part of the service's colour identity — opens a popup built with DOM APIs
+only (feed text is untrusted). `/api/feeds` reports alert counts per region.
+
+## Nearest stops ("which stop is closest to home?")
+
+Two entry points, one dropdown: the **near me** button (browser geolocation —
+NOTE: browsers require HTTPS for geolocation, localhost excepted, so on a plain
+http VPS the button degrades with an explanatory message) and typed **address
+search**, which runs automatically: a query starting with a house number, or a
+6+-character query matching no stop name, geocodes without any extra click
+(longer 500 ms debounce keeps mid-typing away from the shared geocoder). Both
+feed `/api/r/{region}/stops/nearby?lat&lon` — bbox prefilter + haversine, child
+platforms collapsed to their parent station, distances in the dropdown.
+
+## OUTSTANDING BUG — one stop's icon suppressed near the viewed stop
+
+Reported on the all-stops layer at Varsity Lakes: viewing "Varsity Lakes
+station, stop A" (300051), the station marker (`place_varsta`, ~23 m away)
+does not draw even past zoom 15 — it only appears when a route whose landmarks
+include it is traced. Everything else on the layer renders. Two fixes did NOT
+cure it: (1) `symbol-sort-key` priority + cache-busted payload; (2)
+`icon-ignore-placement: true` on stop-ring/vehicle-dot/ghost-dot (the
+cross-layer collision-suppression theory — markers no longer claim collision
+space, verified present in the deployed build, still reproduces per user).
+
+Facts established: `place_varsta` IS in the `/all-stops?v=2` payload with
+route_type 2; the layer definition validates and adds in a real MapLibre
+engine (headless blank-style test); the failure is specific to this icon, not
+the layer. Next diagnostic step when picked up again: load with `&mapdebug=1`
+at the Varsity view and read the per-layer counts, and
+`map.queryRenderedFeatures({layers:["all-stops"]})` vs
+`querySourceFeatures("all-stops")` around that coordinate to separate
+"feature missing from source" from "feature present but not placed".
+Also worth checking: text/label collision (labels still participate), and
+whether the landmarks-layer paired stop at the same spot wins placement and
+the all-stops twin is then culled as a same-layer duplicate.
+
+## Stop landmarks on the map
+
+Three grey landmark tiers, all clickable to select (tram stops draw 🚉,
+buses 🚏, ferries ⛴, stations 🏫 — all on the same layers, same zoom rules):
+
+- **Paired stops, always**: `/api/…/departures` returns `paired` — every
+  parentless non-station stop within ~120 m of the viewed one — because a
+  street-side stop is almost always half of an opposite-directions pair and
+  "going the other way" is the next thing a rider looks for.
+- **The traced route's stops** while a service is selected (as before).
+- **Every stop in the network past zoom 15** (`all-stops` layer): fetched
+  lazily on first zoom-in from `/api/…/all-stops` (12 k stops / 1.3 MB SEQ,
+  24 k / 2.5 MB MEL), each tagged with its dominant mode via one GROUP BY over
+  stop_times — ~15 s on Melbourne's 11.6 M rows, so the cache is warmed in a
+  startup thread rather than hanging the first zoomed-in view. Overlap-thinned,
+  rail stations excluded (they have their own layer).
 
 **Feed QC.** Each poll logs a one-line summary (`[vp] N vehicles: P positioned,
 C cached, …`, `[tu] N trip updates`) and stores it for `/api/feeds`, so the
@@ -355,23 +461,16 @@ live vehicle; the popup says "estimated from timetable (no live GPS)". `fitView`
 frames ghosts too, so the board and map finally show the same set. The grey
 route landmarks are clickable: each carries its `stop_id`, and a click calls
 `selectStop()` — picking a stop off the traced route is the same as searching
-for it. Route landmarks (`landmarks` layer) are the selected route's **bus
-stops** only, `icon-allow-overlap: false` so a densely-stopped route thins out.
+for it. Route landmarks (`landmarks` layer) are the selected route's stops —
+stations included, no special layer — `icon-allow-overlap: false` so a
+densely-stopped route thins out.
 
-Train stations are drawn separately and **always**, by the `rail-stations`
-layer, independent of any selected stop or route — a station is a landmark you
-navigate by, so if the map can show one it must (the ask that started this:
-viewing a bus stop at Varsity Lakes, the train station beside it must appear).
-`/api/rail-stations` returns every station once (154 in SEQ) — rail platforms
-(`route_type` 1/2) collapsed to their parent station so each is one marker,
-computed once and cached. The client fetches it on map init, paints an always-on
-`icon-allow-overlap: true` layer of grey 🏫 markers (clickable to select), and a
-layer filter drops only the station currently being *viewed* (it already has the
-white marker). Because it is network-wide and always on, route-traced stations
-need no special handling — they are already there. It is an
-estimate: it assumes the service is running to time, and it interpolates
-straight between stops rather than projecting onto the road shape (a reasonable
-first cut — shape-projection is the obvious refinement).
+Train stations are **not** treated specially any more (they briefly had an
+always-on `rail-stations` layer; retired). They are stops like any other: on
+the `all-stops` layer past zoom 15, tagged rail in the payload (parent-station
+records carry no stop_times, so `all_stops()` tags them from `rail_stations()`
+instead of the dominant-mode lookup) so they draw 🏫; `/api/…/rail-stations`
+still exists for compatibility but the frontend no longer calls it.
 
 Emoji in the DOM are written with a trailing **U+FE0E (VARIATION SELECTOR-15)**
 via `asText()`, and their elements set `font-variant-emoji: text`. These

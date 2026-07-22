@@ -52,11 +52,29 @@
     text-transform: uppercase;
     color: var(--muted);
     margin-bottom: 6px;
+    display: flex; align-items: center; gap: 14px;
   }
+  /* Region switcher, only shown when more than one timetable is ingested. */
+  .region-switch {
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font: inherit; letter-spacing: 0.12em;
+    padding: 2px 10px; cursor: pointer; text-transform: uppercase;
+  }
+  .region-switch:hover { color: var(--text); border-color: var(--amber-dim); }
+  .region-switch[hidden] { display: none; }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
 
   .search { position: relative; margin-bottom: 22px; }
   .search[hidden] { display: none; }
+  .search-row { display: flex; gap: 10px; }
+  .search-field { position: relative; flex: 1; }
+  .near-me {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap;
+    padding: 0 16px; cursor: pointer;
+  }
+  .near-me:hover { color: var(--text); border-color: var(--amber-dim); }
+  .near-me:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   .search-close {
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
     background: none; border: 0; color: var(--muted);
@@ -65,7 +83,7 @@
   .search-close:hover { color: var(--text); }
   .search-close[hidden] { display: none; }
   /* Keep typed text clear of the close button. */
-  .search:has(.search-close:not([hidden])) input { padding-right: 42px; }
+  .search-field:has(.search-close:not([hidden])) input { padding-right: 42px; }
   .search input {
     width: 100%;
     background: var(--panel);
@@ -107,8 +125,8 @@
   }
   .row {
     display: grid;
-    /* badge | destination | time-source | countdown */
-    grid-template-columns: 130px 1fr 34px 96px;
+    /* badge | destination | time-source + alerts | countdown */
+    grid-template-columns: 130px 1fr 64px 96px;
     align-items: center;
     gap: 14px;
     padding: 14px 16px;
@@ -152,6 +170,13 @@
     padding: 6px 10px; font-size: 22px; min-width: 48px;
   }
   .badge .num.wide { font-size: 15px; line-height: 1.15; padding: 6px 8px; }
+  /* Named lines (Melbourne trains: "Williamstown") rather than numbers: clamp
+     to the badge column instead of spilling into the destination. */
+  .badge .num.xwide {
+    font-size: 11px; line-height: 1.1; padding: 6px 6px;
+    max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: block; align-content: center;
+  }
   .dest { min-width: 0; }
   .dest .headsign {
     font-size: 15px; font-weight: 500;
@@ -207,9 +232,54 @@
   .src-col {
     font-family: "Noto Emoji", system-ui, sans-serif;
     font-size: 22px; line-height: 1;
-    text-align: center; color: var(--vcolor); opacity: 0.85;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    color: var(--vcolor); opacity: 0.85;
     font-variant-emoji: text;
   }
+  /* Disruption warning, beside the source mark. Amber — it is a warning, not
+     part of the service's identity, so it does not take the vehicle colour. */
+  .alert-mark {
+    color: var(--amber); cursor: pointer; opacity: 1;
+    background: none; border: 0; font: inherit; padding: 2px;
+    font-variant-emoji: text;
+  }
+  .alert-mark:hover { text-shadow: 0 0 8px rgba(255, 180, 0, 0.6); }
+  .alert-mark:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
+
+  /* Disruption details popup. */
+  .alert-modal {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(6, 9, 12, 0.72);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .alert-modal[hidden] { display: none; }
+  .alert-box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    max-width: 560px; max-height: 76vh; overflow-y: auto;
+    padding: 20px 22px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+  .alert-box h2 {
+    font-size: 15px; margin-bottom: 12px; color: var(--amber);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .alert-box h2 .glyph { font-family: "Noto Emoji", sans-serif; font-variant-emoji: text; }
+  .alert-item { border-top: 1px solid var(--line); padding: 12px 0; }
+  .alert-item:first-of-type { border-top: 0; padding-top: 0; }
+  .alert-item .effect {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em; color: var(--amber);
+    margin-bottom: 4px;
+  }
+  .alert-item .head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .alert-item .body {
+    font-size: 13px; color: var(--muted); white-space: pre-line; line-height: 1.45;
+  }
+  .alert-close {
+    margin-top: 14px; background: none; border: 1px solid var(--line);
+    border-radius: 999px; color: var(--muted); font: inherit; font-size: 12px;
+    padding: 4px 14px; cursor: pointer;
+  }
+  .alert-close:hover { color: var(--text); border-color: var(--amber-dim); }
   .eta .due {
     font-size: 22px; font-weight: 600; letter-spacing: 0.06em;
     animation: pulse 1.2s infinite;
@@ -320,7 +390,10 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Translink · South East Queensland</div>
+    <div class="eyebrow">
+      <span id="region-name">Translink · South East Queensland</span>
+      <button class="region-switch" id="change-region" type="button" hidden></button>
+    </div>
     <!-- Only once a stop is chosen; before that the name would just say
          "Next service", which costs a line and tells you nothing. -->
     <div class="titlebar" id="titlebar" hidden>
@@ -330,11 +403,18 @@
   </header>
 
   <div class="search" id="search-wrap">
-    <input id="search" type="search" placeholder="Search for a stop, e.g. Cultural Centre"
-           autocomplete="off" aria-label="Search for a stop">
-    <!-- Only offered when there is a stop to go back to. -->
-    <button class="search-close" id="search-close" type="button"
-            aria-label="Close search" hidden>&times;</button>
+    <div class="search-row">
+      <div class="search-field">
+        <input id="search" type="search"
+               placeholder="Search for a stop or an address"
+               autocomplete="off" aria-label="Search for a stop or an address">
+        <!-- Only offered when there is a stop to go back to. -->
+        <button class="search-close" id="search-close" type="button"
+                aria-label="Close search" hidden>&times;</button>
+      </div>
+      <button class="near-me" id="near-me" type="button"
+              title="Find stops near your current location">near me</button>
+    </div>
     <div class="search-results" id="results" hidden></div>
   </div>
 
@@ -360,6 +440,11 @@
   </div>
 
   <div class="status" id="status"></div>
+
+  <!-- Disruption details, opened from a row's ⚠ mark. -->
+  <div class="alert-modal" id="alert-modal" hidden>
+    <div class="alert-box" id="alert-box" role="dialog" aria-label="Service disruptions"></div>
+  </div>
 </main>
 
 <script src="/static/vendor/maplibre-gl.js"></script>
@@ -368,6 +453,45 @@
   const $ = (id) => document.getElementById(id);
   let stopId = new URLSearchParams(location.search).get("stop");
   let timer = null;
+
+  // --- region ------------------------------------------------------------
+  // One board, many networks. The region picks the timetable DB, the realtime
+  // feeds, the timezone and the basemap — all server-side; the client just
+  // scopes its API calls and reloads when switched (the map style, caches and
+  // colour state are all per-network, so a clean start is correct).
+  const region = new URLSearchParams(location.search).get("region")
+              || localStorage.getItem("region") || "seq";
+  localStorage.setItem("region", region);
+  const api = (path) => `/api/r/${region}${path}`;
+
+  function switchRegion(next) {
+    if (next === region) return;
+    localStorage.setItem("region", next);
+    location.href = `?region=${encodeURIComponent(next)}`;   // drop the stop
+  }
+
+  // Times on the board are the *network's* clock, not the viewer's: a Brisbane
+  // browser looking at Melbourne shows AEDT. Filled from /config; until then
+  // the viewer's zone is a harmless first-paint fallback.
+  let regionTz;
+  fetch(api("/config")).then((r) => r.json())
+    .then((c) => { regionTz = c.tz; }).catch(() => {});
+
+  // The eyebrow names the current network and, when more than one timetable is
+  // ingested, becomes the switcher.
+  fetch("/api/regions").then((r) => r.json()).then((regions) => {
+    const cur = regions.find((r) => r.id === region) || regions[0];
+    $("region-name").textContent = cur.name;
+    if (regions.length > 1) {
+      const next = regions[(regions.findIndex((r) => r.id === cur.id) + 1)
+                           % regions.length];
+      const b = $("change-region");
+      b.hidden = false;
+      b.textContent = `⇄ ${next.name.split("·")[1]?.trim() || next.name}`;
+      b.title = `Switch to ${next.name}`;
+      b.onclick = () => switchRegion(next.id);
+    }
+  }).catch(() => { /* the static eyebrow text stands */ });
   // With no stop there is nothing but the search, so it is always open. Once a
   // stop is chosen the search folds away and "Change stop" brings it back.
   let searchOpen = !stopId;
@@ -398,24 +522,132 @@
   });
 
   // --- stop search -------------------------------------------------------
+  // Three ways into the same dropdown: stop-name search, address search
+  // (geocoded server-side), and "near me" (browser geolocation). The last two
+  // both end at nearbyStops(), which lists the closest stops with distances.
+  const fmtDist = (m) => m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+
+  function resultButton(html, onclick) {
+    const b = document.createElement("button");
+    b.innerHTML = html;
+    b.onclick = onclick;
+    $("results").appendChild(b);
+    return b;
+  }
+
+  function resultNote(text) {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.disabled = true;
+    b.style.color = "var(--muted)";
+    b.style.cursor = "default";
+    $("results").appendChild(b);
+  }
+
+  function stopEntry(s) {
+    const bits = [];
+    if (s.is_station) bits.push("station");
+    if (s.dist_m != null) bits.push(fmtDist(s.dist_m));
+    bits.push(s.stop_id);
+    resultButton(
+      `${escapeHtml(s.stop_name)}<span class="sid">${bits.join(" · ")}</span>`,
+      () => selectStop(s.stop_id),
+    );
+  }
+
+  // Stop names and geocoder labels are external data; never trust them as HTML.
+  const escapeHtml = (t) => String(t).replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function nearbyStops(lat, lon, label) {
+    const box = $("results");
+    box.innerHTML = "";
+    resultNote(`Stops near ${label}…`);
+    box.hidden = false;
+    try {
+      const stops = await (await fetch(api(`/stops/nearby?lat=${lat}&lon=${lon}`))).json();
+      box.innerHTML = "";
+      if (!stops.length) { resultNote(`No stops near ${label}.`); return; }
+      stops.forEach(stopEntry);
+    } catch {
+      box.innerHTML = "";
+      resultNote("Could not look up nearby stops.");
+    }
+  }
+
+  // Append address candidates to the dropdown (below any stop matches).
+  async function searchAddress(q, { clear = true } = {}) {
+    const box = $("results");
+    if (clear) { box.innerHTML = ""; resultNote(`Looking up “${q}”…`); }
+    box.hidden = false;
+    try {
+      const res = await fetch(api(`/geocode?q=${encodeURIComponent(q)}`));
+      if (!res.ok) throw new Error();
+      const places = await res.json();
+      if (clear) box.innerHTML = "";
+      if (!places.length) {
+        if (clear) resultNote(`Nothing found for “${q}”.`);
+        return;
+      }
+      places.forEach((p) => {
+        resultButton(
+          `${escapeHtml(p.label)}<span class="sid">address</span>`,
+          () => nearbyStops(p.lat, p.lon, "that address"),
+        );
+      });
+    } catch {
+      if (clear) { box.innerHTML = ""; resultNote("Address lookup unavailable right now."); }
+    }
+  }
+
+  // A trailing word may still be mid-typing; an address is assumed once the
+  // query has a house number or is long enough that no stop matched it.
+  const looksLikeAddress = (q) => /^\d+\s+\S/.test(q);
+
   let searchDebounce;
   $("search").addEventListener("input", (e) => {
     clearTimeout(searchDebounce);
     const q = e.target.value.trim();
     if (q.length < 3) { $("results").hidden = true; return; }
     searchDebounce = setTimeout(async () => {
-      const res = await fetch(`/api/stops/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(api(`/stops/search?q=${encodeURIComponent(q)}`));
       const stops = await res.json();
       const box = $("results");
       box.innerHTML = "";
-      stops.forEach((s) => {
-        const b = document.createElement("button");
-        b.innerHTML = `${s.stop_name}<span class="sid">${s.is_station ? "station · " : ""}${s.stop_id}</span>`;
-        b.onclick = () => selectStop(s.stop_id);
-        box.appendChild(b);
-      });
-      box.hidden = stops.length === 0;
-    }, 250);
+      stops.forEach(stopEntry);
+      // Address lookup happens automatically — nobody should have to say
+      // "that was an address": a query starting with a house number is one,
+      // and a longer query matching no stop name probably is too. The longer
+      // debounce below keeps mid-typing queries away from the shared geocoder.
+      if (looksLikeAddress(q) && q.length >= 6) {
+        await searchAddress(q, { clear: stops.length === 0 });
+      } else if (!stops.length && q.length >= 6) {
+        await searchAddress(q);
+      }
+      box.hidden = box.children.length === 0;
+    }, q.length >= 6 ? 500 : 250);
+  });
+
+  $("near-me").addEventListener("click", () => {
+    const box = $("results");
+    if (!navigator.geolocation) {
+      box.innerHTML = ""; resultNote("This browser has no geolocation."); box.hidden = false;
+      return;
+    }
+    box.innerHTML = "";
+    resultNote("Locating…");
+    box.hidden = false;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => nearbyStops(pos.coords.latitude, pos.coords.longitude, "you"),
+      () => {
+        box.innerHTML = "";
+        // Browsers only allow geolocation on HTTPS (localhost excepted).
+        resultNote(location.protocol === "http:" && location.hostname !== "localhost"
+          ? "Location blocked: geolocation needs HTTPS."
+          : "Could not get your location.");
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+    );
   });
 
   function selectStop(id) {
@@ -433,7 +665,7 @@
     forceFit = true;          // ...and reframes even if the user had panned
     closeSearch();            // a stop is chosen: fold the search away
     syncRailStationFilter();  // stop drawing the station we now view in grey
-    history.replaceState(null, "", `?stop=${id}`);
+    history.replaceState(null, "", `?region=${region}&stop=${id}`);
     refresh();
     clearInterval(timer);
     timer = setInterval(refresh, 15000);
@@ -444,7 +676,6 @@
   // deployment has no basemap, /api/config says so and the map stays hidden —
   // the board is the product, the map is an enhancement.
   let map = null, mapReady = false, hasBasemap = false;
-  let railStations = [];   // every train station, drawn as always-on landmarks
   // The view auto-fits to the stop plus every tracked vehicle. It stops doing
   // so the moment the user moves the map themselves, and resumes on the next
   // stop selection. `programmatic` distinguishes our own camera moves from
@@ -488,10 +719,12 @@
   // Landmark glyphs — the physical stop, not the service calling at it.
   const STOP_STATION = "\u{1F3EB}";  // 🏫
   const STOP_BUS = "\u{1F68F}";      // 🚏
+  const STOP_TRAM = "\u{1F689}";     // 🚉
 
   // Where the arrival time came from.
   const MARK_LIVE = "\u{1F6DC}";      // 🛜 realtime prediction
   const MARK_SCHEDULED = "\u{1F4C5}"; // 📅 timetable only
+  const MARK_ALERT = "\u{26A0}";      // ⚠ service disruption
 
   // These codepoints default to *emoji presentation*, and browsers hand those
   // to the system colour-emoji font regardless of font-family — so on a machine
@@ -505,7 +738,7 @@
     switch (Number(routeType)) {
       case 3: return STOP_BUS;
       case 4: return MODE_EMOJI[4];
-      case 0: return MODE_EMOJI[0];
+      case 0: return STOP_TRAM;
       case 1: case 2: return STOP_STATION;
       default: return STOP_BUS;
     }
@@ -517,8 +750,7 @@
     // If trains call here it is a train station, even when buses out-number
     // them — Varsity Lakes is a station with 10 bus bays, not a bus stop. The
     // majority vote below is only for deciding between the non-rail modes.
-    const railStation = railStations.some((s) => s.stop_id === data.stop.stop_id);
-    if (railStation || data.departures.some((d) => [1, 2].includes(Number(d.route_type)))) {
+    if (data.departures.some((d) => [1, 2].includes(Number(d.route_type)))) {
       return STOP_STATION;
     }
     const counts = {};
@@ -591,19 +823,12 @@
   }
 
   async function initMap() {
+    let cfg;
     try {
-      const cfg = await (await fetch("/api/config")).json();
+      cfg = await (await fetch(api("/config"))).json();
       hasBasemap = !!cfg.basemap;
     } catch { hasBasemap = false; }
     if (!hasBasemap) return;
-
-    // Train stations to draw as always-on landmarks. Static for the timetable,
-    // so fetched once; drawRailStations paints them once both this and the map
-    // are ready, whichever lands last.
-    fetch("/api/rail-stations")
-      .then((r) => r.json())
-      .then((d) => { railStations = d.stations || []; drawRailStations(); })
-      .catch(() => { /* stations are a nicety; the map still works without */ });
 
     // Must complete before any icon is rasterised, or the wrong glyph gets
     // baked into the cached image. ensureVehicleIcon only runs after the map's
@@ -622,15 +847,19 @@
     // asks the protocol for TileJSON. Without this flag pmtiles ignores that
     // request — the promise never settles, and the style hangs with no error.
     maplibregl.addProtocol("pmtiles", new pmtiles.Protocol({ metadata: true }).tile);
+    // The style is one hand-written file; only the basemap archive differs per
+    // region, so fetch the style and point its source at this region's pmtiles.
+    // ?v bumped whenever the style schema changes. Browsers heuristically
+    // cached this JSON before it was served no-cache, and a stale style from
+    // the old basemap schema fails layer-by-layer against the new tiles —
+    // water happened to render (both schemas have a "water" layer), roads and
+    // labels silently didn't. A new URL is a guaranteed cache miss.
+    const style = await (await fetch("/static/map-style.json?v=3")).json();
+    style.sources.omt.url = "pmtiles://" + cfg.basemap_url;
     map = new maplibregl.Map({
       container: "map",
-      // ?v bumped whenever the style schema changes. Browsers heuristically
-      // cached this JSON before it was served no-cache, and a stale style from
-      // the old basemap schema fails layer-by-layer against the new tiles —
-      // water happened to render (both schemas have a "water" layer), roads and
-      // labels silently didn't. A new URL is a guaranteed cache miss.
-      style: "/static/map-style.json?v=3",
-      center: [153.026, -27.4705],   // Brisbane, until a stop is selected
+      style,
+      center: cfg.center,            // the region's city, until a stop is chosen
       zoom: 11,
       attributionControl: { compact: true },
     });
@@ -652,7 +881,7 @@
       map.addSource("ghosts", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
       map.addSource("landmarks", { type: "geojson", data: emptyFC() });
-      map.addSource("rail-stations", { type: "geojson", data: emptyFC() });
+      map.addSource("all-stops", { type: "geojson", data: emptyFC() });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
 
       // The path each tracked vehicle is following, in that vehicle's colour.
@@ -667,13 +896,41 @@
         },
       });
 
-      // The selected route's bus stops, in grey. Drawn first so the viewed stop
-      // and the vehicles sit above them. Only bus stops: train stations come
-      // from the always-on `rail-stations` layer instead, so a station shows
-      // whether or not it is on the traced route.
+      // Every stop in the network, once the user is close enough that street
+      // detail is the point (all backstreets legible ≈ z15+). Lazily fetched on
+      // first zoom past the threshold; overlap-thinned so a busy interchange
+      // stays readable; clickable to select. Below the route landmarks so a
+      // traced route's own stops win any tie.
+      map.addLayer({
+        id: "all-stops", type: "symbol", source: "all-stops",
+        minzoom: 15,
+        layout: {
+          "icon-image": ["get", "icon"],
+          // Stations slightly larger, and placed FIRST (lower sort key wins
+          // collisions): a station sits exactly where bus stops cluster, and
+          // without priority the overlap thinning can drop the 🏫 in favour of
+          // an adjacent 🚏. NOTE: the zoom interpolate must be the OUTERMOST
+          // expression — a feature `case` wrapped around it fails validation
+          // and MapLibre silently drops the whole layer.
+          "icon-size": ["interpolate", ["linear"], ["zoom"],
+            15, ["case", ["==", ["get", "rt"], 2], 0.7, 0.55],
+            17, ["case", ["==", ["get", "rt"], 2], 1.1, 0.9]],
+          "symbol-sort-key": ["case", ["==", ["get", "rt"], 2], 0, 1],
+          // Near-coincident stops carry a computed offset so they fan out into
+          // a row instead of colliding (see maybeLoadAllStops).
+          "icon-offset": ["coalesce", ["get", "off"], ["literal", [0, 0]]],
+          "icon-anchor": "bottom",
+          "icon-allow-overlap": false,
+          "icon-padding": 2,
+        },
+      });
+
+      // The selected route's stops (and the viewed stop's across-the-road
+      // pairs), in grey. Drawn above all-stops so a traced route's own stops
+      // win any tie. Stations get no special layer — they are stops like any
+      // other, in all-stops past zoom 15 and here when on a traced route.
       map.addLayer({
         id: "landmarks", type: "symbol", source: "landmarks",
-        filter: ["!=", ["get", "station"], 1],
         layout: {
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 15, 1.05],
@@ -681,23 +938,6 @@
           // Unlike the vehicles, these may crowd: let MapLibre thin them out.
           "icon-allow-overlap": false,
           "icon-padding": 2,
-        },
-      });
-      // Every train station in the network, always on — a station is a landmark
-      // you navigate by, so if the map can show one it must, on any view, not
-      // just when its route is traced. Overlap-allowed so it is never culled;
-      // filtered only to drop the stop currently being viewed (that one is the
-      // white marker). Clickable to jump to it. minzoom keeps the whole network
-      // of 154 stations from peppering a region-wide view (e.g. an auto-fit to a
-      // far vehicle) — below zoom 11 they drop out, at suburb/city zoom they show.
-      map.addLayer({
-        id: "rail-stations", type: "symbol", source: "rail-stations",
-        minzoom: 11,
-        layout: {
-          "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.68, 15, 1.28],
-          "icon-anchor": "bottom",
-          "icon-allow-overlap": true,
         },
       });
 
@@ -733,6 +973,11 @@
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.75, 15, 1.23],
           "icon-allow-overlap": true,
+          // Always drawn, but must not BLOCK the street furniture: a marker
+          // sitting at a stop would otherwise suppress the nearby stop icons
+          // on the overlap-thinned layers (a station right beside the viewed
+          // stop was losing that collision and vanishing).
+          "icon-ignore-placement": true,
         },
         paint: { "icon-opacity": 0.5 },   // estimated, not live
       });
@@ -757,6 +1002,7 @@
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.975, 15, 1.575],
           "icon-allow-overlap": true,
+          "icon-ignore-placement": true,   // see ghost-dot: never blocks stops
           "icon-anchor": "bottom",   // the marker sits on the stop, not over it
         },
       });
@@ -782,6 +1028,7 @@
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.9, 15, 1.5],
           "icon-allow-overlap": true,
+          "icon-ignore-placement": true,   // see ghost-dot: never blocks stops
         },
       });
       map.addLayer({
@@ -832,7 +1079,7 @@
       // won — so the bus stop "did nothing". Priority now: a vehicle/ghost keeps
       // its own popup handler; else a route bus stop beats a background station
       // (you are clicking the stop you traced); else empty map clears the route.
-      const stopLayers = ["landmarks", "rail-stations"];
+      const stopLayers = ["landmarks", "all-stops"];
       map.on("click", (e) => {
         // Vehicles and ghosts have their own handlers below; leave those to them.
         if (map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot", "ghost-dot"] }).length) return;
@@ -860,7 +1107,8 @@
 
       mapReady = true;
       cameraMove(() => map.resize());
-      drawRailStations();   // paint stations if their fetch already landed
+      map.on("zoomend", maybeLoadAllStops);
+      maybeLoadAllStops();  // in case the map starts past the threshold
       if (lastData) updateMap(lastData);
     });
 
@@ -873,7 +1121,8 @@
         const s = map.getStyle();
         const counts = {};
         for (const id of ["water", "road-major", "road-secondary", "road-minor",
-                          "busway", "rail", "place", "landcover-green"]) {
+                          "busway", "rail", "place", "landcover-green",
+                          "all-stops", "landmarks", "vehicle-dot", "ghost-dot"]) {
           try {
             counts[id] = map.getLayer(id)
               ? map.queryRenderedFeatures({ layers: [id] }).length
@@ -896,7 +1145,7 @@
     if (!shapeId || shapeCache.has(shapeId) || shapePending.has(shapeId)) return;
     shapePending.add(shapeId);
     try {
-      const res = await fetch(`/api/shape/${encodeURIComponent(shapeId)}`);
+      const res = await fetch(api(`/shape/${encodeURIComponent(shapeId)}`));
       if (res.ok) {
         shapeCache.set(shapeId, (await res.json()).points);
         if (lastData) drawRoutes(lastData);   // redraw once it lands
@@ -922,7 +1171,7 @@
     if (!tripId || tripStopsCache.has(tripId) || tripStopsPending.has(tripId)) return;
     tripStopsPending.add(tripId);
     try {
-      const res = await fetch(`/api/trip-stops/${encodeURIComponent(tripId)}`);
+      const res = await fetch(api(`/trip-stops/${encodeURIComponent(tripId)}`));
       tripStopsCache.set(tripId, res.ok ? (await res.json()).stops : null);
       drawLandmarks();
     } catch {
@@ -932,60 +1181,119 @@
     }
   }
 
-  // Only the selected service's stops, and never the one being viewed — that
-  // is drawn separately in white.
+  // Grey landmarks: the selected route's stops (when one is traced) plus the
+  // paired stops across the road from the viewed stop (always — "going the
+  // other way" is the next thing a rider looks for). Never the viewed stop
+  // itself; that is drawn separately in white.
   function drawLandmarks() {
     if (!mapReady || !map.getSource("landmarks")) return;
-    const stops = selectedTrip ? tripStopsCache.get(selectedTrip) : null;
-    if (!stops) {
-      map.getSource("landmarks").setData(emptyFC());
-      return;
-    }
+    const routeStops = (selectedTrip && tripStopsCache.get(selectedTrip)) || [];
+    const paired = lastData?.paired || [];
     const selfId = lastData?.stop?.stop_id;
-    map.getSource("landmarks").setData({
-      type: "FeatureCollection",
-      features: stops
-        .filter((l) => l.stop_id !== selfId)
-        .map((l) => ({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [l.lon, l.lat] },
-          properties: {
-            stop_id: l.stop_id,   // click a landmark to view it as the stop
-            name: l.stop_name,
-            // Stations are drawn by the always-on rail-stations layer, so here
-            // they are flagged out — a bus route's stops are the bus stops.
-            station: [1, 2].includes(Number(l.route_type)) ? 1 : 0,
-            icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
-          },
-        })),
-    });
-  }
-
-  // Every train station, always on, independent of the selected stop or route.
-  // The stop currently being viewed is dropped (it is the white marker) via a
-  // layer filter set in syncRailStationFilter, so nothing needs redrawing here.
-  function drawRailStations() {
-    if (!mapReady || !railStations.length || !map.getSource("rail-stations")) return;
-    map.getSource("rail-stations").setData({
-      type: "FeatureCollection",
-      features: railStations.map((s) => ({
+    const seen = new Set();
+    const features = [];
+    for (const l of [...routeStops, ...paired]) {
+      if (l.stop_id === selfId || seen.has(l.stop_id)) continue;
+      seen.add(l.stop_id);
+      features.push({
         type: "Feature",
-        geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+        geometry: { type: "Point", coordinates: [l.lon, l.lat] },
         properties: {
-          stop_id: s.stop_id,
-          name: s.name,
-          icon: ensureVehicleIcon(STOP_STATION, LANDMARK_INK),
+          stop_id: l.stop_id,   // click a landmark to view it as the stop
+          name: l.stop_name,
+          icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
         },
-      })),
-    });
-    syncRailStationFilter();
+      });
+    }
+    map.getSource("landmarks").setData({ type: "FeatureCollection", features });
   }
 
-  // Hide only the station that is the stop being viewed — it already has the
-  // white viewed-stop marker, and a grey one underneath it just doubles up.
+  // Hide only the stop being viewed from the all-stops layer — it already has
+  // the white viewed-stop marker, and a grey one underneath just doubles up.
   function syncRailStationFilter() {
-    if (!mapReady || !map.getLayer("rail-stations")) return;
-    map.setFilter("rail-stations", ["!=", ["get", "stop_id"], stopId || ""]);
+    if (!mapReady) return;
+    if (map.getLayer("all-stops")) {
+      map.setFilter("all-stops", ["!=", ["get", "stop_id"], stopId || ""]);
+    }
+  }
+
+  // Every stop in the network, fetched once, lazily — only when the user first
+  // zooms in far enough for the all-stops layer (minzoom 15) to matter. ~1 MB
+  // of GeoJSON that most sessions never need has no place in the initial load.
+  let allStopsLoaded = false, allStopsLoading = false;
+  function maybeLoadAllStops() {
+    if (allStopsLoaded || allStopsLoading || !mapReady) return;
+    if (map.getZoom() < 14.5) return;   // fetch just ahead of the threshold
+    allStopsLoading = true;
+    // ?v bumped when the payload schema changes — the endpoint is cached for a
+    // day (rightly: 1-2.5 MB, changes weekly), so a schema change served under
+    // the same URL leaves clients on the old shape until the cache expires.
+    // v2: rail stations included, tagged rt=2.
+    fetch(api("/all-stops?v=2"))
+      .then((r) => r.json())
+      .then((d) => {
+        const stops = d.stops || [];
+        // Near-coincident stops (a station beside its bus interchange,
+        // kerbside pairs) would collide and thin each other out. Cluster by
+        // true proximity — union-find over a coarse cell index, linking stops
+        // within ~28 m even across cell boundaries (a plain grid hash missed
+        // exactly the station-next-to-stop case) — then fan each cluster out
+        // into a little row so neighbours sit next to each other instead of
+        // fighting for one spot. Offsets are icon pixels (scaled by icon-size).
+        const CELL = 0.0004, LINK_M = 28;
+        const cells = new Map();
+        stops.forEach((s, i) => {
+          const key = `${Math.round(s.lat / CELL)},${Math.round(s.lon / CELL)}`;
+          (cells.get(key) || cells.set(key, []).get(key)).push(i);
+        });
+        const root = stops.map((_, i) => i);
+        const find = (i) => root[i] === i ? i : (root[i] = find(root[i]));
+        const metres = (a, b) => {
+          const kx = 111320 * Math.cos(a.lat * Math.PI / 180);
+          return Math.hypot((a.lon - b.lon) * kx, (a.lat - b.lat) * 110540);
+        };
+        stops.forEach((s, i) => {
+          const cy = Math.round(s.lat / CELL), cx = Math.round(s.lon / CELL);
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            for (const j of cells.get(`${cy + dy},${cx + dx}`) || []) {
+              if (j > i && metres(s, stops[j]) <= LINK_M) root[find(j)] = find(i);
+            }
+          }
+        });
+        const groups = new Map();
+        stops.forEach((s, i) => {
+          const r = find(i);
+          (groups.get(r) || groups.set(r, []).get(r)).push(s);
+        });
+        const offsetOf = new Map();
+        for (const g of groups.values()) {
+          if (g.length < 2) continue;
+          g.sort((a, b) => (a.route_type ?? 9) - (b.route_type ?? 9)
+                        || String(a.stop_id).localeCompare(String(b.stop_id)));
+          g.forEach((s, i) => {
+            // rows of three, centred
+            const row = Math.floor(i / 3), col = i % 3, n = Math.min(g.length - row * 3, 3);
+            offsetOf.set(s.stop_id, [(col - (n - 1) / 2) * 30, row * 30]);
+          });
+        }
+        map.getSource("all-stops").setData({
+          type: "FeatureCollection",
+          features: stops.map((s) => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+            properties: {
+              stop_id: s.stop_id,
+              name: s.name,
+              rt: Number(s.route_type),
+              off: offsetOf.get(s.stop_id) || [0, 0],
+              icon: ensureVehicleIcon(landmarkGlyph(s.route_type), LANDMARK_INK),
+            },
+          })),
+        });
+        allStopsLoaded = true;
+        syncRailStationFilter();
+      })
+      .catch(() => { allStopsLoading = false; });   // retry on a later zoom
   }
 
   function drawRoutes(data) {
@@ -1048,8 +1356,13 @@
   function loadEmojiFont() {
     if (!emojiFontReady) {
       emojiFontReady = (async () => {
+        // ?v matches fonts.css and is bumped with every subset change. This
+        // bare-URL load predates the no-cache middleware, so browsers held a
+        // heuristically-cached old subset — any glyph added since (🚉) then
+        // fell back to the system COLOUR emoji font on the canvas, which is
+        // exactly the coloured-map-icons bug. A new URL is a guaranteed miss.
         const ff = new FontFace(CANVAS_EMOJI,
-          "url('/static/fonts/NotoEmoji-mode.woff2')");
+          "url('/static/fonts/NotoEmoji-mode.woff2?v=3')");
         await ff.load();
         document.fonts.add(ff);
       })().catch(() => { /* fall back to whatever canvas picks */ });
@@ -1139,6 +1452,54 @@
     };
     pingRaf = requestAnimationFrame(step);
   }
+
+  // --- disruption alerts ---------------------------------------------------
+  // Alert text comes from the feed, so the popup is built with DOM APIs — never
+  // innerHTML — to keep any markup in the text inert.
+  function showAlerts(ids) {
+    const map = lastData?.alerts || {};
+    const box = $("alert-box");
+    box.innerHTML = "";
+    const h = document.createElement("h2");
+    const g = document.createElement("span");
+    g.className = "glyph";
+    g.textContent = asText(MARK_ALERT);
+    h.append(g, " Service disruptions");
+    box.appendChild(h);
+    ids.forEach((i) => {
+      const a = map[String(i)];
+      if (!a) return;
+      const item = document.createElement("div");
+      item.className = "alert-item";
+      const eff = document.createElement("div");
+      eff.className = "effect";
+      eff.textContent = a.effect || "";
+      const head = document.createElement("div");
+      head.className = "head";
+      head.textContent = a.header || "";
+      const body = document.createElement("div");
+      body.className = "body";
+      body.textContent = a.description || "";
+      item.append(eff, head, body);
+      box.appendChild(item);
+    });
+    const close = document.createElement("button");
+    close.className = "alert-close";
+    close.textContent = "Close";
+    close.onclick = closeAlerts;
+    box.appendChild(close);
+    $("alert-modal").hidden = false;
+    close.focus();
+  }
+
+  function closeAlerts() { $("alert-modal").hidden = true; }
+
+  $("alert-modal").addEventListener("click", (e) => {
+    if (e.target === $("alert-modal")) closeAlerts();   // backdrop only
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("alert-modal").hidden) closeAlerts();
+  });
 
   // Map -> board row. Flash the matching row and bring it into view.
   let flashTimer = null;
@@ -1356,7 +1717,8 @@
         // colour, matching the row stripe and, when tracked, the map marker.
         const badgeStyle = `style="color:${vcolor}"`;
         const routeLabel = d.route ?? "";
-        const numClass = routeLabel.length > 4 ? "num wide" : "num";
+        const numClass = routeLabel.length > 8 ? "num xwide"
+                       : routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
         const eta = d.minutes <= 0
           ? `<div class="due">DUE</div>`
@@ -1364,7 +1726,8 @@
         const bits = [MODES[d.route_type] ?? ""];
         if (d.platform) bits.push(`Platform ${d.platform}`);
         bits.push(new Date(d.predicted * 1000)
-          .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}));
+          .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit",
+                                   ...(regionTz ? {timeZone: regionTz} : {})}));
         row.innerHTML = `
           <div class="badge" ${badgeStyle}>
             <span class="mode">${asText(glyph)}</span>
@@ -1374,9 +1737,21 @@
             <div class="headsign">${d.headsign ?? ""}</div>
             <div class="sub">${bits.filter(Boolean).join(" · ")}</div>
           </div>
-          <div class="src-col" title="${d.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
-               >${asText(d.realtime ? MARK_LIVE : MARK_SCHEDULED)}</div>
+          <div class="src-col">
+            <span title="${d.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
+                  >${asText(d.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span>
+            ${d.alert_ids && d.alert_ids.length
+              ? `<button class="alert-mark" title="Service disruption — click for details"
+                         aria-label="Service disruption details">${asText(MARK_ALERT)}</button>`
+              : ""}
+          </div>
           <div class="eta">${eta}</div>`;
+        // The ⚠ opens the disruption popup; it must not also select the row.
+        const am = row.querySelector(".alert-mark");
+        if (am) am.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          showAlerts(d.alert_ids);
+        });
         board.appendChild(row);
       });
 
@@ -1402,7 +1777,7 @@
   async function refresh() {
     if (!stopId) return;
     try {
-      const res = await fetch(`/api/departures/${stopId}`);
+      const res = await fetch(api(`/departures/${stopId}`));
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
       const data = await res.json();
       renderBoard(data);

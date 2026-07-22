@@ -11,6 +11,7 @@ Run:  uvicorn app:app --reload
 """
 
 import asyncio
+import math
 import os
 import re
 import sqlite3
@@ -27,18 +28,15 @@ from fastapi.staticfiles import StaticFiles
 from google.transit import gtfs_realtime_pb2
 
 BASE = Path(__file__).parent
-# Overridable so the DB can live on a mounted volume (see Containerfile).
+# Overridable so the DBs can live on a mounted volume (see Containerfile).
 DB_PATH = Path(os.environ.get("GTFS_DB") or BASE / "gtfs.sqlite3")
-TRIP_UPDATES_URL = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates"
-VEHICLE_POSITIONS_URL = (
-    "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions"
-)
-# Basemap for the map view: a self-built OpenMapTiles .pmtiles of SEQ, built by
-# basemap/build-basemap.sh onto the same volume as the timetable. Absent is fine
-# — the frontend hides the map rather than failing.
+# Basemaps for the map view: self-built OpenMapTiles .pmtiles, built by
+# basemap/build-basemap.sh onto the same volume as the timetables. Absent is
+# fine — the frontend hides the map rather than failing.
 BASEMAP_DIR = Path(os.environ.get("BASEMAP_DIR") or BASE / "basemap")
-BASEMAP_FILE = BASEMAP_DIR / "seq.pmtiles"
 POLL_SECONDS = 30
+# Alerts change on the scale of hours, not seconds.
+ALERT_POLL_SECONDS = 300
 LOOKAHEAD_MINUTES = 90
 MAX_RESULTS = 12
 # A service is shown — on the board AND the map, which must agree — only if we
@@ -49,123 +47,204 @@ MAX_RESULTS = 12
 # threshold; widen it to list departures further ahead, at the cost of drawing
 # not-yet-moving buses guessed onto their origin.
 STAGING_WINDOW_S = 10 * 60
-# GTFS times are in the agency's local time, NOT the host's. Pinning this makes
-# the board correct under a UTC container clock, which is the normal case in a
-# container and was previously shifting every scheduled time by 10 hours.
-# Brisbane has no DST, but being explicit costs nothing.
-AGENCY_TZ = ZoneInfo("Australia/Brisbane")
+# GTFS times are in the agency's local time, NOT the host's. A naive datetime
+# would be read in the system zone; under a UTC container clock that shifted
+# every SEQ scheduled time by 10 hours. Each region pins its own zone.
+AGENCY_TZ = ZoneInfo("Australia/Brisbane")   # SEQ; kept module-level for tests
+
+
+def _mel_rt_feeds(kind: str) -> list[dict]:
+    """Melbourne GTFS-R endpoints, entirely env-driven.
+
+    Victoria's realtime feeds need a (free) registered API key and the host has
+    moved between portals over the years, so nothing is hardcoded. Format:
+
+        MEL_TRIP_UPDATES="2|https://host/metrotrain-tripupdates;3|https://host/yarratrams-tripupdates"
+        MEL_VEHICLE_POSITIONS / MEL_ALERTS  — same shape
+        MEL_API_KEY=...            (sent as MEL_API_KEY_HEADER, default
+        MEL_API_KEY_HEADER=Ocp-Apim-Subscription-Key)
+
+    The `2|` is the mode prefix: PTV's nested GTFS is one feed per mode with
+    ids that are only unique within the mode, so the ingest prefixes every id
+    with "<mode>:" and each realtime feed declares which mode it speaks for.
+    Unset means static-only — the board and the timetable ghosts still work.
+    """
+    raw = os.environ.get(f"MEL_{kind}", "").strip()
+    feeds = []
+    for part in raw.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        prefix, _, url = part.partition("|")
+        feeds.append({"url": url, "prefix": f"{prefix}:" if prefix else ""})
+    return feeds
+
+
+def _mel_headers() -> dict:
+    key = os.environ.get("MEL_API_KEY", "").strip()
+    if not key:
+        return {}
+    return {os.environ.get("MEL_API_KEY_HEADER", "Ocp-Apim-Subscription-Key"): key}
+
 
 # ---------------------------------------------------------------------------
-# Realtime cache: {trip_id: {stop_id: {"arrival": epoch|None, "delay": s|None}}}
+# Regions. One board, many networks: each region is a GTFS static DB, a set of
+# GTFS-RT feeds, a timezone, and a basemap. The API is region-scoped under
+# /api/r/{region}/…; the original /api/… paths remain as aliases for SEQ.
 # ---------------------------------------------------------------------------
-rt_cache: dict = {}
-rt_last_fetch: float | None = None
+REGIONS: dict = {
+    "seq": {
+        "name": "Translink · South East Queensland",
+        "tz": ZoneInfo("Australia/Brisbane"),
+        "db": DB_PATH,
+        "basemap": BASEMAP_DIR / "seq.pmtiles",
+        "trip_updates": [
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates",
+             "prefix": ""}],
+        "vehicle_positions": [
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions",
+             "prefix": ""}],
+        "alerts": [
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/Alerts",
+             "prefix": ""}],
+        "headers": {},
+        "geocode_viewbox": "151.8,-28.3,153.6,-26.0",
+        "center": [153.026, -27.4705],
+    },
+    "mel": {
+        "name": "PTV · Melbourne",
+        "tz": ZoneInfo("Australia/Melbourne"),
+        "db": Path(os.environ.get("MEL_GTFS_DB") or DB_PATH.parent / "gtfs-mel.sqlite3"),
+        "basemap": BASEMAP_DIR / "mel.pmtiles",
+        "trip_updates": _mel_rt_feeds("TRIP_UPDATES"),
+        "vehicle_positions": _mel_rt_feeds("VEHICLE_POSITIONS"),
+        "alerts": _mel_rt_feeds("ALERTS"),
+        "headers": _mel_headers(),
+        "geocode_viewbox": "144.4,-38.5,145.8,-37.4",
+        "center": [144.9631, -37.8136],
+    },
+}
 
-# Vehicle positions: {trip_id: {"lat", "lon", "bearing", "status", "timestamp"}}
-vp_cache: dict = {}
-vp_last_fetch: float | None = None
-
-# Per-poll feed health, so drops are counted rather than silently skipped and
-# can be inspected at /api/feeds. Translink's VehiclePositions feed has always
-# carried a position on every entity, so `without_position` is a canary: if it
-# ever goes non-zero, vehicles are missing from the map and the log will say so.
-tu_stats: dict = {}
-vp_stats: dict = {}
+# A region is offered to the frontend only once its timetable exists, so a
+# deployment that never ingested Melbourne simply doesn't show the switcher.
+def available_regions() -> list[str]:
+    return [rid for rid, cfg in REGIONS.items() if cfg["db"].exists()]
 
 
-async def poll_trip_updates() -> None:
-    global rt_cache, rt_last_fetch, tu_stats
+# Per-region runtime state: realtime caches and feed-health stats. Shapes:
+#   rt: {trip_id: {stop_id: {"arrival": epoch|None, "delay": s|None, "skipped"}}}
+#   vp: {trip_id: {"lat","lon","bearing","status","timestamp"}}
+#   al: {"alerts":[...], "by_route":{}, "by_stop":{}}   (see poll_alerts)
+STATE: dict = {
+    rid: {
+        "rt": {}, "rt_fetch": None, "rt_stats": {},
+        "vp": {}, "vp_fetch": None, "vp_stats": {},
+        "al": {"alerts": [], "by_route": {}, "by_stop": {}},
+        "al_fetch": None, "al_stats": {},
+    }
+    for rid in REGIONS
+}
+
+
+async def _fetch_feeds(client, cfg: dict, kind: str) -> list[tuple[str, object]]:
+    """Fetch every configured GTFS-RT feed of one kind for a region. Returns
+    (prefix, FeedMessage) pairs; the prefix maps feed-local ids onto the
+    prefixed ids the region's ingest wrote (empty for single-feed regions)."""
+    out = []
+    for feed_cfg in cfg[kind]:
+        resp = await client.get(feed_cfg["url"], headers=cfg["headers"])
+        resp.raise_for_status()
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(resp.content)
+        out.append((feed_cfg["prefix"], feed))
+    return out
+
+
+async def poll_trip_updates(rid: str) -> None:
+    cfg, st = REGIONS[rid], STATE[rid]
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             try:
-                resp = await client.get(TRIP_UPDATES_URL)
-                resp.raise_for_status()
-                feed = gtfs_realtime_pb2.FeedMessage()
-                feed.ParseFromString(resp.content)
-
                 cache: dict = {}
                 n_updates = n_no_trip = 0
-                for entity in feed.entity:
-                    if not entity.HasField("trip_update"):
-                        continue
-                    tu = entity.trip_update
-                    trip_id = tu.trip.trip_id
-                    n_updates += 1
-                    if not trip_id:
-                        n_no_trip += 1
-                    stops: dict = {}
-                    for stu in tu.stop_time_update:
-                        rec: dict = {"arrival": None, "delay": None}
-                        ev = None
-                        if stu.HasField("arrival"):
-                            ev = stu.arrival
-                        elif stu.HasField("departure"):
-                            ev = stu.departure
-                        if ev is not None:
-                            if ev.HasField("time") and ev.time:
-                                rec["arrival"] = ev.time
-                            if ev.HasField("delay"):
-                                rec["delay"] = ev.delay
-                        rec["skipped"] = (
-                            stu.schedule_relationship
-                            == stu.ScheduleRelationship.SKIPPED
-                        )
-                        stops[stu.stop_id] = rec
-                    cache[trip_id] = stops
-                rt_cache = cache
-                rt_last_fetch = time.time()
-                tu_stats = {"trip_updates": n_updates, "without_trip_id": n_no_trip}
-                print(f"[tu] {n_updates} trip updates ({len(cache)} trips cached)"
+                for prefix, feed in await _fetch_feeds(client, cfg, "trip_updates"):
+                    for entity in feed.entity:
+                        if not entity.HasField("trip_update"):
+                            continue
+                        tu = entity.trip_update
+                        trip_id = tu.trip.trip_id
+                        n_updates += 1
+                        if not trip_id:
+                            n_no_trip += 1
+                        stops: dict = {}
+                        for stu in tu.stop_time_update:
+                            rec: dict = {"arrival": None, "delay": None}
+                            ev = None
+                            if stu.HasField("arrival"):
+                                ev = stu.arrival
+                            elif stu.HasField("departure"):
+                                ev = stu.departure
+                            if ev is not None:
+                                if ev.HasField("time") and ev.time:
+                                    rec["arrival"] = ev.time
+                                if ev.HasField("delay"):
+                                    rec["delay"] = ev.delay
+                            rec["skipped"] = (
+                                stu.schedule_relationship
+                                == stu.ScheduleRelationship.SKIPPED
+                            )
+                            stops[prefix + stu.stop_id] = rec
+                        cache[prefix + trip_id] = stops
+                st["rt"] = cache
+                st["rt_fetch"] = time.time()
+                st["rt_stats"] = {"trip_updates": n_updates, "without_trip_id": n_no_trip}
+                print(f"[tu:{rid}] {n_updates} trip updates ({len(cache)} trips cached)"
                       + (f", {n_no_trip} without trip_id" if n_no_trip else ""))
             except Exception as exc:  # keep serving scheduled times on failure
-                print(f"[poll] realtime fetch failed: {exc}")
+                print(f"[poll:{rid}] realtime fetch failed: {exc}")
             await asyncio.sleep(POLL_SECONDS)
 
 
-async def poll_vehicle_positions() -> None:
+async def poll_vehicle_positions(rid: str) -> None:
     """Live GPS for the map view. Keyed by trip_id so a departure on the board
     can be matched to the vehicle actually running it."""
-    global vp_cache, vp_last_fetch, vp_stats
+    cfg, st = REGIONS[rid], STATE[rid]
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             try:
-                resp = await client.get(VEHICLE_POSITIONS_URL)
-                resp.raise_for_status()
-                feed = gtfs_realtime_pb2.FeedMessage()
-                feed.ParseFromString(resp.content)
-
                 cache: dict = {}
                 n_total = n_pos = n_no_pos = n_no_trip = 0
-                for entity in feed.entity:
-                    if not entity.HasField("vehicle"):
-                        continue
-                    v = entity.vehicle
-                    n_total += 1
-                    # Count the drops rather than skip them silently — this is
-                    # the "are we losing live vehicles?" question, answered.
-                    if not v.trip.trip_id:
-                        n_no_trip += 1
-                        continue
-                    if not v.HasField("position"):
-                        n_no_pos += 1
-                        continue
-                    n_pos += 1
-                    pos = v.position
-                    cache[v.trip.trip_id] = {
-                        "lat": pos.latitude,
-                        "lon": pos.longitude,
-                        "bearing": pos.bearing if pos.HasField("bearing") else None,
-                        "status": v.current_status,
-                        "timestamp": v.timestamp or None,
-                    }
-                vp_cache = cache
-                vp_last_fetch = time.time()
+                for prefix, feed in await _fetch_feeds(client, cfg, "vehicle_positions"):
+                    for entity in feed.entity:
+                        if not entity.HasField("vehicle"):
+                            continue
+                        v = entity.vehicle
+                        n_total += 1
+                        # Count the drops rather than skip them silently — this
+                        # is "are we losing live vehicles?", answered.
+                        if not v.trip.trip_id:
+                            n_no_trip += 1
+                            continue
+                        if not v.HasField("position"):
+                            n_no_pos += 1
+                            continue
+                        n_pos += 1
+                        pos = v.position
+                        cache[prefix + v.trip.trip_id] = {
+                            "lat": pos.latitude,
+                            "lon": pos.longitude,
+                            "bearing": pos.bearing if pos.HasField("bearing") else None,
+                            "status": v.current_status,
+                            "timestamp": v.timestamp or None,
+                        }
+                st["vp"] = cache
+                st["vp_fetch"] = time.time()
                 # Two vehicles can carry the same trip_id (a trip handed between
                 # buses, or overlapping runs); the cache is keyed by trip_id, so
                 # the later one wins. That collapse — not a dropped position — is
                 # what separates `positioned` from `cached`.
                 dup = n_pos - len(cache)
-                vp_stats = {
+                st["vp_stats"] = {
                     "vehicles": n_total,
                     "positioned": n_pos,
                     "cached": len(cache),
@@ -173,26 +252,102 @@ async def poll_vehicle_positions() -> None:
                     "without_position": n_no_pos,
                     "without_trip_id": n_no_trip,
                 }
-                print(f"[vp] {n_total} vehicles: {n_pos} positioned, {len(cache)} cached"
+                print(f"[vp:{rid}] {n_total} vehicles: {n_pos} positioned, {len(cache)} cached"
                       + (f", {dup} dup trip_id" if dup else "")
                       + (f", {n_no_pos} WITHOUT position" if n_no_pos else "")
                       + (f", {n_no_trip} without trip_id" if n_no_trip else ""))
-                # A live vehicle with no coordinates cannot go on the map. It has
-                # never happened on this feed; if it starts, this is the alarm.
+                # A live vehicle with no coordinates cannot go on the map. It
+                # has never happened on these feeds; if it starts, the alarm:
                 if n_no_pos:
-                    print(f"[vp] WARNING: {n_no_pos} live vehicles broadcast with "
-                          f"no position and were dropped from the map")
+                    print(f"[vp:{rid}] WARNING: {n_no_pos} live vehicles broadcast "
+                          f"with no position and were dropped from the map")
             except Exception as exc:  # the board must survive a map outage
-                print(f"[poll] vehicle positions fetch failed: {exc}")
+                print(f"[poll:{rid}] vehicle positions fetch failed: {exc}")
             await asyncio.sleep(POLL_SECONDS)
+
+
+# GTFS-RT Alert.Effect enum -> a short human label for the popup.
+ALERT_EFFECT = {
+    1: "No service", 2: "Reduced service", 3: "Significant delays",
+    4: "Detour", 5: "Additional service", 6: "Modified service",
+    7: "Service change", 8: "Service change", 9: "Stop moved",
+}
+
+
+def _alert_text(translated) -> str:
+    return translated.translation[0].text if translated.translation else ""
+
+
+async def poll_alerts(rid: str) -> None:
+    """Service disruptions. Only alerts active *now* are kept — the feed also
+    carries future planned works, which would swamp the board with warnings
+    about next month."""
+    cfg, st = REGIONS[rid], STATE[rid]
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            try:
+                now = time.time()
+                alerts: list = []
+                by_route: dict = {}
+                by_stop: dict = {}
+                n_total = n_inactive = 0
+                for prefix, feed in await _fetch_feeds(client, cfg, "alerts"):
+                    for entity in feed.entity:
+                        if not entity.HasField("alert"):
+                            continue
+                        a = entity.alert
+                        n_total += 1
+                        # No active_period at all means "always active".
+                        if a.active_period and not any(
+                            (p.start or 0) <= now and (not p.end or now <= p.end)
+                            for p in a.active_period
+                        ):
+                            n_inactive += 1
+                            continue
+                        idx = len(alerts)
+                        alerts.append(
+                            {
+                                "header": _alert_text(a.header_text),
+                                "description": _alert_text(a.description_text),
+                                "effect": ALERT_EFFECT.get(a.effect, "Service change"),
+                            }
+                        )
+                        for ie in a.informed_entity:
+                            if ie.route_id:
+                                by_route.setdefault(prefix + ie.route_id, []).append(idx)
+                            if ie.stop_id:
+                                by_stop.setdefault(prefix + ie.stop_id, []).append(idx)
+                st["al"] = {"alerts": alerts, "by_route": by_route, "by_stop": by_stop}
+                st["al_fetch"] = time.time()
+                st["al_stats"] = {"alerts": n_total, "active": len(alerts),
+                                  "not_yet_active": n_inactive}
+                print(f"[al:{rid}] {n_total} alerts: {len(alerts)} active"
+                      + (f", {n_inactive} outside their active period" if n_inactive else ""))
+            except Exception as exc:  # alerts are an enhancement, never fatal
+                print(f"[poll:{rid}] alerts fetch failed: {exc}")
+            await asyncio.sleep(ALERT_POLL_SECONDS)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tasks = [
-        asyncio.create_task(poll_trip_updates()),
-        asyncio.create_task(poll_vehicle_positions()),
-    ]
+    # One poller per region per configured feed kind. A region with no realtime
+    # (static-only Melbourne, say) simply gets no tasks — the board and the
+    # timetable-estimated ghosts work regardless.
+    tasks = []
+    for rid, cfg in REGIONS.items():
+        if not cfg["db"].exists():
+            continue
+        if cfg["trip_updates"]:
+            tasks.append(asyncio.create_task(poll_trip_updates(rid)))
+        if cfg["vehicle_positions"]:
+            tasks.append(asyncio.create_task(poll_vehicle_positions(rid)))
+        if cfg["alerts"]:
+            tasks.append(asyncio.create_task(poll_alerts(rid)))
+        # Warm the all-stops cache off the request path: the dominant-mode
+        # GROUP BY takes ~15 s on Melbourne's 11.6 M stop_times, which is a bad
+        # thing to hang the first zoomed-in map view on.
+        tasks.append(asyncio.create_task(
+            asyncio.to_thread(lambda r=rid: all_stops(r))))
     yield
     for t in tasks:
         t.cancel()
@@ -222,10 +377,19 @@ async def revalidate_unhashed_assets(request, call_next):
 # ---------------------------------------------------------------------------
 
 
-def db() -> sqlite3.Connection:
-    if not DB_PATH.exists():
-        raise HTTPException(500, "gtfs.sqlite3 not found - run ingest_gtfs.py first")
-    con = sqlite3.connect(DB_PATH)
+def region_cfg(region: str) -> dict:
+    cfg = REGIONS.get(region)
+    if cfg is None:
+        raise HTTPException(404, f"Unknown region {region!r}")
+    return cfg
+
+
+def db(region: str = "seq") -> sqlite3.Connection:
+    cfg = region_cfg(region)
+    if not cfg["db"].exists():
+        raise HTTPException(
+            500, f"{cfg['db'].name} not found - run ingest_gtfs.py --region {region}")
+    con = sqlite3.connect(cfg["db"])
     con.row_factory = sqlite3.Row
     return con
 
@@ -253,21 +417,23 @@ def active_service_ids(con: sqlite3.Connection, service_date: datetime) -> set[s
     return ids
 
 
-def gtfs_time_to_epoch(hms: str, service_date: datetime) -> int:
+def gtfs_time_to_epoch(hms: str, service_date: datetime, tz=AGENCY_TZ) -> int:
     """GTFS times can exceed 24:00:00 for after-midnight trips.
 
     The offset is applied to midnight *in the agency's timezone*: a naive
     datetime would be interpreted in the host's zone, so a UTC container would
-    read every scheduled time 10 hours late.
+    read every scheduled time 10 hours late. Each region passes its own zone
+    (Melbourne has DST; Brisbane does not).
     """
     h, m, s = (int(x) for x in hms.split(":"))
-    midnight = service_date.astimezone(AGENCY_TZ).replace(
+    midnight = service_date.astimezone(tz).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     return int((midnight + timedelta(hours=h, minutes=m, seconds=s)).timestamp())
 
 
-def scheduled_departures(con, stop_ids: list[str], service_date: datetime) -> list[dict]:
+def scheduled_departures(con, stop_ids: list[str], service_date: datetime,
+                         tz=AGENCY_TZ) -> list[dict]:
     sids = active_service_ids(con, service_date)
     if not sids or not stop_ids:
         return []
@@ -276,7 +442,8 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime) -> li
     rows = con.execute(
         f"""
         SELECT st.trip_id, st.departure_time, st.stop_id, t.trip_headsign,
-               r.route_short_name, r.route_long_name, r.route_type, r.route_color,
+               r.route_id, r.route_short_name, r.route_long_name, r.route_type,
+               r.route_color,
                s.platform_code, s.stop_name AS platform_stop_name
         FROM stop_times st
         JOIN trips t  ON t.trip_id = st.trip_id
@@ -292,8 +459,9 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime) -> li
             {
                 "trip_id": r["trip_id"],
                 "stop_id": r["stop_id"],
-                "scheduled": gtfs_time_to_epoch(r["departure_time"], service_date),
+                "scheduled": gtfs_time_to_epoch(r["departure_time"], service_date, tz),
                 "headsign": r["trip_headsign"],
+                "route_id": r["route_id"],
                 "route": r["route_short_name"] or r["route_long_name"],
                 "route_type": r["route_type"],
                 "route_color": r["route_color"],
@@ -406,12 +574,13 @@ def estimate_ghost_positions(con, deps: list[dict], now_epoch: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/r/{region}/stops/search")
 @app.get("/api/stops/search")
-def search_stops(q: str):
+def search_stops(q: str, region: str = "seq"):
     """Match stops by name. Parent stations rank first; their individual
     platforms are hidden so a station appears once (select the station to
     see all platforms combined)."""
-    con = db()
+    con = db(region)
     rows = con.execute(
         """
         SELECT stop_id, stop_name, location_type
@@ -434,9 +603,114 @@ def search_stops(q: str):
     ]
 
 
+@app.get("/api/r/{region}/stops/nearby")
+@app.get("/api/stops/nearby")
+def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
+    """Closest stops to a point, for 'which stop is nearest to me/home?'.
+    Same visibility rule as name search: child platforms are hidden and the
+    parent station is returned once."""
+    # ~2.2 km box prefilter; haversine only on the survivors.
+    dlat = 0.02
+    dlon = 0.02 / max(0.2, math.cos(math.radians(lat)))
+    con = db(region)
+    rows = con.execute(
+        """
+        SELECT stop_id, stop_name, stop_lat, stop_lon, location_type
+        FROM stops
+        WHERE (parent_station IS NULL OR parent_station = '')
+          AND stop_lat BETWEEN ? AND ? AND stop_lon BETWEEN ? AND ?
+        """,
+        (lat - dlat, lat + dlat, lon - dlon, lon + dlon),
+    ).fetchall()
+    con.close()
+
+    def haversine_m(la, lo):
+        p1, p2 = math.radians(lat), math.radians(la)
+        a = (math.sin((p2 - p1) / 2) ** 2
+             + math.cos(p1) * math.cos(p2)
+             * math.sin(math.radians(lo - lon) / 2) ** 2)
+        return 2 * 6371000 * math.asin(math.sqrt(a))
+
+    out = sorted(
+        (
+            {
+                "stop_id": r["stop_id"],
+                "stop_name": r["stop_name"],
+                "is_station": r["location_type"] == 1,
+                "dist_m": round(haversine_m(r["stop_lat"], r["stop_lon"])),
+            }
+            for r in rows
+            if r["stop_lat"] is not None
+        ),
+        key=lambda s: s["dist_m"],
+    )
+    return out[: max(1, min(limit, 25))]
+
+
+# Nominatim is a free community service with a firm usage policy: identify the
+# app, at most 1 req/s, cache results. The proxy exists so the frontend stays
+# fully self-hosted and the policy is enforced in one place.
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_UA = "TranslinkNextArrivalApp/1.0 (https://github.com/jasonuithol/TranslinkRealtimeApp)"
+_geocode_cache: dict = {}          # (region, q) -> (fetched_at, results)
+_geocode_last_call = 0.0
+GEOCODE_CACHE_S = 24 * 3600
+
+
+@app.get("/api/r/{region}/geocode")
+@app.get("/api/geocode")
+async def geocode(q: str, region: str = "seq"):
+    """Address -> candidate points, proxied through Nominatim (OpenStreetMap).
+    Pair with /api/stops/nearby to answer 'which stops are closest to home?'.
+    Bounded to the region's bbox, so "Main St" resolves to the Main St here."""
+    global _geocode_last_call
+    cfg = region_cfg(region)
+    q = q.strip()
+    if len(q) < 4:
+        return []
+    hit = _geocode_cache.get((region, q.lower()))
+    if hit and time.time() - hit[0] < GEOCODE_CACHE_S:
+        return hit[1]
+    # Enforce the 1 req/s policy even if the client misbehaves.
+    wait = 1.0 - (time.time() - _geocode_last_call)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _geocode_last_call = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                NOMINATIM_URL,
+                params={
+                    "q": q, "format": "jsonv2", "limit": 5,
+                    "countrycodes": "au",
+                    "viewbox": cfg["geocode_viewbox"], "bounded": 1,
+                },
+                headers={"User-Agent": NOMINATIM_UA},
+            )
+            resp.raise_for_status()
+            results = [
+                {
+                    "label": r.get("display_name", ""),
+                    "lat": float(r["lat"]),
+                    "lon": float(r["lon"]),
+                }
+                for r in resp.json()
+            ]
+    except Exception as exc:
+        print(f"[geocode] lookup failed: {exc}")
+        raise HTTPException(502, "address lookup unavailable")
+    _geocode_cache[(region, q.lower())] = (time.time(), results)
+    # An unbounded cache only grows by distinct queries typed; trim anyway.
+    if len(_geocode_cache) > 500:
+        _geocode_cache.pop(next(iter(_geocode_cache)))
+    return results
+
+
+@app.get("/api/r/{region}/departures/{stop_id}")
 @app.get("/api/departures/{stop_id}")
-def departures(stop_id: str):
-    con = db()
+def departures(stop_id: str, region: str = "seq"):
+    cfg, st = region_cfg(region), STATE[region]
+    con = db(region)
     stop = con.execute(
         "SELECT stop_id, stop_name, location_type, stop_lat, stop_lon "
         "FROM stops WHERE stop_id=?",
@@ -457,10 +731,11 @@ def departures(stop_id: str):
     ]
     stop_ids.extend(children)
 
-    now = datetime.now(AGENCY_TZ)
+    now = datetime.now(cfg["tz"])
     # include yesterday's service date to catch after-midnight (25:xx) trips
-    sched = scheduled_departures(con, stop_ids, now) + scheduled_departures(
-        con, stop_ids, now - timedelta(days=1)
+    tz = cfg["tz"]
+    sched = scheduled_departures(con, stop_ids, now, tz) + scheduled_departures(
+        con, stop_ids, now - timedelta(days=1), tz
     )
     con.close()
 
@@ -468,7 +743,7 @@ def departures(stop_id: str):
     horizon = now_epoch + LOOKAHEAD_MINUTES * 60
     results = []
     for dep in sched:
-        rt = rt_cache.get(dep["trip_id"], {}).get(dep["stop_id"])
+        rt = st["rt"].get(dep["trip_id"], {}).get(dep["stop_id"])
         realtime = False
         best = dep["scheduled"]
         if rt:
@@ -513,10 +788,10 @@ def departures(stop_id: str):
     # MAX_RESULTS from those. A not-yet-departed run with no position is shown in
     # neither the board nor the map, so the two never disagree and a wobbling
     # time boundary moves a service in and out of both together.
-    gps = {d["trip_id"]: vp_cache.get(d["trip_id"]) for d in results}
+    gps = {d["trip_id"]: st["vp"].get(d["trip_id"]) for d in results}
     gps = {tid: v for tid, v in gps.items() if v}
     need_estimate = [d for d in results if d["trip_id"] not in gps]
-    con_e = db()
+    con_e = db(region)
     estimated = estimate_ghost_positions(con_e, need_estimate, now_epoch)
     con_e.close()
 
@@ -551,6 +826,67 @@ def departures(stop_id: str):
         if d["trip_id"] not in gps
     ]
 
+    # The stop across the road. A street-side stop (bus, tram) is almost always
+    # one of a pair — same road, opposite directions — and "I want to go the
+    # other way" is the next thing a rider looks for. Return every stop within
+    # ~120 m that is not this stop or one of its own platforms, so the map can
+    # keep them visible in grey. Stations pair with nothing (their platforms
+    # are already merged).
+    paired = []
+    if stop["stop_lat"] is not None and stop["location_type"] != 1:
+        con_p = db(region)
+        dlat = 0.0011  # ~120 m
+        dlon = 0.0011 / max(0.2, math.cos(math.radians(stop["stop_lat"])))
+        own = set(stop_ids)
+        for r in con_p.execute(
+            """
+            SELECT stop_id, stop_name, stop_lat, stop_lon
+            FROM stops
+            WHERE (parent_station IS NULL OR parent_station = '')
+              AND location_type IS NOT 1
+              AND stop_lat BETWEEN ? AND ? AND stop_lon BETWEEN ? AND ?
+            """,
+            (stop["stop_lat"] - dlat, stop["stop_lat"] + dlat,
+             stop["stop_lon"] - dlon, stop["stop_lon"] + dlon),
+        ):
+            if r["stop_id"] in own:
+                continue
+            rt = con_p.execute(
+                """
+                SELECT rt.route_type, COUNT(*) AS c FROM stop_times st
+                JOIN trips t ON t.trip_id = st.trip_id
+                JOIN routes rt ON rt.route_id = t.route_id
+                WHERE st.stop_id = ? GROUP BY rt.route_type
+                ORDER BY c DESC LIMIT 1
+                """,
+                (r["stop_id"],),
+            ).fetchone()
+            paired.append(
+                {
+                    "stop_id": r["stop_id"],
+                    "stop_name": r["stop_name"],
+                    "lat": r["stop_lat"],
+                    "lon": r["stop_lon"],
+                    "route_type": rt["route_type"] if rt else None,
+                }
+            )
+        con_p.close()
+        paired = paired[:6]   # a busy corner, not the whole precinct
+
+    # Disruption alerts, matched by route and by stop (SEQ publishes no
+    # trip-level alerts). Each row carries indices into a single response-level
+    # map, so an alert spanning half the board is sent once, not twelve times.
+    used_alerts: dict = {}
+    al = st["al"]
+    for dep in shown:
+        ids = list(al["by_route"].get(dep["route_id"], []))
+        for sid in (dep["stop_id"], stop_id):
+            ids.extend(al["by_stop"].get(sid, []))
+        ids = sorted(set(ids))
+        dep["alert_ids"] = ids
+        for i in ids:
+            used_alerts[str(i)] = al["alerts"][i]
+
     # Tag every departure with the shape its trip follows, so any row on the
     # board can have its route drawn on demand — not just the tracked ones. The
     # geometry itself is fetched separately and cached by the client: it never
@@ -559,7 +895,7 @@ def departures(stop_id: str):
     tracked_trips = [v["trip_id"] for v in vehicles]
     shown_trips = [d["trip_id"] for d in shown]
     if shown_trips:
-        con3 = db()
+        con3 = db(region)
         marks = ",".join("?" for _ in shown_trips)
         shape_of = {
             r["trip_id"]: r["shape_id"]
@@ -578,25 +914,28 @@ def departures(stop_id: str):
         "stop": dict(stop),
         "generated_at": now_epoch,
         "realtime_feed_age": (
-            round(time.time() - rt_last_fetch) if rt_last_fetch else None
+            round(time.time() - st["rt_fetch"]) if st["rt_fetch"] else None
         ),
         "vehicle_feed_age": (
-            round(time.time() - vp_last_fetch) if vp_last_fetch else None
+            round(time.time() - st["vp_fetch"]) if st["vp_fetch"] else None
         ),
         "departures": shown,
         "vehicles": vehicles,
         "ghosts": ghosts,
+        "alerts": used_alerts,
+        "paired": paired,
     }
 
 
+@app.get("/api/r/{region}/trip-stops/{trip_id}")
 @app.get("/api/trip-stops/{trip_id}")
-def trip_stops(trip_id: str):
+def trip_stops(trip_id: str, region: str = "seq"):
     """The stops one trip calls at, in order.
 
     Fetched only when a service is selected, and static for the life of a
     timetable — so it is served apart from the departures poll and cached.
     """
-    con = db()
+    con = db(region)
     stops = [
         {
             "stop_id": r["stop_id"],
@@ -628,14 +967,15 @@ def trip_stops(trip_id: str):
     )
 
 
+@app.get("/api/r/{region}/shape/{shape_id}")
 @app.get("/api/shape/{shape_id}")
-def shape(shape_id: str):
+def shape(shape_id: str, region: str = "seq"):
     """Geometry of one route path, as [lon, lat] pairs.
 
     Static for the life of a timetable, so it is served apart from the
     departures poll and marked cacheable.
     """
-    con = db()
+    con = db(region)
     pts = [
         [r["shape_pt_lon"], r["shape_pt_lat"]]
         for r in con.execute(
@@ -653,17 +993,16 @@ def shape(shape_id: str):
     )
 
 
-_rail_stations_cache: list | None = None
+_rail_stations_cache: dict = {}    # region -> list
 
 
-def rail_stations() -> list[dict]:
+def rail_stations(region: str = "seq") -> list[dict]:
     """Every rail station in the feed, one marker per physical station. Rail
     platforms (served by route_type 1/2) are collapsed to their parent station,
     so Varsity Lakes is one point, not two platforms. Static for the life of a
-    timetable, so it is computed once and cached."""
-    global _rail_stations_cache
-    if _rail_stations_cache is None:
-        con = db()
+    timetable, so it is computed once per region and cached."""
+    if region not in _rail_stations_cache:
+        con = db(region)
         ids = [
             r["sid"]
             for r in con.execute(
@@ -699,43 +1038,133 @@ def rail_stations() -> list[dict]:
                 )
             ]
         con.close()
-        _rail_stations_cache = out
-    return _rail_stations_cache
+        _rail_stations_cache[region] = out
+    return _rail_stations_cache[region]
 
 
-@app.get("/api/rail-stations")
-def rail_stations_endpoint():
-    """Train stations, drawn on the map as navigation landmarks regardless of
-    which stop or route is selected — if the map can show one, it should."""
+_all_stops_cache: dict = {}    # region -> list
+
+
+def all_stops(region: str) -> list[dict]:
+    """Every parentless stop with its dominant mode, for the zoomed-in map
+    layer that shows the whole street furniture. One GROUP BY over stop_times
+    is seconds on the big Melbourne DB, so computed once per region and cached;
+    static for the life of a timetable."""
+    if region not in _all_stops_cache:
+        con = db(region)
+        # Dominant route_type per stop in one pass.
+        dominant = {}
+        for r in con.execute(
+            """
+            SELECT st.stop_id AS sid, rt.route_type AS rtype, COUNT(*) AS c
+            FROM stop_times st
+            JOIN trips t ON t.trip_id = st.trip_id
+            JOIN routes rt ON rt.route_id = t.route_id
+            GROUP BY st.stop_id, rt.route_type
+            """
+        ):
+            cur = dominant.get(r["sid"])
+            if cur is None or r["c"] > cur[1]:
+                dominant[r["sid"]] = (r["rtype"], r["c"])
+        # Rail stations are parent records with no stop_times of their own
+        # (their platforms carry the departures), so the dominant-mode lookup
+        # misses them and they would read as bus stops. Tag them rail instead —
+        # otherwise every stop is just a stop, drawn at the same zoom.
+        rail_ids = {s["stop_id"] for s in rail_stations(region)}
+        out = [
+            {
+                "stop_id": r["stop_id"],
+                "name": r["stop_name"],
+                "lat": r["stop_lat"],
+                "lon": r["stop_lon"],
+                "route_type": 2 if r["stop_id"] in rail_ids
+                              else dominant.get(r["stop_id"], (3, 0))[0],
+            }
+            for r in con.execute(
+                "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
+                "WHERE (parent_station IS NULL OR parent_station = '') "
+                "AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL"
+            )
+        ]
+        con.close()
+        _all_stops_cache[region] = out
+    return _all_stops_cache[region]
+
+
+@app.get("/api/r/{region}/all-stops")
+@app.get("/api/all-stops")
+def all_stops_endpoint(region: str = "seq"):
+    """Every stop in the network, fetched lazily by the map the first time the
+    user zooms in far enough to want them."""
     return JSONResponse(
-        {"stations": rail_stations()},
+        {"stops": all_stops(region)},
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
+@app.get("/api/r/{region}/rail-stations")
+@app.get("/api/rail-stations")
+def rail_stations_endpoint(region: str = "seq"):
+    """Train stations, drawn on the map as navigation landmarks regardless of
+    which stop or route is selected — if the map can show one, it should."""
+    return JSONResponse(
+        {"stations": rail_stations(region)},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/api/regions")
+def regions():
+    """The regions this deployment can serve (timetable ingested), for the
+    frontend's region switcher. The first entry is the default."""
+    return [
+        {"id": rid, "name": REGIONS[rid]["name"]}
+        for rid in available_regions()
+    ] or [{"id": "seq", "name": REGIONS["seq"]["name"]}]
+
+
+@app.get("/api/r/{region}/config")
 @app.get("/api/config")
-def config():
-    """The frontend asks whether a basemap is present before building the map,
-    so a deployment without one degrades to a board-only page."""
-    return {"basemap": BASEMAP_FILE.exists()}
+def config(region: str = "seq"):
+    """Per-region frontend config: whether a basemap is present (without one
+    the map hides and the board works unchanged), where it is, and where the
+    map should sit before a stop is chosen."""
+    cfg = region_cfg(region)
+    return {
+        "basemap": cfg["basemap"].exists(),
+        "basemap_url": f"/basemap/{cfg['basemap'].name}",
+        "name": cfg["name"],
+        "center": cfg["center"],
+        # So the frontend prints times in the network's local clock, not the
+        # viewer's — a Brisbane browser looking at Melbourne must show AEDT.
+        "tz": str(cfg["tz"]),
+    }
 
 
 @app.get("/api/feeds")
 def feeds():
-    """Realtime feed health for QC: how many trip updates and vehicle positions
-    the last poll saw, how many were dropped and why, and how stale each cache
-    is. `without_position` is the count of live vehicles with no coordinates —
-    the ones that cannot be mapped."""
+    """Realtime feed health for QC, per region: how many trip updates and
+    vehicle positions the last poll saw, how many were dropped and why, and how
+    stale each cache is. `without_position` is the count of live vehicles with
+    no coordinates — the ones that cannot be mapped."""
     now = time.time()
     return {
-        "trip_updates": {
-            **tu_stats,
-            "age_s": round(now - rt_last_fetch) if rt_last_fetch else None,
-        },
-        "vehicle_positions": {
-            **vp_stats,
-            "age_s": round(now - vp_last_fetch) if vp_last_fetch else None,
-        },
+        rid: {
+            "trip_updates": {
+                **st["rt_stats"],
+                "age_s": round(now - st["rt_fetch"]) if st["rt_fetch"] else None,
+            },
+            "vehicle_positions": {
+                **st["vp_stats"],
+                "age_s": round(now - st["vp_fetch"]) if st["vp_fetch"] else None,
+            },
+            "alerts": {
+                **st["al_stats"],
+                "age_s": round(now - st["al_fetch"]) if st["al_fetch"] else None,
+            },
+        }
+        for rid, st in STATE.items()
+        if rid in available_regions()
     }
 
 

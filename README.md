@@ -105,6 +105,11 @@ timetable.
 - Basemap © OpenMapTiles © OpenStreetMap contributors; geocoding by
   OpenStreetMap/Nominatim.
 
+No Google data is used. The `google_transit.zip` filenames inside PTV's
+download are just PTV's naming (feeds formatted for Google Maps ingestion —
+the data is theirs), and the "Google extended route types" the ingest
+normalises are a numbering convention, not data.
+
 Check each portal for current licensing and attribution requirements.
 
 See `HANDOVER.md` for the full design log: every architectural decision, bug

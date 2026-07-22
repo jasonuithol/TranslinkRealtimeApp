@@ -712,11 +712,11 @@
         return;
       }
       places.forEach((p) => {
-        // The label already ends with the state acronym (built server-side
-        // from Nominatim's structured address: lead, suburb STATE).
+        // Just the label ('lead, suburb STATE', built server-side) — no tag:
+        // an address row is recognisable by its shape, and the missing stop
+        // glyph on the right already tells it apart from a stop.
         resultButton(
-          `<span class="rmain">${escapeHtml(p.label)}` +
-            `<span class="sid">address</span></span>`,
+          `<span class="rmain">${escapeHtml(p.label)}</span>`,
           () => nearbyStops(p.lat, p.lon, "that address", p.region),
         );
       });

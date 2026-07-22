@@ -114,8 +114,19 @@ is `AutoUpdate=registry`, so a push to `main` rolls out on its own.
 
 - Static: `https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip`
 - Realtime: `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates`
-- Not yet used: `.../SEQ/VehiclePositions` (live GPS), `.../SEQ/Alerts`
-  (disruptions)
+- Realtime: `.../SEQ/VehiclePositions` (live GPS, drives the map)
+- Not yet used: `.../SEQ/Alerts` (disruptions)
+
+**Feed QC.** Each poll logs a one-line summary (`[vp] N vehicles: P positioned,
+C cached, …`, `[tu] N trip updates`) and stores it for `/api/feeds`, so the
+health of both realtime feeds is inspectable without reading logs. Drops are
+*counted*, not silently skipped: `without_position` (a live vehicle with no
+coordinates — impossible to map; has always been 0 on this feed, so non-zero is
+an alarm and gets a WARNING line), `without_trip_id`, and `duplicate_trip_id`
+(two vehicles sharing one trip_id — the cache is keyed by trip_id so the later
+wins; this, not any drop, is why `cached` < `positioned`). Verified 0 vehicles
+are lost: a 61-row sweep of route 765 across 12 stops found every GPS-broadcasting
+trip shown as a live dot.
 
 Data © Translink / Queensland Government under their open data terms
 (CC BY 4.0 at time of writing — verify on data.qld.gov.au).

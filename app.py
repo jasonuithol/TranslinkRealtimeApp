@@ -57,9 +57,16 @@ rt_last_fetch: float | None = None
 vp_cache: dict = {}
 vp_last_fetch: float | None = None
 
+# Per-poll feed health, so drops are counted rather than silently skipped and
+# can be inspected at /api/feeds. Translink's VehiclePositions feed has always
+# carried a position on every entity, so `without_position` is a canary: if it
+# ever goes non-zero, vehicles are missing from the map and the log will say so.
+tu_stats: dict = {}
+vp_stats: dict = {}
+
 
 async def poll_trip_updates() -> None:
-    global rt_cache, rt_last_fetch
+    global rt_cache, rt_last_fetch, tu_stats
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             try:
@@ -69,11 +76,15 @@ async def poll_trip_updates() -> None:
                 feed.ParseFromString(resp.content)
 
                 cache: dict = {}
+                n_updates = n_no_trip = 0
                 for entity in feed.entity:
                     if not entity.HasField("trip_update"):
                         continue
                     tu = entity.trip_update
                     trip_id = tu.trip.trip_id
+                    n_updates += 1
+                    if not trip_id:
+                        n_no_trip += 1
                     stops: dict = {}
                     for stu in tu.stop_time_update:
                         rec: dict = {"arrival": None, "delay": None}
@@ -95,6 +106,9 @@ async def poll_trip_updates() -> None:
                     cache[trip_id] = stops
                 rt_cache = cache
                 rt_last_fetch = time.time()
+                tu_stats = {"trip_updates": n_updates, "without_trip_id": n_no_trip}
+                print(f"[tu] {n_updates} trip updates ({len(cache)} trips cached)"
+                      + (f", {n_no_trip} without trip_id" if n_no_trip else ""))
             except Exception as exc:  # keep serving scheduled times on failure
                 print(f"[poll] realtime fetch failed: {exc}")
             await asyncio.sleep(POLL_SECONDS)
@@ -103,7 +117,7 @@ async def poll_trip_updates() -> None:
 async def poll_vehicle_positions() -> None:
     """Live GPS for the map view. Keyed by trip_id so a departure on the board
     can be matched to the vehicle actually running it."""
-    global vp_cache, vp_last_fetch
+    global vp_cache, vp_last_fetch, vp_stats
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             try:
@@ -113,12 +127,21 @@ async def poll_vehicle_positions() -> None:
                 feed.ParseFromString(resp.content)
 
                 cache: dict = {}
+                n_total = n_pos = n_no_pos = n_no_trip = 0
                 for entity in feed.entity:
                     if not entity.HasField("vehicle"):
                         continue
                     v = entity.vehicle
-                    if not v.HasField("position") or not v.trip.trip_id:
+                    n_total += 1
+                    # Count the drops rather than skip them silently — this is
+                    # the "are we losing live vehicles?" question, answered.
+                    if not v.trip.trip_id:
+                        n_no_trip += 1
                         continue
+                    if not v.HasField("position"):
+                        n_no_pos += 1
+                        continue
+                    n_pos += 1
                     pos = v.position
                     cache[v.trip.trip_id] = {
                         "lat": pos.latitude,
@@ -129,6 +152,28 @@ async def poll_vehicle_positions() -> None:
                     }
                 vp_cache = cache
                 vp_last_fetch = time.time()
+                # Two vehicles can carry the same trip_id (a trip handed between
+                # buses, or overlapping runs); the cache is keyed by trip_id, so
+                # the later one wins. That collapse — not a dropped position — is
+                # what separates `positioned` from `cached`.
+                dup = n_pos - len(cache)
+                vp_stats = {
+                    "vehicles": n_total,
+                    "positioned": n_pos,
+                    "cached": len(cache),
+                    "duplicate_trip_id": dup,
+                    "without_position": n_no_pos,
+                    "without_trip_id": n_no_trip,
+                }
+                print(f"[vp] {n_total} vehicles: {n_pos} positioned, {len(cache)} cached"
+                      + (f", {dup} dup trip_id" if dup else "")
+                      + (f", {n_no_pos} WITHOUT position" if n_no_pos else "")
+                      + (f", {n_no_trip} without trip_id" if n_no_trip else ""))
+                # A live vehicle with no coordinates cannot go on the map. It has
+                # never happened on this feed; if it starts, this is the alarm.
+                if n_no_pos:
+                    print(f"[vp] WARNING: {n_no_pos} live vehicles broadcast with "
+                          f"no position and were dropped from the map")
             except Exception as exc:  # the board must survive a map outage
                 print(f"[poll] vehicle positions fetch failed: {exc}")
             await asyncio.sleep(POLL_SECONDS)
@@ -579,6 +624,25 @@ def config():
     """The frontend asks whether a basemap is present before building the map,
     so a deployment without one degrades to a board-only page."""
     return {"basemap": BASEMAP_FILE.exists()}
+
+
+@app.get("/api/feeds")
+def feeds():
+    """Realtime feed health for QC: how many trip updates and vehicle positions
+    the last poll saw, how many were dropped and why, and how stale each cache
+    is. `without_position` is the count of live vehicles with no coordinates —
+    the ones that cannot be mapped."""
+    now = time.time()
+    return {
+        "trip_updates": {
+            **tu_stats,
+            "age_s": round(now - rt_last_fetch) if rt_last_fetch else None,
+        },
+        "vehicle_positions": {
+            **vp_stats,
+            "age_s": round(now - vp_last_fetch) if vp_last_fetch else None,
+        },
+    }
 
 
 # Frontend

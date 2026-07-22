@@ -1,0 +1,21 @@
+# Basemap builder — a SEPARATE image from the app, so the app stays a lean
+# Python container. This one runs Planetiler (a Java tool) to build a
+# self-hosted SEQ vector basemap as pmtiles, using the OpenMapTiles schema.
+#
+# Why OpenMapTiles rather than the Protomaps build we extracted before: in this
+# schema water (ocean, rivers, lakes) is a real polygon present at every zoom,
+# whereas Protomaps models the ocean as the *absence* of a land polygon and only
+# fills inland water at higher zooms — which made the coastline blink in and out
+# as you zoomed. See map-style.json for the matching layer names.
+#
+# Build:  podman build -f basemap/Containerfile -t translink-basemap .
+# Run:    see basemap/build-basemap.sh header.
+FROM eclipse-temurin:21-jre
+
+ARG PLANETILER_VERSION=0.10.2
+ADD https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}/planetiler.jar /planetiler/planetiler.jar
+
+COPY basemap/build-basemap.sh /planetiler/build-basemap.sh
+RUN chmod +x /planetiler/build-basemap.sh
+
+ENTRYPOINT ["/planetiler/build-basemap.sh"]

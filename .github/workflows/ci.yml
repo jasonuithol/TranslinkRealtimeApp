@@ -156,17 +156,19 @@ jobs:
 
       - name: Map style references real vector layers
         run: |
-          # Regression test. map-style.json had source-layer "transit", which
-          # does not exist in the Protomaps v4 basemap. MapLibre reports that
-          # on its own error channel and then never fires 'load' — so every
-          # layer added in the load handler silently never existed, and the map
-          # rendered blank with no console error and no failed request.
+          # Regression test. A style referencing a source-layer the basemap does
+          # not ship renders blank: MapLibre reports it on its own error channel,
+          # then never fires 'load', so every layer added in the load handler
+          # silently never exists — no console error, no failed request.
           python3 - <<'PY'
           import json, sys
-          # The vector layers Protomaps v4 actually ships, read from the
-          # tileset metadata (pmtiles show --metadata).
-          PRESENT = {"boundaries", "buildings", "earth", "landcover",
-                     "landuse", "places", "pois", "roads", "water"}
+          # The vector layers the OpenMapTiles basemap ships (planetiler, read
+          # from `pmtiles show --metadata`). The basemap is self-built by
+          # basemap/build-basemap.sh.
+          PRESENT = {"aerodrome_label", "aeroway", "boundary", "building",
+                     "housenumber", "landcover", "landuse", "mountain_peak",
+                     "park", "place", "poi", "transportation",
+                     "transportation_name", "water", "water_name", "waterway"}
           style = json.load(open("static/map-style.json"))
           bad = [(l["id"], l["source-layer"]) for l in style["layers"]
                  if l.get("source-layer") and l["source-layer"] not in PRESENT]

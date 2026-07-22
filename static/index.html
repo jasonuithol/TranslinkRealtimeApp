@@ -624,7 +624,12 @@
     maplibregl.addProtocol("pmtiles", new pmtiles.Protocol({ metadata: true }).tile);
     map = new maplibregl.Map({
       container: "map",
-      style: "/static/map-style.json",
+      // ?v bumped whenever the style schema changes. Browsers heuristically
+      // cached this JSON before it was served no-cache, and a stale style from
+      // the old basemap schema fails layer-by-layer against the new tiles —
+      // water happened to render (both schemas have a "water" layer), roads and
+      // labels silently didn't. A new URL is a guaranteed cache miss.
+      style: "/static/map-style.json?v=3",
       center: [153.026, -27.4705],   // Brisbane, until a stop is selected
       zoom: 11,
       attributionControl: { compact: true },
@@ -858,6 +863,26 @@
       drawRailStations();   // paint stations if their fetch already landed
       if (lastData) updateMap(lastData);
     });
+
+    // ?mapdebug=1 — ground-truth probe, run in the viewer's own browser (the
+    // dev harness cannot render MapLibre at all). On every idle it logs which
+    // style is actually loaded and how many features each basemap layer really
+    // rendered. Console, not the caption — the 15s poll overwrites the caption.
+    if (new URLSearchParams(location.search).get("mapdebug")) {
+      map.on("idle", () => {
+        const s = map.getStyle();
+        const counts = {};
+        for (const id of ["water", "road-major", "road-secondary", "road-minor",
+                          "busway", "rail", "place", "landcover-green"]) {
+          try {
+            counts[id] = map.getLayer(id)
+              ? map.queryRenderedFeatures({ layers: [id] }).length
+              : "NO-LAYER";
+          } catch (e) { counts[id] = "ERR:" + e.message; }
+        }
+        console.log(`[mapdebug] style=${s.name} zoom=${map.getZoom().toFixed(1)}`, counts);
+      });
+    }
   }
 
   const emptyFC = () => ({ type: "FeatureCollection", features: [] });

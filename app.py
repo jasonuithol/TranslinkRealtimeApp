@@ -33,9 +33,9 @@ TRIP_UPDATES_URL = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpd
 VEHICLE_POSITIONS_URL = (
     "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions"
 )
-# Basemap for the map view: a Protomaps .pmtiles extract of SEQ, built by
-# fetch_basemap.sh onto the same volume as the timetable. Absent is fine — the
-# frontend hides the map rather than failing.
+# Basemap for the map view: a self-built OpenMapTiles .pmtiles of SEQ, built by
+# basemap/build-basemap.sh onto the same volume as the timetable. Absent is fine
+# — the frontend hides the map rather than failing.
 BASEMAP_DIR = Path(os.environ.get("BASEMAP_DIR") or BASE / "basemap")
 BASEMAP_FILE = BASEMAP_DIR / "seq.pmtiles"
 POLL_SECONDS = 30
@@ -212,7 +212,7 @@ async def revalidate_unhashed_assets(request, call_next):
     reload. The basemap and vendored JS are left cacheable: large and stable."""
     response = await call_next(request)
     path = request.url.path
-    if path == "/" or path.endswith((".css", ".woff2")):
+    if path == "/" or path.endswith((".css", ".woff2", ".json")):
         response.headers["Cache-Control"] = "no-cache"
     return response
 

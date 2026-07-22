@@ -42,12 +42,17 @@ Runs as a container; the same image serves the board and runs the ingest.
 podman build -t translink-departures .
 podman volume create translink-data
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py
-podman run --rm -v translink-data:/data translink-departures ./fetch_basemap.sh
+# Basemap: built by a SEPARATE image (Java/Planetiler), see basemap/
+podman build -f basemap/Containerfile -t translink-basemap .
+podman run --rm -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 podman run -d -p 8000:8000 -v translink-data:/data translink-departures
 ```
 
 The basemap step is optional and slow-moving — refresh it occasionally, not
-weekly like the timetable.
+weekly like the timetable. First build downloads ~2 GB of sources (Australia
+OSM extract, Natural Earth, water polygons) into the cache volume and takes
+~10 min; rebuilds reuse the cache. Output: 64 MB `seq.pmtiles` on the data
+volume.
 
 On the VPS it is managed by **Quadlet** units in `deploy/`, installed by
 `deploy/install-vps.sh` — see that script's header for what it assumes about
@@ -186,13 +191,29 @@ external requests at all.
   by `trip_id`. `/api/departures/{stop_id}` returns a `vehicles` array holding
   positions for **only the trips on the board**, so the map can never show a
   vehicle the user has no row for.
-- Basemap: a **Protomaps `.pmtiles`** extract of SEQ built by
-  `fetch_basemap.sh` onto the data volume — 22 MB at maxzoom 13, ~11 s to
-  build. Served by StaticFiles, which answers the HTTP range requests
-  pmtiles.js uses to read the archive without downloading it whole.
+- Basemap: a **self-built OpenMapTiles `.pmtiles`** of SEQ (64 MB, maxzoom 14),
+  built by the separate Planetiler image in `basemap/` onto the data volume.
+  Served by StaticFiles, which answers the HTTP range requests pmtiles.js uses
+  to read the archive without downloading it whole.
+  **Why self-built OpenMapTiles and not the earlier Protomaps extract:** the
+  Protomaps schema models the ocean as the *absence* of the land (`earth`)
+  polygon and only fills inland water at some zooms — so the bay/river blinked
+  between water and land as you zoomed, and no recolouring, higher-maxzoom
+  re-extract, or layer re-ordering could fix it (all three were tried). In the
+  OpenMapTiles schema water is a real polygon on every zoom (verified: 14.4% of
+  a z10 Moreton Bay tile), so land is the background and water is explicit.
 - `/api/config` reports whether a basemap exists; without one the map hides
   and the board works unchanged. CI asserts that path.
-- `static/map-style.json` is a hand-written dark style matching the board.
+- `static/map-style.json` is a hand-written dark style matching the board,
+  against OpenMapTiles layer names (`water`, `transportation`, `place`, …); CI
+  checks every `source-layer` it references exists in the tileset. The style
+  URL carries `?v=N` — bump it when the style changes schema, because browsers
+  heuristically cached it before it was served `no-cache`, and a stale style
+  against new tiles fails silently layer-by-layer (water happened to render,
+  roads and labels didn't; the console shows "Source layer X does not exist").
+  `?mapdebug=1` logs per-layer rendered-feature counts to the console from the
+  viewer's own browser — the dev harness cannot render MapLibre, so that probe
+  is the ground truth for "what is this browser actually drawing".
   Glyphs, MapLibre and pmtiles.js are vendored under `static/vendor/`.
 
 The map auto-fits to the stop plus every tracked vehicle (`fitView`), capped at

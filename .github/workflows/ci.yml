@@ -119,9 +119,11 @@ jobs:
           nodes = [(1000, -27.0, 153.0), (2000, -27.0, 153.1)]
           mid = app._interpolate_along(nodes, 1500)
           assert abs(mid['lon'] - 153.05) < 1e-9 and abs(mid['lat'] + 27.0) < 1e-9, mid
-          # Before the first stop: clamped to the origin, not extrapolated.
-          pre = app._interpolate_along(nodes, 500)
-          assert pre == {'lat': -27.0, 'lon': 153.0}, pre
+          # At the origin departure time: on the road, drawn at the origin.
+          assert app._interpolate_along(nodes, 1000) == {'lat': -27.0, 'lon': 153.0}
+          # Before it departs: not on the road yet, so no position (no phantom
+          # bus parked at the route start).
+          assert app._interpolate_along(nodes, 500) is None
           # After the last stop: the trip has finished, so no position.
           assert app._interpolate_along(nodes, 3000) is None
           # Anchoring by seconds-into-day stays monotonic across 24:00.

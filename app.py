@@ -257,11 +257,12 @@ def _seconds_into_day(hms: str) -> int:
 def _interpolate_along(nodes: list[tuple[int, float, float]], now: int):
     """nodes = [(epoch, lat, lon), ...] in schedule order. Return the point the
     timetable places the vehicle at `now`, linearly interpolated between the two
-    stops that bracket it. Clamp to the first stop before the trip starts; return
-    None once it has finished."""
-    if now <= nodes[0][0]:
-        return {"lat": nodes[0][1], "lon": nodes[0][2]}
-    if now >= nodes[-1][0]:
+    stops that bracket it — or None when the trip is not on the road: before it
+    departs its origin, or after it reaches its final stop. Not clamping to the
+    origin is deliberate: a run scheduled to start in 40 minutes is not sitting
+    at the depot to be drawn — showing it there just piles phantom buses on the
+    route start."""
+    if now < nodes[0][0] or now >= nodes[-1][0]:
         return None
     for (t0, a0, o0), (t1, a1, o1) in zip(nodes, nodes[1:]):
         if t0 <= now < t1:

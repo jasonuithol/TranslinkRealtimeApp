@@ -783,12 +783,21 @@
         selectRoute(p.trip);
       });
 
-      // A click on empty map clears the selection — but a ghost is not empty map.
+      // A grey landmark on the traced route is itself a stop — click it to make
+      // it the stop being viewed, the same as picking it from search.
+      map.on("click", "landmarks", (e) => {
+        const p = e.features[0].properties;
+        if (p.stop_id) selectStop(p.stop_id);
+      });
+
+      // A click on empty map clears the selection — but a marker or a landmark
+      // is not empty map.
       map.on("click", (e) => {
-        const hit = map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot", "ghost-dot"] });
+        const hit = map.queryRenderedFeatures(
+          e.point, { layers: ["vehicle-dot", "ghost-dot", "landmarks"] });
         if (!hit.length && selectedTrip) selectRoute(selectedTrip);
       });
-      for (const lyr of ["vehicle-dot", "ghost-dot"]) {
+      for (const lyr of ["vehicle-dot", "ghost-dot", "landmarks"]) {
         map.on("mouseenter", lyr, () => map.getCanvas().style.cursor = "pointer");
         map.on("mouseleave", lyr, () => map.getCanvas().style.cursor = "");
       }
@@ -873,6 +882,7 @@
           type: "Feature",
           geometry: { type: "Point", coordinates: [l.lon, l.lat] },
           properties: {
+            stop_id: l.stop_id,   // click a landmark to view it as the stop
             name: l.stop_name,
             icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
           },

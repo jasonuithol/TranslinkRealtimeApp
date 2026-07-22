@@ -48,7 +48,7 @@ MAX_RESULTS = 12
 # has no position and appears in neither. This is the single "is it underway?"
 # threshold; widen it to list departures further ahead, at the cost of drawing
 # not-yet-moving buses guessed onto their origin.
-STAGING_WINDOW_S = 5 * 60
+STAGING_WINDOW_S = 10 * 60
 # GTFS times are in the agency's local time, NOT the host's. Pinning this makes
 # the board correct under a UTC container clock, which is the normal case in a
 # container and was previously shifting every scheduled time by 10 hours.

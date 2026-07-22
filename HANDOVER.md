@@ -302,7 +302,7 @@ the board departure we already resolved (`midnight = board_scheduled −
 seconds_into_day(board_hms)`, correct across the 24:00 boundary and for either
 service date), then `_interpolate_along()` linearly interpolates between the two
 scheduled stops that bracket *now*. A not-yet-departed trip is placed at its
-origin only if it leaves within `STAGING_WINDOW_S` (5 min) — "staging to start";
+origin only if it leaves within `STAGING_WINDOW_S` (10 min) — "staging to start";
 earlier than that it has no position at all. A run that has departed is placed
 en route; one past its last stop is gone.
 
@@ -331,7 +331,10 @@ marker but `icon-opacity: 0.5`), `ghost-label` (`~N min`) and `ghost-ping` — a
 below the real vehicle layers and the viewed stop, because an estimate must
 never outrank a fix. Clicking one, or its board row, selects/pings it just like a
 live vehicle; the popup says "estimated from timetable (no live GPS)". `fitView`
-frames ghosts too, so the board and map finally show the same set. It is an
+frames ghosts too, so the board and map finally show the same set. The grey
+route landmarks are clickable: each carries its `stop_id`, and a click calls
+`selectStop()` — picking a stop off the traced route is the same as searching
+for it. It is an
 estimate: it assumes the service is running to time, and it interpolates
 straight between stops rather than projecting onto the road shape (a reasonable
 first cut — shape-projection is the obvious refinement).

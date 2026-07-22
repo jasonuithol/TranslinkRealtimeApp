@@ -371,6 +371,15 @@ list to keep in sync — and it fell out of sync twice, silently dropping the
 browser back to the colour-emoji font for any codepoint added to the subset but
 forgotten in the range.
 
+**Regenerating the subset** (to add a glyph): fetch a fresh subset from the
+Google Fonts `css2?family=Noto Emoji&text=<all glyphs>` API (a browser
+User-Agent gets woff2), swap in the woff2, and update the codepoint list in the
+`fonts.css` comment. The page, `fonts.css` and the `.woff2` are served
+`Cache-Control: no-cache` (a middleware in `app.py`), so a regenerated subset is
+picked up on the next reload rather than a stale cached font dropping the new
+glyph to colour. `fonts.css` and its `?v=` on the woff2 exist to dislodge caches
+predating that header; bump `?v` if you ever suspect a browser is still stuck.
+
 Two bugs worth not reintroducing:
 
 - **Do not construct the Map inside a hidden container.** MapLibre measures

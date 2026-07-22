@@ -200,6 +200,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Translink Next Service", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def revalidate_unhashed_assets(request, call_next):
+    """The page, its stylesheet and the fonts have no content hash in their
+    names, so StaticFiles' bare ETag/Last-Modified lets browsers cache them
+    heuristically and miss an update — most sharply a font subset change, which
+    silently drops a newly-added glyph back to the colour-emoji font. `no-cache`
+    forces a conditional request each load (a cheap 304 while unchanged), so the
+    whole chain — index.html -> fonts.css -> the woff2 — is picked up on the next
+    reload. The basemap and vendored JS are left cacheable: large and stable."""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".css", ".woff2")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Static GTFS helpers
 # ---------------------------------------------------------------------------

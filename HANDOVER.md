@@ -334,7 +334,11 @@ live vehicle; the popup says "estimated from timetable (no live GPS)". `fitView`
 frames ghosts too, so the board and map finally show the same set. The grey
 route landmarks are clickable: each carries its `stop_id`, and a click calls
 `selectStop()` — picking a stop off the traced route is the same as searching
-for it. It is an
+for it. Landmarks are split across two layers by a `station` flag (rail
+route_type 1/2): bus stops (`landmarks`) keep `icon-allow-overlap: false` so a
+densely-stopped route thins out, but train stations (`landmark-stations`) are
+`icon-allow-overlap: true` and drawn above — a station on the route is a thing
+you navigate by, so if it can be shown it must be, never culled by overlap. It is an
 estimate: it assumes the service is running to time, and it interpolates
 straight between stops rather than projecting onto the road shape (a reasonable
 first cut — shape-projection is the obvious refinement).

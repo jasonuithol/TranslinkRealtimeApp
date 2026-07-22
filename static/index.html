@@ -645,9 +645,12 @@
       });
 
       // Every stop on a tracked service's route, in grey. Drawn first so the
-      // viewed stop and the vehicles sit above them.
+      // viewed stop and the vehicles sit above them. Bus stops (which crowd a
+      // route densely) are left to MapLibre's overlap thinning; train stations
+      // are pulled into their own layer below so they are never thinned away.
       map.addLayer({
         id: "landmarks", type: "symbol", source: "landmarks",
+        filter: ["!=", ["get", "station"], 1],
         layout: {
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.4, 15, 0.7],
@@ -655,6 +658,19 @@
           // Unlike the vehicles, these may crowd: let MapLibre thin them out.
           "icon-allow-overlap": false,
           "icon-padding": 2,
+        },
+      });
+      // Train stations are landmarks you navigate by, so if one is on the route
+      // it must appear — always overlap-allowed, never culled, and drawn above
+      // the bus stops.
+      map.addLayer({
+        id: "landmark-stations", type: "symbol", source: "landmarks",
+        filter: ["==", ["get", "station"], 1],
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.5, 15, 0.85],
+          "icon-anchor": "bottom",
+          "icon-allow-overlap": true,
         },
       });
 
@@ -785,19 +801,22 @@
 
       // A grey landmark on the traced route is itself a stop — click it to make
       // it the stop being viewed, the same as picking it from search.
-      map.on("click", "landmarks", (e) => {
-        const p = e.features[0].properties;
-        if (p.stop_id) selectStop(p.stop_id);
-      });
+      const landmarkLayers = ["landmarks", "landmark-stations"];
+      for (const lyr of landmarkLayers) {
+        map.on("click", lyr, (e) => {
+          const p = e.features[0].properties;
+          if (p.stop_id) selectStop(p.stop_id);
+        });
+      }
 
       // A click on empty map clears the selection — but a marker or a landmark
       // is not empty map.
+      const clickableLayers = ["vehicle-dot", "ghost-dot", ...landmarkLayers];
       map.on("click", (e) => {
-        const hit = map.queryRenderedFeatures(
-          e.point, { layers: ["vehicle-dot", "ghost-dot", "landmarks"] });
+        const hit = map.queryRenderedFeatures(e.point, { layers: clickableLayers });
         if (!hit.length && selectedTrip) selectRoute(selectedTrip);
       });
-      for (const lyr of ["vehicle-dot", "ghost-dot", "landmarks"]) {
+      for (const lyr of clickableLayers) {
         map.on("mouseenter", lyr, () => map.getCanvas().style.cursor = "pointer");
         map.on("mouseleave", lyr, () => map.getCanvas().style.cursor = "");
       }
@@ -884,6 +903,9 @@
           properties: {
             stop_id: l.stop_id,   // click a landmark to view it as the stop
             name: l.stop_name,
+            // Rail (route_type 1/2) is a station; it renders in its own always-on
+            // layer so the map never thins a train station away.
+            station: [1, 2].includes(Number(l.route_type)) ? 1 : 0,
             icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
           },
         })),

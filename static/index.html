@@ -973,6 +973,11 @@
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.75, 15, 1.23],
           "icon-allow-overlap": true,
+          // Always drawn, but must not BLOCK the street furniture: a marker
+          // sitting at a stop would otherwise suppress the nearby stop icons
+          // on the overlap-thinned layers (a station right beside the viewed
+          // stop was losing that collision and vanishing).
+          "icon-ignore-placement": true,
         },
         paint: { "icon-opacity": 0.5 },   // estimated, not live
       });
@@ -997,6 +1002,7 @@
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.975, 15, 1.575],
           "icon-allow-overlap": true,
+          "icon-ignore-placement": true,   // see ghost-dot: never blocks stops
           "icon-anchor": "bottom",   // the marker sits on the stop, not over it
         },
       });
@@ -1022,6 +1028,7 @@
           "icon-image": ["get", "icon"],
           "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.9, 15, 1.5],
           "icon-allow-overlap": true,
+          "icon-ignore-placement": true,   // see ghost-dot: never blocks stops
         },
       });
       map.addLayer({

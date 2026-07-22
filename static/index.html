@@ -161,15 +161,9 @@
     font-size: 11px; color: var(--muted); margin-top: 3px;
     display: flex; align-items: center; gap: 6px;
   }
-  .live-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--live);
-    animation: pulse 2s infinite;
-  }
   /* Every service carries its own colour — that is its identity, and it must
      not change as the service gains or loses a live position. */
   .row { border-left: 3px solid var(--vcolor); padding-left: 13px; }
-  .row .live-dot { background: var(--vcolor); }
   /* Any row can be picked to draw its route. */
   .row { cursor: pointer; }
   .row:hover { background: #1c242d; }
@@ -187,7 +181,7 @@
   }
   @keyframes pulse { 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) {
-    .live-dot, .due { animation: none !important; }
+    .due { animation: none !important; }
     /* Still needs to be identifiable, so hold the tint rather than pulse it. */
     .row.flash {
       animation: none;
@@ -1347,12 +1341,9 @@
           </div>
           <div class="dest">
             <div class="headsign">${d.headsign ?? ""}</div>
-            <div class="sub">
-              ${d.realtime ? '<span class="live-dot"></span>live' : "scheduled"}
-              · ${bits.filter(Boolean).join(" · ")}
-            </div>
+            <div class="sub">${bits.filter(Boolean).join(" · ")}</div>
           </div>
-          <div class="src-col" title="${d.realtime ? "realtime prediction" : "timetable"}"
+          <div class="src-col" title="${d.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
                >${asText(d.realtime ? MARK_LIVE : MARK_SCHEDULED)}</div>
           <div class="eta">${eta}</div>`;
         board.appendChild(row);

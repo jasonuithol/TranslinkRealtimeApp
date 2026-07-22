@@ -679,6 +679,27 @@ _geocode_lock = asyncio.Lock()
 GEOCODE_CACHE_S = 24 * 3600
 
 
+def _geocode_label(r: dict, state: str) -> str:
+    """A short label from Nominatim's structured address: 'lead, suburb STATE'.
+    display_name is the full hierarchy ('12 X St, Suburb, Brisbane City,
+    Queensland, 4006, Australia') — far more than a result row needs."""
+    a = r.get("address") or {}
+    # A named place (a stadium, a school) reads better as its name than as its
+    # street address; plain house hits have no name and use number + road.
+    lead = r.get("name") or ""
+    if not lead and a.get("house_number") and a.get("road"):
+        lead = f"{a['house_number']} {a['road']}"
+    if not lead:
+        lead = a.get("road") or r.get("display_name", "").split(",")[0].strip()
+    suburb = next((a[k] for k in ("suburb", "neighbourhood", "village",
+                                  "town", "locality", "city_district")
+                   if a.get(k)), None)
+    bits = [lead]
+    if suburb and suburb.casefold() != lead.casefold():
+        bits.append(suburb)
+    return f"{', '.join(bits)} {state}".strip()
+
+
 @app.get("/api/r/{region}/geocode")
 @app.get("/api/geocode")
 async def geocode(q: str, region: str = "seq"):
@@ -705,7 +726,7 @@ async def geocode(q: str, region: str = "seq"):
                     NOMINATIM_URL,
                     params={
                         "q": q, "format": "jsonv2", "limit": 5,
-                        "countrycodes": "au",
+                        "countrycodes": "au", "addressdetails": 1,
                         "viewbox": cfg["geocode_viewbox"], "bounded": 1,
                     },
                     headers={"User-Agent": NOMINATIM_UA},
@@ -713,7 +734,7 @@ async def geocode(q: str, region: str = "seq"):
                 resp.raise_for_status()
                 results = [
                     {
-                        "label": r.get("display_name", ""),
+                        "label": _geocode_label(r, cfg["state"]),
                         "lat": float(r["lat"]),
                         "lon": float(r["lon"]),
                     }

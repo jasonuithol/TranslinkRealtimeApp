@@ -712,10 +712,11 @@
         return;
       }
       places.forEach((p) => {
-        const sub = p.state ? `address · ${p.state}` : "address";
+        // The label already ends with the state acronym (built server-side
+        // from Nominatim's structured address: lead, suburb STATE).
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}` +
-            `<span class="sid">${sub}</span></span>`,
+            `<span class="sid">address</span></span>`,
           () => nearbyStops(p.lat, p.lon, "that address", p.region),
         );
       });

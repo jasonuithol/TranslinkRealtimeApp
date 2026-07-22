@@ -51,7 +51,7 @@
   /* ?v bumped whenever the subset changes, to dodge a heuristically-cached old
      copy that is missing a newly-added glyph (a stale subset silently drops the
      browser back to the colour-emoji font for the new codepoint). */
-  src: url('/static/fonts/NotoEmoji-mode.woff2?v=2') format('woff2');
+  src: url('/static/fonts/NotoEmoji-mode.woff2?v=3') format('woff2');
   /* Deliberately no unicode-range. The file is already subset to exactly these
      glyphs, so a range adds nothing but a second list to keep in sync — and it
      silently fell out of sync twice, dropping the browser back to the colour

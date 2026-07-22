@@ -1066,9 +1066,10 @@ def all_stops(region: str) -> list[dict]:
             cur = dominant.get(r["sid"])
             if cur is None or r["c"] > cur[1]:
                 dominant[r["sid"]] = (r["rtype"], r["c"])
-        # Rail stations already have their own always-on layer; keeping them out
-        # here avoids a double glyph. Parent interchanges without their own
-        # stop_times read as bus stops (route_type default 3).
+        # Rail stations are parent records with no stop_times of their own
+        # (their platforms carry the departures), so the dominant-mode lookup
+        # misses them and they would read as bus stops. Tag them rail instead —
+        # otherwise every stop is just a stop, drawn at the same zoom.
         rail_ids = {s["stop_id"] for s in rail_stations(region)}
         out = [
             {
@@ -1076,14 +1077,14 @@ def all_stops(region: str) -> list[dict]:
                 "name": r["stop_name"],
                 "lat": r["stop_lat"],
                 "lon": r["stop_lon"],
-                "route_type": dominant.get(r["stop_id"], (3, 0))[0],
+                "route_type": 2 if r["stop_id"] in rail_ids
+                              else dominant.get(r["stop_id"], (3, 0))[0],
             }
             for r in con.execute(
                 "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
                 "WHERE (parent_station IS NULL OR parent_station = '') "
                 "AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL"
             )
-            if r["stop_id"] not in rail_ids
         ]
         con.close()
         _all_stops_cache[region] = out

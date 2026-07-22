@@ -191,7 +191,7 @@ platforms collapsed to their parent station, distances in the dropdown.
 ## Stop landmarks on the map
 
 Three grey landmark tiers, all clickable to select (tram stops draw 🚉,
-buses 🚏, ferries ⛴, stations 🏫 via their own always-on layer):
+buses 🚏, ferries ⛴, stations 🏫 — all on the same layers, same zoom rules):
 
 - **Paired stops, always**: `/api/…/departures` returns `paired` — every
   parentless non-station stop within ~120 m of the viewed one — because a
@@ -438,23 +438,16 @@ live vehicle; the popup says "estimated from timetable (no live GPS)". `fitView`
 frames ghosts too, so the board and map finally show the same set. The grey
 route landmarks are clickable: each carries its `stop_id`, and a click calls
 `selectStop()` — picking a stop off the traced route is the same as searching
-for it. Route landmarks (`landmarks` layer) are the selected route's **bus
-stops** only, `icon-allow-overlap: false` so a densely-stopped route thins out.
+for it. Route landmarks (`landmarks` layer) are the selected route's stops —
+stations included, no special layer — `icon-allow-overlap: false` so a
+densely-stopped route thins out.
 
-Train stations are drawn separately and **always**, by the `rail-stations`
-layer, independent of any selected stop or route — a station is a landmark you
-navigate by, so if the map can show one it must (the ask that started this:
-viewing a bus stop at Varsity Lakes, the train station beside it must appear).
-`/api/rail-stations` returns every station once (154 in SEQ) — rail platforms
-(`route_type` 1/2) collapsed to their parent station so each is one marker,
-computed once and cached. The client fetches it on map init, paints an always-on
-`icon-allow-overlap: true` layer of grey 🏫 markers (clickable to select), and a
-layer filter drops only the station currently being *viewed* (it already has the
-white marker). Because it is network-wide and always on, route-traced stations
-need no special handling — they are already there. It is an
-estimate: it assumes the service is running to time, and it interpolates
-straight between stops rather than projecting onto the road shape (a reasonable
-first cut — shape-projection is the obvious refinement).
+Train stations are **not** treated specially any more (they briefly had an
+always-on `rail-stations` layer; retired). They are stops like any other: on
+the `all-stops` layer past zoom 15, tagged rail in the payload (parent-station
+records carry no stop_times, so `all_stops()` tags them from `rail_stations()`
+instead of the dominant-mode lookup) so they draw 🏫; `/api/…/rail-stations`
+still exists for compatibility but the frontend no longer calls it.
 
 Emoji in the DOM are written with a trailing **U+FE0E (VARIATION SELECTOR-15)**
 via `asText()`, and their elements set `font-variant-emoji: text`. These

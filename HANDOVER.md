@@ -182,10 +182,28 @@ only (feed text is untrusted). `/api/feeds` reports alert counts per region.
 Two entry points, one dropdown: the **near me** button (browser geolocation —
 NOTE: browsers require HTTPS for geolocation, localhost excepted, so on a plain
 http VPS the button degrades with an explanatory message) and typed **address
-search** (an explicit "Search as an address" row under the stop-name results,
-so the shared geocoder is never hit automatically). Both feed
-`/api/r/{region}/stops/nearby?lat&lon` — bbox prefilter + haversine, child
+search**, which runs automatically: a query starting with a house number, or a
+6+-character query matching no stop name, geocodes without any extra click
+(longer 500 ms debounce keeps mid-typing away from the shared geocoder). Both
+feed `/api/r/{region}/stops/nearby?lat&lon` — bbox prefilter + haversine, child
 platforms collapsed to their parent station, distances in the dropdown.
+
+## Stop landmarks on the map
+
+Three grey landmark tiers, all clickable to select (tram stops draw 🚉,
+buses 🚏, ferries ⛴, stations 🏫 via their own always-on layer):
+
+- **Paired stops, always**: `/api/…/departures` returns `paired` — every
+  parentless non-station stop within ~120 m of the viewed one — because a
+  street-side stop is almost always half of an opposite-directions pair and
+  "going the other way" is the next thing a rider looks for.
+- **The traced route's stops** while a service is selected (as before).
+- **Every stop in the network past zoom 15** (`all-stops` layer): fetched
+  lazily on first zoom-in from `/api/…/all-stops` (12 k stops / 1.3 MB SEQ,
+  24 k / 2.5 MB MEL), each tagged with its dominant mode via one GROUP BY over
+  stop_times — ~15 s on Melbourne's 11.6 M rows, so the cache is warmed in a
+  startup thread rather than hanging the first zoomed-in view. Overlap-thinned,
+  rail stations excluded (they have their own layer).
 
 **Feed QC.** Each poll logs a one-line summary (`[vp] N vehicles: P positioned,
 C cached, …`, `[tu] N trip updates`) and stores it for `/api/feeds`, so the

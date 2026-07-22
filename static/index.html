@@ -575,17 +575,20 @@
     }
   }
 
-  async function searchAddress(q) {
+  // Append address candidates to the dropdown (below any stop matches).
+  async function searchAddress(q, { clear = true } = {}) {
     const box = $("results");
-    box.innerHTML = "";
-    resultNote(`Looking up “${q}”…`);
+    if (clear) { box.innerHTML = ""; resultNote(`Looking up “${q}”…`); }
     box.hidden = false;
     try {
       const res = await fetch(api(`/geocode?q=${encodeURIComponent(q)}`));
       if (!res.ok) throw new Error();
       const places = await res.json();
-      box.innerHTML = "";
-      if (!places.length) { resultNote(`No address found for “${q}”.`); return; }
+      if (clear) box.innerHTML = "";
+      if (!places.length) {
+        if (clear) resultNote(`Nothing found for “${q}”.`);
+        return;
+      }
       places.forEach((p) => {
         resultButton(
           `${escapeHtml(p.label)}<span class="sid">address</span>`,
@@ -593,10 +596,13 @@
         );
       });
     } catch {
-      box.innerHTML = "";
-      resultNote("Address lookup unavailable right now.");
+      if (clear) { box.innerHTML = ""; resultNote("Address lookup unavailable right now."); }
     }
   }
+
+  // A trailing word may still be mid-typing; an address is assumed once the
+  // query has a house number or is long enough that no stop matched it.
+  const looksLikeAddress = (q) => /^\d+\s+\S/.test(q);
 
   let searchDebounce;
   $("search").addEventListener("input", (e) => {
@@ -609,16 +615,17 @@
       const box = $("results");
       box.innerHTML = "";
       stops.forEach(stopEntry);
-      // Not a stop name? Offer the same text as an address lookup. Explicit
-      // opt-in, not automatic — the geocoder is a shared community service.
-      if (q.length >= 4) {
-        resultButton(
-          `Search as an address: “${escapeHtml(q)}”<span class="sid">geocode</span>`,
-          () => searchAddress(q),
-        );
+      // Address lookup happens automatically — nobody should have to say
+      // "that was an address": a query starting with a house number is one,
+      // and a longer query matching no stop name probably is too. The longer
+      // debounce below keeps mid-typing queries away from the shared geocoder.
+      if (looksLikeAddress(q) && q.length >= 6) {
+        await searchAddress(q, { clear: stops.length === 0 });
+      } else if (!stops.length && q.length >= 6) {
+        await searchAddress(q);
       }
       box.hidden = box.children.length === 0;
-    }, 250);
+    }, q.length >= 6 ? 500 : 250);
   });
 
   $("near-me").addEventListener("click", () => {
@@ -713,6 +720,7 @@
   // Landmark glyphs — the physical stop, not the service calling at it.
   const STOP_STATION = "\u{1F3EB}";  // 🏫
   const STOP_BUS = "\u{1F68F}";      // 🚏
+  const STOP_TRAM = "\u{1F689}";     // 🚉
 
   // Where the arrival time came from.
   const MARK_LIVE = "\u{1F6DC}";      // 🛜 realtime prediction
@@ -731,7 +739,7 @@
     switch (Number(routeType)) {
       case 3: return STOP_BUS;
       case 4: return MODE_EMOJI[4];
-      case 0: return MODE_EMOJI[0];
+      case 0: return STOP_TRAM;
       case 1: case 2: return STOP_STATION;
       default: return STOP_BUS;
     }
@@ -884,6 +892,7 @@
       map.addSource("stop", { type: "geojson", data: emptyFC() });
       map.addSource("landmarks", { type: "geojson", data: emptyFC() });
       map.addSource("rail-stations", { type: "geojson", data: emptyFC() });
+      map.addSource("all-stops", { type: "geojson", data: emptyFC() });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
 
       // The path each tracked vehicle is following, in that vehicle's colour.
@@ -895,6 +904,23 @@
           "line-color": ["get", "color"],
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 4],
           "line-opacity": 0.55,
+        },
+      });
+
+      // Every stop in the network, once the user is close enough that street
+      // detail is the point (all backstreets legible ≈ z15+). Lazily fetched on
+      // first zoom past the threshold; overlap-thinned so a busy interchange
+      // stays readable; clickable to select. Below the route landmarks so a
+      // traced route's own stops win any tie.
+      map.addLayer({
+        id: "all-stops", type: "symbol", source: "all-stops",
+        minzoom: 15,
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 15, 0.55, 17, 0.9],
+          "icon-anchor": "bottom",
+          "icon-allow-overlap": false,
+          "icon-padding": 2,
         },
       });
 
@@ -1063,7 +1089,7 @@
       // won — so the bus stop "did nothing". Priority now: a vehicle/ghost keeps
       // its own popup handler; else a route bus stop beats a background station
       // (you are clicking the stop you traced); else empty map clears the route.
-      const stopLayers = ["landmarks", "rail-stations"];
+      const stopLayers = ["landmarks", "rail-stations", "all-stops"];
       map.on("click", (e) => {
         // Vehicles and ghosts have their own handlers below; leave those to them.
         if (map.queryRenderedFeatures(e.point, { layers: ["vehicle-dot", "ghost-dot"] }).length) return;
@@ -1092,6 +1118,8 @@
       mapReady = true;
       cameraMove(() => map.resize());
       drawRailStations();   // paint stations if their fetch already landed
+      map.on("zoomend", maybeLoadAllStops);
+      maybeLoadAllStops();  // in case the map starts past the threshold
       if (lastData) updateMap(lastData);
     });
 
@@ -1163,33 +1191,34 @@
     }
   }
 
-  // Only the selected service's stops, and never the one being viewed — that
-  // is drawn separately in white.
+  // Grey landmarks: the selected route's stops (when one is traced) plus the
+  // paired stops across the road from the viewed stop (always — "going the
+  // other way" is the next thing a rider looks for). Never the viewed stop
+  // itself; that is drawn separately in white.
   function drawLandmarks() {
     if (!mapReady || !map.getSource("landmarks")) return;
-    const stops = selectedTrip ? tripStopsCache.get(selectedTrip) : null;
-    if (!stops) {
-      map.getSource("landmarks").setData(emptyFC());
-      return;
-    }
+    const routeStops = (selectedTrip && tripStopsCache.get(selectedTrip)) || [];
+    const paired = lastData?.paired || [];
     const selfId = lastData?.stop?.stop_id;
-    map.getSource("landmarks").setData({
-      type: "FeatureCollection",
-      features: stops
-        .filter((l) => l.stop_id !== selfId)
-        .map((l) => ({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [l.lon, l.lat] },
-          properties: {
-            stop_id: l.stop_id,   // click a landmark to view it as the stop
-            name: l.stop_name,
-            // Stations are drawn by the always-on rail-stations layer, so here
-            // they are flagged out — a bus route's stops are the bus stops.
-            station: [1, 2].includes(Number(l.route_type)) ? 1 : 0,
-            icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
-          },
-        })),
-    });
+    const seen = new Set();
+    const features = [];
+    for (const l of [...routeStops, ...paired]) {
+      if (l.stop_id === selfId || seen.has(l.stop_id)) continue;
+      seen.add(l.stop_id);
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [l.lon, l.lat] },
+        properties: {
+          stop_id: l.stop_id,   // click a landmark to view it as the stop
+          name: l.stop_name,
+          // Stations are drawn by the always-on rail-stations layer, so here
+          // they are flagged out — a bus route's stops are the bus stops.
+          station: [1, 2].includes(Number(l.route_type)) ? 1 : 0,
+          icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
+        },
+      });
+    }
+    map.getSource("landmarks").setData({ type: "FeatureCollection", features });
   }
 
   // Every train station, always on, independent of the selected stop or route.
@@ -1212,11 +1241,44 @@
     syncRailStationFilter();
   }
 
-  // Hide only the station that is the stop being viewed — it already has the
-  // white viewed-stop marker, and a grey one underneath it just doubles up.
+  // Hide only the stop being viewed from the always-on layers — it already has
+  // the white viewed-stop marker, and a grey one underneath just doubles up.
   function syncRailStationFilter() {
-    if (!mapReady || !map.getLayer("rail-stations")) return;
-    map.setFilter("rail-stations", ["!=", ["get", "stop_id"], stopId || ""]);
+    if (!mapReady) return;
+    for (const lyr of ["rail-stations", "all-stops"]) {
+      if (map.getLayer(lyr)) {
+        map.setFilter(lyr, ["!=", ["get", "stop_id"], stopId || ""]);
+      }
+    }
+  }
+
+  // Every stop in the network, fetched once, lazily — only when the user first
+  // zooms in far enough for the all-stops layer (minzoom 15) to matter. ~1 MB
+  // of GeoJSON that most sessions never need has no place in the initial load.
+  let allStopsLoaded = false, allStopsLoading = false;
+  function maybeLoadAllStops() {
+    if (allStopsLoaded || allStopsLoading || !mapReady) return;
+    if (map.getZoom() < 14.5) return;   // fetch just ahead of the threshold
+    allStopsLoading = true;
+    fetch(api("/all-stops"))
+      .then((r) => r.json())
+      .then((d) => {
+        map.getSource("all-stops").setData({
+          type: "FeatureCollection",
+          features: (d.stops || []).map((s) => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+            properties: {
+              stop_id: s.stop_id,
+              name: s.name,
+              icon: ensureVehicleIcon(landmarkGlyph(s.route_type), LANDMARK_INK),
+            },
+          })),
+        });
+        allStopsLoaded = true;
+        syncRailStationFilter();
+      })
+      .catch(() => { allStopsLoading = false; });   // retry on a later zoom
   }
 
   function drawRoutes(data) {

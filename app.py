@@ -343,6 +343,11 @@ async def lifespan(app: FastAPI):
             tasks.append(asyncio.create_task(poll_vehicle_positions(rid)))
         if cfg["alerts"]:
             tasks.append(asyncio.create_task(poll_alerts(rid)))
+        # Warm the all-stops cache off the request path: the dominant-mode
+        # GROUP BY takes ~15 s on Melbourne's 11.6 M stop_times, which is a bad
+        # thing to hang the first zoomed-in map view on.
+        tasks.append(asyncio.create_task(
+            asyncio.to_thread(lambda r=rid: all_stops(r))))
     yield
     for t in tasks:
         t.cancel()
@@ -821,6 +826,53 @@ def departures(stop_id: str, region: str = "seq"):
         if d["trip_id"] not in gps
     ]
 
+    # The stop across the road. A street-side stop (bus, tram) is almost always
+    # one of a pair — same road, opposite directions — and "I want to go the
+    # other way" is the next thing a rider looks for. Return every stop within
+    # ~120 m that is not this stop or one of its own platforms, so the map can
+    # keep them visible in grey. Stations pair with nothing (their platforms
+    # are already merged).
+    paired = []
+    if stop["stop_lat"] is not None and stop["location_type"] != 1:
+        con_p = db(region)
+        dlat = 0.0011  # ~120 m
+        dlon = 0.0011 / max(0.2, math.cos(math.radians(stop["stop_lat"])))
+        own = set(stop_ids)
+        for r in con_p.execute(
+            """
+            SELECT stop_id, stop_name, stop_lat, stop_lon
+            FROM stops
+            WHERE (parent_station IS NULL OR parent_station = '')
+              AND location_type IS NOT 1
+              AND stop_lat BETWEEN ? AND ? AND stop_lon BETWEEN ? AND ?
+            """,
+            (stop["stop_lat"] - dlat, stop["stop_lat"] + dlat,
+             stop["stop_lon"] - dlon, stop["stop_lon"] + dlon),
+        ):
+            if r["stop_id"] in own:
+                continue
+            rt = con_p.execute(
+                """
+                SELECT rt.route_type, COUNT(*) AS c FROM stop_times st
+                JOIN trips t ON t.trip_id = st.trip_id
+                JOIN routes rt ON rt.route_id = t.route_id
+                WHERE st.stop_id = ? GROUP BY rt.route_type
+                ORDER BY c DESC LIMIT 1
+                """,
+                (r["stop_id"],),
+            ).fetchone()
+            paired.append(
+                {
+                    "stop_id": r["stop_id"],
+                    "stop_name": r["stop_name"],
+                    "lat": r["stop_lat"],
+                    "lon": r["stop_lon"],
+                    "route_type": rt["route_type"] if rt else None,
+                }
+            )
+        con_p.close()
+        paired = paired[:6]   # a busy corner, not the whole precinct
+
     # Disruption alerts, matched by route and by stop (SEQ publishes no
     # trip-level alerts). Each row carries indices into a single response-level
     # map, so an alert spanning half the board is sent once, not twelve times.
@@ -871,6 +923,7 @@ def departures(stop_id: str, region: str = "seq"):
         "vehicles": vehicles,
         "ghosts": ghosts,
         "alerts": used_alerts,
+        "paired": paired,
     }
 
 
@@ -987,6 +1040,65 @@ def rail_stations(region: str = "seq") -> list[dict]:
         con.close()
         _rail_stations_cache[region] = out
     return _rail_stations_cache[region]
+
+
+_all_stops_cache: dict = {}    # region -> list
+
+
+def all_stops(region: str) -> list[dict]:
+    """Every parentless stop with its dominant mode, for the zoomed-in map
+    layer that shows the whole street furniture. One GROUP BY over stop_times
+    is seconds on the big Melbourne DB, so computed once per region and cached;
+    static for the life of a timetable."""
+    if region not in _all_stops_cache:
+        con = db(region)
+        # Dominant route_type per stop in one pass.
+        dominant = {}
+        for r in con.execute(
+            """
+            SELECT st.stop_id AS sid, rt.route_type AS rtype, COUNT(*) AS c
+            FROM stop_times st
+            JOIN trips t ON t.trip_id = st.trip_id
+            JOIN routes rt ON rt.route_id = t.route_id
+            GROUP BY st.stop_id, rt.route_type
+            """
+        ):
+            cur = dominant.get(r["sid"])
+            if cur is None or r["c"] > cur[1]:
+                dominant[r["sid"]] = (r["rtype"], r["c"])
+        # Rail stations already have their own always-on layer; keeping them out
+        # here avoids a double glyph. Parent interchanges without their own
+        # stop_times read as bus stops (route_type default 3).
+        rail_ids = {s["stop_id"] for s in rail_stations(region)}
+        out = [
+            {
+                "stop_id": r["stop_id"],
+                "name": r["stop_name"],
+                "lat": r["stop_lat"],
+                "lon": r["stop_lon"],
+                "route_type": dominant.get(r["stop_id"], (3, 0))[0],
+            }
+            for r in con.execute(
+                "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
+                "WHERE (parent_station IS NULL OR parent_station = '') "
+                "AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL"
+            )
+            if r["stop_id"] not in rail_ids
+        ]
+        con.close()
+        _all_stops_cache[region] = out
+    return _all_stops_cache[region]
+
+
+@app.get("/api/r/{region}/all-stops")
+@app.get("/api/all-stops")
+def all_stops_endpoint(region: str = "seq"):
+    """Every stop in the network, fetched lazily by the map the first time the
+    user zooms in far enough to want them."""
+    return JSONResponse(
+        {"stops": all_stops(region)},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/api/r/{region}/rail-stations")

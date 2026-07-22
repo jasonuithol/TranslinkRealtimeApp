@@ -90,6 +90,10 @@ jobs:
           curl -fsS http://localhost:8000/api/config | grep -q '"basemap":false' \
             || { echo "expected basemap:false with no basemap on the volume"; exit 1; }
 
+          # Train stations for the always-on map landmarks.
+          curl -fsS http://localhost:8000/api/rail-stations | grep -q '"stations"' \
+            || { echo "rail-stations response missing the stations array"; exit 1; }
+
       - name: Scheduled times resolve in Brisbane time, not the host's
         run: |
           # Regression test. gtfs_time_to_epoch used a naive datetime, so a UTC

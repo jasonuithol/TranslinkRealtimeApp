@@ -636,6 +636,66 @@ def shape(shape_id: str):
     )
 
 
+_rail_stations_cache: list | None = None
+
+
+def rail_stations() -> list[dict]:
+    """Every rail station in the feed, one marker per physical station. Rail
+    platforms (served by route_type 1/2) are collapsed to their parent station,
+    so Varsity Lakes is one point, not two platforms. Static for the life of a
+    timetable, so it is computed once and cached."""
+    global _rail_stations_cache
+    if _rail_stations_cache is None:
+        con = db()
+        ids = [
+            r["sid"]
+            for r in con.execute(
+                """
+                SELECT DISTINCT COALESCE(NULLIF(s.parent_station, ''), s.stop_id) AS sid
+                FROM stops s
+                WHERE s.stop_id IN (
+                    SELECT DISTINCT st.stop_id FROM stop_times st
+                    WHERE st.trip_id IN (
+                        SELECT t.trip_id FROM trips t
+                        JOIN routes r ON r.route_id = t.route_id
+                        WHERE r.route_type IN (1, 2)
+                    )
+                )
+                """
+            )
+        ]
+        out = []
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            out = [
+                {
+                    "stop_id": r["stop_id"],
+                    "name": r["stop_name"],
+                    "lat": r["stop_lat"],
+                    "lon": r["stop_lon"],
+                }
+                for r in con.execute(
+                    f"SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
+                    f"WHERE stop_id IN ({marks}) "
+                    f"AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL",
+                    ids,
+                )
+            ]
+        con.close()
+        _rail_stations_cache = out
+    return _rail_stations_cache
+
+
+@app.get("/api/rail-stations")
+def rail_stations_endpoint():
+    """Train stations, drawn on the map as navigation landmarks regardless of
+    which stop or route is selected — if the map can show one, it should."""
+    return JSONResponse(
+        {"stations": rail_stations()},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/api/config")
 def config():
     """The frontend asks whether a basemap is present before building the map,

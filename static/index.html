@@ -432,6 +432,7 @@
     autoFit = true;           // a new stop re-enables auto-fit...
     forceFit = true;          // ...and reframes even if the user had panned
     closeSearch();            // a stop is chosen: fold the search away
+    syncRailStationFilter();  // stop drawing the station we now view in grey
     history.replaceState(null, "", `?stop=${id}`);
     refresh();
     clearInterval(timer);
@@ -443,6 +444,7 @@
   // deployment has no basemap, /api/config says so and the map stays hidden —
   // the board is the product, the map is an enhancement.
   let map = null, mapReady = false, hasBasemap = false;
+  let railStations = [];   // every train station, drawn as always-on landmarks
   // The view auto-fits to the stop plus every tracked vehicle. It stops doing
   // so the moment the user moves the map themselves, and resumes on the next
   // stop selection. `programmatic` distinguishes our own camera moves from
@@ -588,6 +590,14 @@
     } catch { hasBasemap = false; }
     if (!hasBasemap) return;
 
+    // Train stations to draw as always-on landmarks. Static for the timetable,
+    // so fetched once; drawRailStations paints them once both this and the map
+    // are ready, whichever lands last.
+    fetch("/api/rail-stations")
+      .then((r) => r.json())
+      .then((d) => { railStations = d.stations || []; drawRailStations(); })
+      .catch(() => { /* stations are a nicety; the map still works without */ });
+
     // Must complete before any icon is rasterised, or the wrong glyph gets
     // baked into the cached image. ensureVehicleIcon only runs after the map's
     // 'load', which is well after this await.
@@ -630,6 +640,7 @@
       map.addSource("ghosts", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
       map.addSource("landmarks", { type: "geojson", data: emptyFC() });
+      map.addSource("rail-stations", { type: "geojson", data: emptyFC() });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
 
       // The path each tracked vehicle is following, in that vehicle's colour.
@@ -644,10 +655,10 @@
         },
       });
 
-      // Every stop on a tracked service's route, in grey. Drawn first so the
-      // viewed stop and the vehicles sit above them. Bus stops (which crowd a
-      // route densely) are left to MapLibre's overlap thinning; train stations
-      // are pulled into their own layer below so they are never thinned away.
+      // The selected route's bus stops, in grey. Drawn first so the viewed stop
+      // and the vehicles sit above them. Only bus stops: train stations come
+      // from the always-on `rail-stations` layer instead, so a station shows
+      // whether or not it is on the traced route.
       map.addLayer({
         id: "landmarks", type: "symbol", source: "landmarks",
         filter: ["!=", ["get", "station"], 1],
@@ -660,15 +671,16 @@
           "icon-padding": 2,
         },
       });
-      // Train stations are landmarks you navigate by, so if one is on the route
-      // it must appear — always overlap-allowed, never culled, and drawn above
-      // the bus stops.
+      // Every train station in the network, always on — a station is a landmark
+      // you navigate by, so if the map can show one it must, on any view, not
+      // just when its route is traced. Overlap-allowed so it is never culled;
+      // filtered only to drop the stop currently being viewed (that one is the
+      // white marker). Clickable to jump to it.
       map.addLayer({
-        id: "landmark-stations", type: "symbol", source: "landmarks",
-        filter: ["==", ["get", "station"], 1],
+        id: "rail-stations", type: "symbol", source: "rail-stations",
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.5, 15, 0.85],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.45, 15, 0.85],
           "icon-anchor": "bottom",
           "icon-allow-overlap": true,
         },
@@ -799,10 +811,10 @@
         selectRoute(p.trip);
       });
 
-      // A grey landmark on the traced route is itself a stop — click it to make
+      // A grey landmark or a train station is itself a stop — click it to make
       // it the stop being viewed, the same as picking it from search.
-      const landmarkLayers = ["landmarks", "landmark-stations"];
-      for (const lyr of landmarkLayers) {
+      const stopLayers = ["landmarks", "rail-stations"];
+      for (const lyr of stopLayers) {
         map.on("click", lyr, (e) => {
           const p = e.features[0].properties;
           if (p.stop_id) selectStop(p.stop_id);
@@ -811,7 +823,7 @@
 
       // A click on empty map clears the selection — but a marker or a landmark
       // is not empty map.
-      const clickableLayers = ["vehicle-dot", "ghost-dot", ...landmarkLayers];
+      const clickableLayers = ["vehicle-dot", "ghost-dot", ...stopLayers];
       map.on("click", (e) => {
         const hit = map.queryRenderedFeatures(e.point, { layers: clickableLayers });
         if (!hit.length && selectedTrip) selectRoute(selectedTrip);
@@ -832,6 +844,7 @@
 
       mapReady = true;
       cameraMove(() => map.resize());
+      drawRailStations();   // paint stations if their fetch already landed
       if (lastData) updateMap(lastData);
     });
   }
@@ -903,13 +916,40 @@
           properties: {
             stop_id: l.stop_id,   // click a landmark to view it as the stop
             name: l.stop_name,
-            // Rail (route_type 1/2) is a station; it renders in its own always-on
-            // layer so the map never thins a train station away.
+            // Stations are drawn by the always-on rail-stations layer, so here
+            // they are flagged out — a bus route's stops are the bus stops.
             station: [1, 2].includes(Number(l.route_type)) ? 1 : 0,
             icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
           },
         })),
     });
+  }
+
+  // Every train station, always on, independent of the selected stop or route.
+  // The stop currently being viewed is dropped (it is the white marker) via a
+  // layer filter set in syncRailStationFilter, so nothing needs redrawing here.
+  function drawRailStations() {
+    if (!mapReady || !railStations.length || !map.getSource("rail-stations")) return;
+    map.getSource("rail-stations").setData({
+      type: "FeatureCollection",
+      features: railStations.map((s) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+        properties: {
+          stop_id: s.stop_id,
+          name: s.name,
+          icon: ensureVehicleIcon(STOP_STATION, LANDMARK_INK),
+        },
+      })),
+    });
+    syncRailStationFilter();
+  }
+
+  // Hide only the station that is the stop being viewed — it already has the
+  // white viewed-stop marker, and a grey one underneath it just doubles up.
+  function syncRailStationFilter() {
+    if (!mapReady || !map.getLayer("rail-stations")) return;
+    map.setFilter("rail-stations", ["!=", ["get", "stop_id"], stopId || ""]);
   }
 
   function drawRoutes(data) {

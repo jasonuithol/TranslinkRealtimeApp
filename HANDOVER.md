@@ -334,11 +334,20 @@ live vehicle; the popup says "estimated from timetable (no live GPS)". `fitView`
 frames ghosts too, so the board and map finally show the same set. The grey
 route landmarks are clickable: each carries its `stop_id`, and a click calls
 `selectStop()` — picking a stop off the traced route is the same as searching
-for it. Landmarks are split across two layers by a `station` flag (rail
-route_type 1/2): bus stops (`landmarks`) keep `icon-allow-overlap: false` so a
-densely-stopped route thins out, but train stations (`landmark-stations`) are
-`icon-allow-overlap: true` and drawn above — a station on the route is a thing
-you navigate by, so if it can be shown it must be, never culled by overlap. It is an
+for it. Route landmarks (`landmarks` layer) are the selected route's **bus
+stops** only, `icon-allow-overlap: false` so a densely-stopped route thins out.
+
+Train stations are drawn separately and **always**, by the `rail-stations`
+layer, independent of any selected stop or route — a station is a landmark you
+navigate by, so if the map can show one it must (the ask that started this:
+viewing a bus stop at Varsity Lakes, the train station beside it must appear).
+`/api/rail-stations` returns every station once (154 in SEQ) — rail platforms
+(`route_type` 1/2) collapsed to their parent station so each is one marker,
+computed once and cached. The client fetches it on map init, paints an always-on
+`icon-allow-overlap: true` layer of grey 🏫 markers (clickable to select), and a
+layer filter drops only the station currently being *viewed* (it already has the
+white marker). Because it is network-wide and always on, route-traced stations
+need no special handling — they are already there. It is an
 estimate: it assumes the service is running to time, and it interpolates
 straight between stops rather than projecting onto the road shape (a reasonable
 first cut — shape-projection is the obvious refinement).

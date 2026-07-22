@@ -682,12 +682,15 @@
       // you navigate by, so if the map can show one it must, on any view, not
       // just when its route is traced. Overlap-allowed so it is never culled;
       // filtered only to drop the stop currently being viewed (that one is the
-      // white marker). Clickable to jump to it.
+      // white marker). Clickable to jump to it. minzoom keeps the whole network
+      // of 154 stations from peppering a region-wide view (e.g. an auto-fit to a
+      // far vehicle) — below zoom 11 they drop out, at suburb/city zoom they show.
       map.addLayer({
         id: "rail-stations", type: "symbol", source: "rail-stations",
+        minzoom: 11,
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.45, 15, 0.85],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.45, 15, 0.85],
           "icon-anchor": "bottom",
           "icon-allow-overlap": true,
         },

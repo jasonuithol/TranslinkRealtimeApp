@@ -177,6 +177,14 @@ async def poll_trip_updates(rid: str) -> None:
                         if not trip_id:
                             n_no_trip += 1
                         stops: dict = {}
+                        # (stop_sequence, delay) pairs for spec-correct delay
+                        # propagation: an update applies to every later stop
+                        # until the next update. SEQ and Melbourne trains
+                        # enumerate all remaining stops so the exact lookup
+                        # suffices, but Melbourne trams/buses publish only the
+                        # next stop or two — without propagation every later
+                        # stop on the run showed as scheduled.
+                        seqs: list = []
                         for stu in tu.stop_time_update:
                             rec: dict = {"arrival": None, "delay": None}
                             ev = None
@@ -194,7 +202,10 @@ async def poll_trip_updates(rid: str) -> None:
                                 == stu.ScheduleRelationship.SKIPPED
                             )
                             stops[prefix + stu.stop_id] = rec
-                        cache[prefix + trip_id] = stops
+                            if stu.HasField("stop_sequence") and rec["delay"] is not None:
+                                seqs.append((stu.stop_sequence, rec["delay"]))
+                        seqs.sort()
+                        cache[prefix + trip_id] = {"stops": stops, "seq": seqs}
                 st["rt"] = cache
                 st["rt_fetch"] = time.time()
                 st["rt_stats"] = {"trip_updates": n_updates, "without_trip_id": n_no_trip}
@@ -441,7 +452,8 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime,
     svc_marks = ",".join("?" for _ in sids)
     rows = con.execute(
         f"""
-        SELECT st.trip_id, st.departure_time, st.stop_id, t.trip_headsign,
+        SELECT st.trip_id, st.departure_time, st.stop_id, st.stop_sequence,
+               t.trip_headsign,
                r.route_id, r.route_short_name, r.route_long_name, r.route_type,
                r.route_color,
                s.platform_code, s.stop_name AS platform_stop_name
@@ -459,6 +471,7 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime,
             {
                 "trip_id": r["trip_id"],
                 "stop_id": r["stop_id"],
+                "stop_sequence": r["stop_sequence"],
                 "scheduled": gtfs_time_to_epoch(r["departure_time"], service_date, tz),
                 "headsign": r["trip_headsign"],
                 "route_id": r["route_id"],
@@ -743,7 +756,8 @@ def departures(stop_id: str, region: str = "seq"):
     horizon = now_epoch + LOOKAHEAD_MINUTES * 60
     results = []
     for dep in sched:
-        rt = st["rt"].get(dep["trip_id"], {}).get(dep["stop_id"])
+        rt_trip = st["rt"].get(dep["trip_id"]) or {}
+        rt = rt_trip.get("stops", {}).get(dep["stop_id"])
         realtime = False
         best = dep["scheduled"]
         if rt:
@@ -753,6 +767,20 @@ def departures(stop_id: str, region: str = "seq"):
                 best, realtime = rt["arrival"], True
             elif rt.get("delay") is not None:
                 best, realtime = dep["scheduled"] + rt["delay"], True
+        elif rt_trip.get("seq"):
+            # No update for this exact stop: propagate per the GTFS-RT spec —
+            # the latest update at-or-before this stop's sequence carries its
+            # delay forward. Melbourne trams/buses publish only the next stop
+            # or two, so most of a run's stops rely on this.
+            prop = None
+            seq = dep["stop_sequence"]
+            for s, delay in rt_trip["seq"]:
+                if seq is not None and int(s) <= int(seq):
+                    prop = delay
+                else:
+                    break
+            if prop is not None:
+                best, realtime = dep["scheduled"] + prop, True
         if now_epoch - 60 <= best <= horizon:
             results.append(
                 {

@@ -219,7 +219,7 @@ not just the tracked ones — carried by the row stripe, the badge glyph and
 number, the countdown, and (where there is a live position) the map marker. It
 deliberately does *not* encode live-vs-scheduled: that status flips as feeds
 come and go, and a colour that changes underneath the reader is worse than no
-colour. Where the arrival figure came from is shown separately, by 📶 realtime
+colour. Where the arrival figure came from is shown separately, by 🛜 realtime
 or 📅 timetable after the number.
 
 The palette is twelve hues at 30° spacing. **Assignment is sticky**: a trip_id
@@ -284,7 +284,7 @@ Two traps in that rasterising, both silent:
   honour the rule's `unicode-range`. The JS-constructed face carries no range,
   so the question does not arise.
 
-`live` and a *live* map marker are different things: `live` (📶) means
+`live` and a *live* map marker are different things: `live` (🛜) means
 TripUpdates gave a time prediction, a solid marker means VehiclePositions gave a
 GPS fix. These are two independent feeds. Plenty of services have the first and
 not the second — verified: swept 26 stops, and every "live-but-no-dot" row was
@@ -322,7 +322,7 @@ it only sets how sparse a route-*origin* stop looks, where most listed services
 haven't started. Widen it to list further ahead, at the cost of drawing
 not-yet-moving buses guessed onto their origins (the 301440 pile: arrivals 55,
 70, 85 min out all "parked" at the origin was the failure that a tight window
-prevents). A trip can read 📶 *live* (TripUpdates predicts a time) while its bus
+prevents). A trip can read 🛜 *live* (TripUpdates predicts a time) while its bus
 has not left the origin, so `live` on a row never by itself means "mappable".
 
 The frontend draws them on their own `ghosts` source in dedicated layers —

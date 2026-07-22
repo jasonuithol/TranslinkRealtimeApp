@@ -348,7 +348,7 @@
       <!-- `awaiting` is dropped by selectStop, which then resizes the map. -->
       <div class="map-caption" id="map-caption" hidden>
         <span id="map-status">live vehicle positions</span>
-        <span class="hint">click a service to trace its route</span>
+        <span class="hint">click a service to show its route</span>
       </div>
     </div>
   </div>
@@ -1331,7 +1331,7 @@
           ? `<div class="due">DUE</div>`
           : `<div class="num">${d.minutes}</div><div class="unit">MIN</div>`;
         const bits = [MODES[d.route_type] ?? ""];
-        if (d.platform) bits.push(`Plat ${d.platform}`);
+        if (d.platform) bits.push(`Platform ${d.platform}`);
         bits.push(new Date(d.predicted * 1000)
           .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}));
         row.innerHTML = `

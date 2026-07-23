@@ -147,6 +147,9 @@ REGIONS: dict = {
         "vehicle_positions": _env_rt_feeds("SYD", "VEHICLE_POSITIONS"),
         "alerts": _env_rt_feeds("SYD", "ALERTS"),
         "headers": _syd_headers(),
+        # TfNSW throttles per-second bursts (429s): pace the seven feeds of
+        # each kind instead of firing them back-to-back.
+        "req_gap_s": 0.5,
         "geocode_viewbox": "150.5,-34.25,151.4,-33.35",
         "center": [151.2093, -33.8688],
     },
@@ -181,8 +184,11 @@ async def _fetch_feeds(client, cfg: dict, kind: str) -> tuple[list, list]:
     polls seven per kind, and an all-or-nothing cycle turned one flaky
     light-rail endpoint into a fully scheduled region."""
     out, errors = [], []
-    for feed_cfg in cfg[kind]:
+    gap = cfg.get("req_gap_s") or 0
+    for i, feed_cfg in enumerate(cfg[kind]):
         try:
+            if gap and i:
+                await asyncio.sleep(gap)
             resp = await client.get(feed_cfg["url"], headers=cfg["headers"])
             resp.raise_for_status()
             feed = gtfs_realtime_pb2.FeedMessage()
@@ -264,6 +270,10 @@ async def poll_vehicle_positions(rid: str) -> None:
     """Live GPS for the map view. Keyed by trip_id so a departure on the board
     can be matched to the vehicle actually running it."""
     cfg, st = REGIONS[rid], STATE[rid]
+    # Offset from the trip-updates poller so the two bursts never align —
+    # at boot all pollers fired at once, and TfNSW 429'd the tail of the
+    # ~18 near-simultaneous requests.
+    await asyncio.sleep(POLL_SECONDS / 3)
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             try:
@@ -344,6 +354,8 @@ async def poll_alerts(rid: str) -> None:
     carries future planned works, which would swamp the board with warnings
     about next month."""
     cfg, st = REGIONS[rid], STATE[rid]
+    # Third slot in the boot stagger (see poll_vehicle_positions).
+    await asyncio.sleep(2 * POLL_SECONDS / 3)
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             try:
@@ -401,6 +413,7 @@ async def lifespan(app: FastAPI):
     # (static-only Melbourne, say) simply gets no tasks — the board and the
     # timetable-estimated ghosts work regardless.
     tasks = []
+    warm_rids = []
     for rid, cfg in REGIONS.items():
         if not cfg["db"].exists():
             continue
@@ -410,11 +423,16 @@ async def lifespan(app: FastAPI):
             tasks.append(asyncio.create_task(poll_vehicle_positions(rid)))
         if cfg["alerts"]:
             tasks.append(asyncio.create_task(poll_alerts(rid)))
-        # Warm the all-stops cache off the request path: the dominant-mode
-        # GROUP BY takes ~15 s on Melbourne's 11.6 M stop_times, which is a bad
-        # thing to hang the first zoomed-in map view on.
-        tasks.append(asyncio.create_task(
-            asyncio.to_thread(lambda r=rid: all_stops(r))))
+        warm_rids.append(rid)
+    # Warm the all-stops caches off the request path: the dominant-mode
+    # GROUP BY takes ~15 s on Melbourne's 11.6 M stop_times, which is a bad
+    # thing to hang the first zoomed-in map view on. ONE thread, regions in
+    # sequence — three concurrent warms starved the event loop on the small
+    # VPS for minutes and the deploy health check read it as "never came up".
+    def _warm_all(rids=tuple(warm_rids)):
+        for r in rids:
+            all_stops(r)
+    tasks.append(asyncio.create_task(asyncio.to_thread(_warm_all)))
     yield
     for t in tasks:
         t.cancel()

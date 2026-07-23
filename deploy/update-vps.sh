@@ -97,16 +97,18 @@ as_deploy "systemctl --user restart translink.service"
 # A restart recreates the container from the newly pulled image; uvicorn can
 # take a while to come up on a small VPS. Wait for the board rather than
 # racing it (a flat sleep raced it, and lost).
-echo "==> Waiting for the board to come up (up to 120 s)…"
+# Three ingested regions warm their stop caches at boot; on this small host
+# that can starve the event loop for a while, so be generous.
+echo "==> Waiting for the board to come up (up to 300 s)…"
 up=0
-for i in $(seq 1 40); do
-  if curl -fsS --max-time 3 "http://localhost:${APP_PORT}/api/config" >/dev/null 2>&1; then
-    up=1; echo "    up after ~$((i * 3))s"; break
+for i in $(seq 1 60); do
+  if curl -fsS --max-time 5 "http://localhost:${APP_PORT}/api/config" >/dev/null 2>&1; then
+    up=1; echo "    up after ~$((i * 5))s"; break
   fi
-  sleep 3
+  sleep 5
 done
 if [[ $up -ne 1 ]]; then
-  echo "Board did not come up within 120 s. Logs:"
+  echo "Board did not come up within 300 s. Logs:"
   as_deploy "podman logs --tail 30 translink" || true
   exit 1
 fi

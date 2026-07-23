@@ -1226,11 +1226,14 @@ def rail_stations_endpoint(region: str = "seq"):
 def regions():
     """The regions this deployment can serve (timetable ingested), for the
     frontend's region switcher. The first entry is the default."""
+    # center: [lon, lat] — the frontend's pan-across-regions check measures
+    # the map centre against each region's home city to swap providers.
     return [
-        {"id": rid, "name": REGIONS[rid]["name"], "state": REGIONS[rid]["state"]}
+        {"id": rid, "name": REGIONS[rid]["name"], "state": REGIONS[rid]["state"],
+         "center": REGIONS[rid]["center"]}
         for rid in available_regions()
     ] or [{"id": "seq", "name": REGIONS["seq"]["name"],
-           "state": REGIONS["seq"]["state"]}]
+           "state": REGIONS["seq"]["state"], "center": REGIONS["seq"]["center"]}]
 
 
 @app.get("/api/r/{region}/config")

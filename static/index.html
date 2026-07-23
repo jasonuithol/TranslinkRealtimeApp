@@ -45,23 +45,6 @@
   }
   .change:hover { color: var(--text); border-color: var(--amber-dim); }
   .change:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
-  .eyebrow {
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 6px;
-    display: flex; align-items: center; gap: 14px;
-  }
-  /* Region switcher, only shown when more than one timetable is ingested. */
-  .region-switch {
-    background: none; border: 1px solid var(--line); border-radius: 999px;
-    color: var(--muted); font: inherit; letter-spacing: 0.12em;
-    padding: 2px 10px; cursor: pointer; text-transform: uppercase;
-  }
-  .region-switch:hover { color: var(--text); border-color: var(--amber-dim); }
-  .region-switch[hidden] { display: none; }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
 
   .search { position: relative; margin-bottom: 22px; }
@@ -435,10 +418,8 @@
 <body class="landing">
 <main>
   <header>
-    <div class="eyebrow">
-      <span id="region-name">Translink · South East Queensland</span>
-      <button class="region-switch" id="change-region" type="button" hidden></button>
-    </div>
+    <!-- No region row: the region is implicit — search results carry their
+         state, and panning the map far enough swaps regions by itself. -->
     <!-- Only once a stop is chosen; before that the name would just say
          "Next service", which costs a line and tells you nothing. -->
     <div class="titlebar" id="titlebar" hidden>
@@ -504,6 +485,18 @@
   let stopId = new URLSearchParams(location.search).get("stop");
   let timer = null;
 
+  // ?at=lon,lat,zoom — a camera handed across a region swap. With no stop it
+  // also puts the page into map-BROWSING mode: the map is open (all-stops
+  // clickable, board still empty) instead of the landing, so panning from
+  // one city into another feels continuous across the provider change.
+  const atParam = (() => {
+    const raw = new URLSearchParams(location.search).get("at");
+    if (!raw) return null;
+    const [lon, lat, zoom] = raw.split(",").map(Number);
+    return [lon, lat, zoom].every(Number.isFinite) ? { lon, lat, zoom } : null;
+  })();
+  const browsing = Boolean(atParam) && !stopId;
+
   // --- region ------------------------------------------------------------
   // One board, many networks. The region picks the timetable DB, the realtime
   // feeds, the timezone and the basemap — all server-side; the client just
@@ -514,10 +507,15 @@
   localStorage.setItem("region", region);
   const api = (path) => `/api/r/${region}${path}`;
 
-  function switchRegion(next) {
+  // Crossing into another region (a search pick, or panning the map there)
+  // reloads: the map style, caches and colour state are all per-network, so
+  // a clean start is correct. `at=lon,lat,zoom` carries the camera across so
+  // the map reopens exactly where the user was looking.
+  function switchRegion(next, at) {
     if (next === region) return;
     localStorage.setItem("region", next);
-    location.href = `?region=${encodeURIComponent(next)}`;   // drop the stop
+    location.href = `?region=${encodeURIComponent(next)}`
+                  + (at ? `&at=${at}` : "");                 // drop the stop
   }
 
   // Times on the board are the *network's* clock, not the viewer's: a Brisbane
@@ -527,30 +525,18 @@
   fetch(api("/config")).then((r) => r.json())
     .then((c) => { regionTz = c.tz; }).catch(() => {});
 
-  // The eyebrow names the current network and, when more than one timetable is
-  // ingested, becomes the switcher. The same list drives the search fan-out:
-  // results can come from ANY ingested region — the landing page names no
-  // region, so each result row carries its state (QLD/VIC) instead.
+  // There is no visible region UI: the ingested-regions list drives the
+  // search fan-out (results can come from ANY region, each row carrying its
+  // state) and the map's pan-across-regions check (each entry's center).
   let regionList = [{ id: region, name: "", state: "" }];
   const stateOf = (rid) =>
     (regionList.find((r) => r.id === rid) || {}).state || "";
   // Search order: the remembered region's results list first.
   const regionOrder = () =>
     [...regionList].sort((a, b) => (b.id === region) - (a.id === region));
-  const regionsReady = fetch("/api/regions").then((r) => r.json()).then((regions) => {
-    regionList = regions;
-    const cur = regions.find((r) => r.id === region) || regions[0];
-    $("region-name").textContent = cur.name;
-    if (regions.length > 1) {
-      const next = regions[(regions.findIndex((r) => r.id === cur.id) + 1)
-                           % regions.length];
-      const b = $("change-region");
-      b.hidden = false;
-      b.textContent = `⇄ ${next.name.split("·")[1]?.trim() || next.name}`;
-      b.title = `Switch to ${next.name}`;
-      b.onclick = () => switchRegion(next.id);
-    }
-  }).catch(() => { /* the static eyebrow text stands */ });
+  const regionsReady = fetch("/api/regions").then((r) => r.json())
+    .then((regions) => { regionList = regions; })
+    .catch(() => { /* search stays single-region, no pan-swap */ });
   // With no stop there is nothing but the search, so it is always open. Once a
   // stop is chosen the search folds away and "Change stop" brings it back.
   let searchOpen = !stopId;
@@ -558,8 +544,9 @@
   function syncChrome() {
     // No stop yet = the landing: just the goose and the search. The class
     // hides the chrome and parks the board/map split off-screen (still sized,
-    // so the map keeps warming underneath).
-    document.body.classList.toggle("landing", !stopId);
+    // so the map keeps warming underneath). Map-browsing mode (?at=, from a
+    // pan across regions) keeps the full layout instead.
+    document.body.classList.toggle("landing", !stopId && !browsing);
     $("titlebar").hidden = !stopId;
     $("search-wrap").hidden = Boolean(stopId) && !searchOpen;
     $("search-close").hidden = !stopId;   // nothing to return to without one
@@ -989,6 +976,13 @@
     // Only go two-column once there is actually a map to put in the second one.
     $("split").classList.add("side-by-side");
     document.querySelector("main").classList.add("wide");
+    // Browsing (arrived via a cross-region pan): open the map fully — no
+    // stop to wait for, the camera lands where the user was already looking.
+    if (browsing) {
+      $("map-empty").hidden = true;
+      $("map-caption").hidden = false;
+      $("map-wrap").classList.remove("awaiting");
+    }
 
     // {metadata: true} is required: the style's source uses `url:`, so MapLibre
     // asks the protocol for TileJSON. Without this flag pmtiles ignores that
@@ -1006,10 +1000,13 @@
     map = new maplibregl.Map({
       container: "map",
       style,
-      center: cfg.center,            // the region's city, until a stop is chosen
-      zoom: 11,
+      // The handed-over camera when arriving from a pan swap; otherwise the
+      // region's city until a stop is chosen.
+      center: atParam ? [atParam.lon, atParam.lat] : cfg.center,
+      zoom: atParam ? atParam.zoom : 11,
       attributionControl: { compact: true },
     });
+    window.__map = map;   // debug/UI-test handle (see also ?mapdebug=1)
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     // A bad style silently yields a blank map: MapLibre reports it here and
@@ -1021,6 +1018,36 @@
       console.error("[map]", msg);
       const el = $("map-status");
       if (el) el.textContent = `map: ${msg}`;
+    });
+
+    // Sanity radius per region: pan the map from one city into another and
+    // the providers swap underneath — once the centre comes within
+    // REGION_RADIUS_KM of another region's home city, hand the camera over.
+    // Every moveend is checked: our own programmatic moves (fit, resize,
+    // ping) never leave the region, so only a real cross-country pan can
+    // trigger it. The zoom guard keeps a zoomed-out whole-country view from
+    // swapping under the cursor before the user has picked a city.
+    const REGION_RADIUS_KM = 150;
+    const haversineKm = (la1, lo1, la2, lo2) => {
+      const rad = Math.PI / 180;
+      const a = Math.sin((la2 - la1) * rad / 2) ** 2
+              + Math.cos(la1 * rad) * Math.cos(la2 * rad)
+              * Math.sin((lo2 - lo1) * rad / 2) ** 2;
+      return 2 * 6371 * Math.asin(Math.sqrt(a));
+    };
+    map.on("moveend", () => {
+      if (map.getZoom() < 7) return;
+      const c = map.getCenter();
+      let best = null, bestD = Infinity;
+      for (const r of regionList) {
+        if (!r.center) continue;
+        const d = haversineKm(c.lat, c.lng, r.center[1], r.center[0]);
+        if (d < bestD) { bestD = d; best = r; }
+      }
+      if (best && best.id !== region && bestD <= REGION_RADIUS_KM) {
+        switchRegion(best.id,
+          `${c.lng.toFixed(5)},${c.lat.toFixed(5)},${map.getZoom().toFixed(2)}`);
+      }
     });
 
     map.on("load", () => {

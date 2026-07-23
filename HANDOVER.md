@@ -144,11 +144,21 @@ times and the map shows timetable-estimated ghosts.
   feed), same for `MEL_VEHICLE_POSITIONS` / `MEL_ALERTS`, `MEL_API_KEY`,
   `MEL_API_KEY_HEADER` (default `Ocp-Apim-Subscription-Key`).
 - Frontend: region comes from `?region=` / localStorage; all API calls go
-  through `api(path)`; the eyebrow shows the region name and (when 2+ regions
-  are ingested) a `⇄` switch button that reloads into the other region. The
-  map style is one file — the client points its `omt` source at the region's
-  pmtiles from `/api/r/{region}/config` (`basemap_url`, `center`). Board times
-  render in the *region's* timezone (`tz` from config), not the viewer's.
+  through `api(path)`. There is NO visible region UI (the eyebrow row and ⇄
+  switcher were removed when the third region made "the other region" a
+  meaningless button): the region changes by *searching* (cross-region
+  results) or by *panning the map* into another network. Pan swap: every
+  `moveend` (zoom ≥ 7) measures the map centre against each region's home
+  city from `/api/regions`; within 150 km of another region's city →
+  `switchRegion(id, "lon,lat,zoom")` reloads with the camera in `?at=`.
+  Arriving with `at` and no stop is **map-browsing mode**: not the landing —
+  the map opens exactly where the user was looking (all-stops clickable,
+  board placeholder until they pick one). Programmatic camera moves never
+  leave a region, so the check runs unconditionally; regions are ~700 km
+  apart so there is no flapping. The map style is one file — the client
+  points its `omt` source at the region's pmtiles from
+  `/api/r/{region}/config` (`basemap_url`, `center`). Board times render in
+  the *region's* timezone (`tz` from config), not the viewer's.
 - Basemaps per region: `REGION=mel podman run … translink-basemap` (bbox
   presets in `basemap/build-basemap.sh`). Melbourne DB: `/data/gtfs-mel.sqlite3`
   (`MEL_GTFS_DB` to override); basemap `mel.pmtiles`.

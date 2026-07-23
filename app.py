@@ -173,18 +173,25 @@ STATE: dict = {
 }
 
 
-async def _fetch_feeds(client, cfg: dict, kind: str) -> list[tuple[str, object]]:
+async def _fetch_feeds(client, cfg: dict, kind: str) -> tuple[list, list]:
     """Fetch every configured GTFS-RT feed of one kind for a region. Returns
-    (prefix, FeedMessage) pairs; the prefix maps feed-local ids onto the
-    prefixed ids the region's ingest wrote (empty for single-feed regions)."""
-    out = []
+    ((prefix, FeedMessage) pairs, error strings); the prefix maps feed-local
+    ids onto the prefixed ids the region's ingest wrote (empty for
+    single-feed regions). One failing feed must not sink the others — Sydney
+    polls seven per kind, and an all-or-nothing cycle turned one flaky
+    light-rail endpoint into a fully scheduled region."""
+    out, errors = [], []
     for feed_cfg in cfg[kind]:
-        resp = await client.get(feed_cfg["url"], headers=cfg["headers"])
-        resp.raise_for_status()
-        feed = gtfs_realtime_pb2.FeedMessage()
-        feed.ParseFromString(resp.content)
-        out.append((feed_cfg["prefix"], feed))
-    return out
+        try:
+            resp = await client.get(feed_cfg["url"], headers=cfg["headers"])
+            resp.raise_for_status()
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(resp.content)
+            out.append((feed_cfg["prefix"], feed))
+        except Exception as exc:
+            errors.append(f"{feed_cfg['prefix'] or '(no prefix)'} "
+                          f"{feed_cfg['url']}: {exc}")
+    return out, errors
 
 
 async def poll_trip_updates(rid: str) -> None:
@@ -194,7 +201,8 @@ async def poll_trip_updates(rid: str) -> None:
             try:
                 cache: dict = {}
                 n_updates = n_no_trip = 0
-                for prefix, feed in await _fetch_feeds(client, cfg, "trip_updates"):
+                feeds, errors = await _fetch_feeds(client, cfg, "trip_updates")
+                for prefix, feed in feeds:
                     for entity in feed.entity:
                         if not entity.HasField("trip_update"):
                             continue
@@ -233,11 +241,20 @@ async def poll_trip_updates(rid: str) -> None:
                                 seqs.append((stu.stop_sequence, rec["delay"]))
                         seqs.sort()
                         cache[prefix + trip_id] = {"stops": stops, "seq": seqs}
-                st["rt"] = cache
-                st["rt_fetch"] = time.time()
-                st["rt_stats"] = {"trip_updates": n_updates, "without_trip_id": n_no_trip}
+                # All feeds down: keep the previous cache (stale beats empty,
+                # and rt_fetch's growing age shows the staleness); partial
+                # results commit — trips on a dead feed drop to scheduled.
+                if feeds:
+                    st["rt"] = cache
+                    st["rt_fetch"] = time.time()
+                st["rt_stats"] = {"trip_updates": n_updates,
+                                  "without_trip_id": n_no_trip,
+                                  **({"errors": errors} if errors else {})}
                 print(f"[tu:{rid}] {n_updates} trip updates ({len(cache)} trips cached)"
                       + (f", {n_no_trip} without trip_id" if n_no_trip else ""))
+                if errors:
+                    print(f"[poll:{rid}] trip-update feed(s) failed: "
+                          + " | ".join(errors))
             except Exception as exc:  # keep serving scheduled times on failure
                 print(f"[poll:{rid}] realtime fetch failed: {exc}")
             await asyncio.sleep(POLL_SECONDS)
@@ -252,7 +269,8 @@ async def poll_vehicle_positions(rid: str) -> None:
             try:
                 cache: dict = {}
                 n_total = n_pos = n_no_pos = n_no_trip = 0
-                for prefix, feed in await _fetch_feeds(client, cfg, "vehicle_positions"):
+                feeds, errors = await _fetch_feeds(client, cfg, "vehicle_positions")
+                for prefix, feed in feeds:
                     for entity in feed.entity:
                         if not entity.HasField("vehicle"):
                             continue
@@ -275,8 +293,9 @@ async def poll_vehicle_positions(rid: str) -> None:
                             "status": v.current_status,
                             "timestamp": v.timestamp or None,
                         }
-                st["vp"] = cache
-                st["vp_fetch"] = time.time()
+                if feeds:
+                    st["vp"] = cache
+                    st["vp_fetch"] = time.time()
                 # Two vehicles can carry the same trip_id (a trip handed between
                 # buses, or overlapping runs); the cache is keyed by trip_id, so
                 # the later one wins. That collapse — not a dropped position — is
@@ -289,7 +308,11 @@ async def poll_vehicle_positions(rid: str) -> None:
                     "duplicate_trip_id": dup,
                     "without_position": n_no_pos,
                     "without_trip_id": n_no_trip,
+                    **({"errors": errors} if errors else {}),
                 }
+                if errors:
+                    print(f"[poll:{rid}] vehicle-position feed(s) failed: "
+                          + " | ".join(errors))
                 print(f"[vp:{rid}] {n_total} vehicles: {n_pos} positioned, {len(cache)} cached"
                       + (f", {dup} dup trip_id" if dup else "")
                       + (f", {n_no_pos} WITHOUT position" if n_no_pos else "")
@@ -329,7 +352,8 @@ async def poll_alerts(rid: str) -> None:
                 by_route: dict = {}
                 by_stop: dict = {}
                 n_total = n_inactive = 0
-                for prefix, feed in await _fetch_feeds(client, cfg, "alerts"):
+                feeds, errors = await _fetch_feeds(client, cfg, "alerts")
+                for prefix, feed in feeds:
                     for entity in feed.entity:
                         if not entity.HasField("alert"):
                             continue
@@ -355,12 +379,17 @@ async def poll_alerts(rid: str) -> None:
                                 by_route.setdefault(prefix + ie.route_id, []).append(idx)
                             if ie.stop_id:
                                 by_stop.setdefault(prefix + ie.stop_id, []).append(idx)
-                st["al"] = {"alerts": alerts, "by_route": by_route, "by_stop": by_stop}
-                st["al_fetch"] = time.time()
+                if feeds:
+                    st["al"] = {"alerts": alerts, "by_route": by_route, "by_stop": by_stop}
+                    st["al_fetch"] = time.time()
                 st["al_stats"] = {"alerts": n_total, "active": len(alerts),
-                                  "not_yet_active": n_inactive}
+                                  "not_yet_active": n_inactive,
+                                  **({"errors": errors} if errors else {})}
                 print(f"[al:{rid}] {n_total} alerts: {len(alerts)} active"
                       + (f", {n_inactive} outside their active period" if n_inactive else ""))
+                if errors:
+                    print(f"[poll:{rid}] alert feed(s) failed: "
+                          + " | ".join(errors))
             except Exception as exc:  # alerts are an enhancement, never fatal
                 print(f"[poll:{rid}] alerts fetch failed: {exc}")
             await asyncio.sleep(ALERT_POLL_SECONDS)

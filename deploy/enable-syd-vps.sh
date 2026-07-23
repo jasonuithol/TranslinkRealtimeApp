@@ -73,10 +73,18 @@ echo "==> Waiting one poll cycle for the Sydney feeds…"
 sleep 40
 FEEDS=$(curl -fsS "http://localhost:${APP_PORT}/api/feeds")
 echo "$FEEDS" | python3 -m json.tool 2>/dev/null || echo "$FEEDS"
-if grep -q '"syd"' <<<"$FEEDS" && grep -q '"vehicles"' <<<"$FEEDS"; then
+# Check SYDNEY'S OWN feed ages — a bare grep for "vehicles" matched the SEQ
+# section and declared LIVE while every syd poll was failing.
+if python3 -c '
+import json, sys
+syd = json.load(sys.stdin).get("syd", {})
+ok = any(syd.get(k, {}).get("age_s") is not None
+         for k in ("trip_updates", "vehicle_positions"))
+sys.exit(0 if ok else 1)' <<<"$FEEDS"; then
   echo "══> Sydney realtime is LIVE."
 else
-  echo "══> WARNING: no syd feed stats yet — check: sudo -iu $DEPLOY_USER podman logs translink | grep 'poll:syd'"
+  echo "══> WARNING: syd polls not succeeding — errors (if any) are in the"
+  echo "    feed stats above; also: sudo -iu $DEPLOY_USER podman logs translink | grep 'poll:syd'"
   exit 1
 fi
 REMOTE

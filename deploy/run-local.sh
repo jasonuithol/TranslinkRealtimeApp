@@ -8,6 +8,13 @@
 #   ./deploy/run-local.sh <VIC-KEY> <NSW-KEY>   # live Melbourne + Sydney
 #   ./deploy/run-local.sh "" <NSW-KEY>          # live Sydney only
 #
+# First time (or to refresh the TfNSW timetable), ingest Sydney on the way up:
+#
+#   INGEST_SYD=yes ./deploy/run-local.sh "" <NSW-KEY>
+#
+# (Runs between build and start, so the freshly built image does the ingest
+# and the app boots onto the new timetable. A few minutes of downloads.)
+#
 # VIC key: the "Data Platform API Token" from your profile at
 # https://opendata.transport.vic.gov.au/ — sent as the KeyID header (verified;
 # ignore the Ocp-Apim-Subscription-Key their OpenAPI specs claim).
@@ -27,6 +34,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> Building ${IMAGE} from ${HERE}…"
 podman build -q -t "$IMAGE" "$HERE" >/dev/null
+
+if [[ "${INGEST_SYD:-no}" == "yes" ]]; then
+  if [[ -z "$NSW_KEY" ]]; then
+    echo "INGEST_SYD=yes needs the NSW key as the second argument." >&2
+    exit 1
+  fi
+  echo "==> Ingesting the Sydney timetable (per-mode TfNSW zips; a few minutes)…"
+  podman run --rm -v translink-data:/data -e SYD_API_KEY="$NSW_KEY" \
+    "$IMAGE" python ingest_gtfs.py --region syd
+fi
 
 MEL_ENV=()
 if [[ -n "$KEY" ]]; then

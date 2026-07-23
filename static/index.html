@@ -1943,7 +1943,11 @@
     }
 
     const age = data.realtime_feed_age;
-    const feed = age === null
+    // Three honest states: no feeds configured for this region (no key —
+    // waiting would never end), configured but not yet polled, or live.
+    const feed = data.realtime_configured === false
+      ? "timetable only — no realtime feed configured for this region"
+      : age === null
       ? "realtime feed: waiting for first fetch"
       : `realtime feed updated ${age}s ago`;
     $("status").textContent = data.__hidden > 0

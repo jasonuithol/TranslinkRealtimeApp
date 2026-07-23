@@ -1008,6 +1008,9 @@ def departures(stop_id: str, region: str = "seq"):
     return {
         "stop": dict(stop),
         "generated_at": now_epoch,
+        # False = this region has NO realtime feeds configured (no key): the
+        # status must say "timetable only", not "waiting for first fetch".
+        "realtime_configured": bool(cfg["trip_updates"] or cfg["vehicle_positions"]),
         "realtime_feed_age": (
             round(time.time() - st["rt_fetch"]) if st["rt_fetch"] else None
         ),

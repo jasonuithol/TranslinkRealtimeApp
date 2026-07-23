@@ -191,7 +191,7 @@ times and the map shows timetable-estimated ghosts.
 | --- | --- | --- | --- |
 | **VIC open data API key** | ☑ OBTAINED (2026-07-22), not yet deployed | Melbourne realtime: live vehicle dots (incl. train occupancy), realtime arrival times, ⚠ disruption alerts | The "Data Platform API Token" from the portal profile. Auth header is `KeyID` (verified; the OpenAPI specs wrongly say Ocp-Apim-Subscription-Key). Paste into the commented `MEL_*` lines in `deploy/translink.container` — incl. `MEL_API_KEY_HEADER=KeyID` — then daemon-reload + restart |
 | **HTTPS on the VPS** | ☐ NOT SET UP (not a key, but gates a feature) | The "near me" geolocation button — browsers block geolocation on plain http (localhost excepted) | Reverse proxy + Let's Encrypt, or Caddy; shared host with inventoryquest, so coordinate ports |
-| **NSW open data API key** | ☑ OBTAINED (2026-07-23) — probe run, all endpoints verified | ALL of Sydney: even the static timetable download is authenticated (plus realtime + alerts once ingested) | Held by Jason (not in the repo). Next: ingest with `SYD_API_KEY`, `deploy/run-local.sh "" <key>` locally, `deploy/enable-syd-vps.sh` for the VPS once cleared |
+| **NSW open data API key** | ☑ DONE (2026-07-23): obtained, deployed, Sydney fully LIVE in production (all seven feeds clean after the 429-pacing fix) | ALL of Sydney: even the static timetable download is authenticated | Held by Jason (in the VPS quadlet, not the repo). TfNSW throttles per-second bursts — `req_gap_s` + staggered pollers keep under it |
 
 Everything else runs keyless by design: SEQ static+realtime (Translink, open),
 PTV static GTFS (public), Nominatim geocoding (identified UA + enforced rate

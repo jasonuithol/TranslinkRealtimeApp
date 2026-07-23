@@ -64,8 +64,10 @@ REGIONS = {
         # ids in feed "t" become "t:...", and the trip-updates feed declared
         # "t|<url>" maps its ids onto them. Greater Sydney modes only
         # (nswtrains/regionbuses are intercity and out of scope).
+        # Probed 2026-07-23: trains' REALTIME feeds are on /v2 but their
+        # schedule zip is still /v1 (the /v2 schedule 404s); metro's is /v2.
         "sources": [
-            ("t",  "https://api.transport.nsw.gov.au/v2/gtfs/schedule/sydneytrains"),
+            ("t",  "https://api.transport.nsw.gov.au/v1/gtfs/schedule/sydneytrains"),
             ("m",  "https://api.transport.nsw.gov.au/v2/gtfs/schedule/metro"),
             ("b",  "https://api.transport.nsw.gov.au/v1/gtfs/schedule/buses"),
             ("f",  "https://api.transport.nsw.gov.au/v1/gtfs/schedule/ferries/sydneyferries"),

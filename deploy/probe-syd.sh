@@ -20,8 +20,9 @@ BASE="https://api.transport.nsw.gov.au"
 AUTH="Authorization: apikey $KEY"
 
 # Static schedule zips (HEAD-ish probe: first byte only, we just want the 200).
+# Trains: schedule on v1 even though its realtime is v2 (probed 2026-07-23).
 STATIC=(
-  "t|$BASE/v2/gtfs/schedule/sydneytrains"
+  "t|$BASE/v1/gtfs/schedule/sydneytrains"
   "m|$BASE/v2/gtfs/schedule/metro"
   "b|$BASE/v1/gtfs/schedule/buses"
   "f|$BASE/v1/gtfs/schedule/ferries/sydneyferries"
@@ -61,11 +62,14 @@ for entry in "${STATIC[@]}"; do
 done
 
 echo "== realtime =="
+# Protobuf is binary (bash drops its NUL bytes), so download to a scratch
+# file and let curl report the size instead of capturing the body.
+SCRATCH="$(mktemp)"
+trap 'rm -f "$SCRATCH"' EXIT
 for entry in "${REALTIME[@]}"; do
   label="${entry%%|*}"; url="${entry#*|}"
-  out=$(curl -s --max-time 30 -H "$AUTH" -w "|%{http_code}" "$url" || echo "|ERR")
-  code="${out##*|}"
-  size=$(( ${#out} - ${#code} - 1 ))
+  read -r code size < <(curl -s --max-time 30 -H "$AUTH" -o "$SCRATCH" \
+    -w "%{http_code} %{size_download}" "$url" || echo "ERR 0")
   printf "  %-6s %-3s %8sB  %s\n" "$label" "$code" "$size" "$url"
 done
 

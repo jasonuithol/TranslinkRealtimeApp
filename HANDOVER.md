@@ -152,7 +152,9 @@ times and the map shows timetable-estimated ghosts.
 - Basemaps per region: `REGION=mel podman run … translink-basemap` (bbox
   presets in `basemap/build-basemap.sh`). Melbourne DB: `/data/gtfs-mel.sqlite3`
   (`MEL_GTFS_DB` to override); basemap `mel.pmtiles`.
-- **Sydney (`syd`, added 2026-07-23 — endpoints NOT yet key-verified)**: TfNSW
+- **Sydney (`syd`, added 2026-07-23 — endpoints key-verified same day: every
+  realtime/alerts feed 200s exactly as wired; the one surprise was the trains
+  *schedule* zip staying on /v1 while trains realtime is /v2, fixed)**: TfNSW
   publishes one flat "Timetables For Realtime" zip *per mode*, each download
   authenticated (`Authorization: apikey <key>`, free key from
   opendata.transport.nsw.gov.au). `ingest_gtfs.py --region syd` (key via
@@ -179,7 +181,7 @@ times and the map shows timetable-estimated ghosts.
 | --- | --- | --- | --- |
 | **VIC open data API key** | ☑ OBTAINED (2026-07-22), not yet deployed | Melbourne realtime: live vehicle dots (incl. train occupancy), realtime arrival times, ⚠ disruption alerts | The "Data Platform API Token" from the portal profile. Auth header is `KeyID` (verified; the OpenAPI specs wrongly say Ocp-Apim-Subscription-Key). Paste into the commented `MEL_*` lines in `deploy/translink.container` — incl. `MEL_API_KEY_HEADER=KeyID` — then daemon-reload + restart |
 | **HTTPS on the VPS** | ☐ NOT SET UP (not a key, but gates a feature) | The "near me" geolocation button — browsers block geolocation on plain http (localhost excepted) | Reverse proxy + Let's Encrypt, or Caddy; shared host with inventoryquest, so coordinate ports |
-| **NSW open data API key** | ☐ NOT OBTAINED | ALL of Sydney: even the static timetable download is authenticated (plus realtime + alerts once ingested) | Free: register at opendata.transport.nsw.gov.au, create an application, copy its API key. Then `deploy/probe-syd.sh <key>` to verify endpoints, ingest with `SYD_API_KEY`, `deploy/enable-syd-vps.sh` for the VPS |
+| **NSW open data API key** | ☑ OBTAINED (2026-07-23) — probe run, all endpoints verified | ALL of Sydney: even the static timetable download is authenticated (plus realtime + alerts once ingested) | Held by Jason (not in the repo). Next: ingest with `SYD_API_KEY`, `deploy/run-local.sh "" <key>` locally, `deploy/enable-syd-vps.sh` for the VPS once cleared |
 
 Everything else runs keyless by design: SEQ static+realtime (Translink, open),
 PTV static GTFS (public), Nominatim geocoding (identified UA + enforced rate

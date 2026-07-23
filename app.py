@@ -494,6 +494,13 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime,
     ).fetchall()
     out = []
     for r in rows:
+        # TfNSW timetables non-revenue runs as ordinary trips on routes / with
+        # headsigns literally named "Out Of Service" — a passenger board must
+        # not offer them.
+        if _out_of_service(r["trip_headsign"]) or \
+           _out_of_service(r["route_short_name"]) or \
+           _out_of_service(r["route_long_name"]):
+            continue
         out.append(
             {
                 "trip_id": r["trip_id"],
@@ -509,6 +516,10 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime,
             }
         )
     return out
+
+
+def _out_of_service(text: str | None) -> bool:
+    return bool(text) and "out of service" in text.lower()
 
 
 PLATFORM_RE = re.compile(r"platform\s+(\w+)", re.IGNORECASE)

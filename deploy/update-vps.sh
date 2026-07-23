@@ -58,7 +58,9 @@ fi
 # The Sydney downloads are authenticated, so the ingest needs the key the
 # quadlet holds (written there by enable-syd-vps.sh).
 QUADLET="$(getent passwd "${DEPLOY_USER}" | cut -d: -f6)/.config/containers/systemd/translink.container"
-SYD_KEY="$(grep -oP '^Environment=SYD_API_KEY=\K.*' "$QUADLET" 2>/dev/null || true)"
+# Portable extraction: grep -P is not available on every distro's grep, and
+# the silent failure here read as "no key" and skipped the Sydney ingest.
+SYD_KEY="$(sed -n 's/^Environment=SYD_API_KEY=//p' "$QUADLET" 2>/dev/null | head -1)"
 if [[ "${INGEST_SYD}" == "yes" || ( "${INGEST_SYD}" == "auto" && -n "$SYD_KEY" ) ]]; then
   if [[ -n "$SYD_KEY" ]]; then
     echo "==> Ingesting the Sydney timetable (per-mode TfNSW zips; a few minutes)…"

@@ -306,15 +306,6 @@
     pointer-events: none; z-index: 2;
   }
   .tveh.me { border-color: #fff; }    /* the selected service itself */
-  /* Estimated (ghost) position — faded and hollow, the map's ghost
-     language: a placeholder, not a live fix. Declared after .me so the
-     faded ring wins over the white one. */
-  .tveh.ghost {
-    background: var(--panel);
-    border-width: 1.5px;
-    border-color: color-mix(in srgb, var(--vcolor) 55%, transparent);
-    color: color-mix(in srgb, var(--vcolor) 50%, transparent);
-  }
   .tstop .tname {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -474,6 +465,32 @@
      nothing, so it is not shown. */
   /* Layout (centering, min-height) comes from .placeholder; this rule only
      covers the map and matches the board's panel styling. */
+  /* Edge markers: a board vehicle outside the current view gets a ringed
+     glyph pinned to the map edge nearest to it, with an arrow on the rim
+     aiming at the vehicle. (The ring shape is free for this job now that
+     ghosts are no longer drawn ringed.) Clicking one flies to the vehicle. */
+  #edge-markers {
+    position: absolute; inset: 0;
+    overflow: hidden; pointer-events: none; z-index: 1;
+  }
+  .edge-veh {
+    position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px;
+    border-radius: 50%;
+    background: rgba(12, 16, 19, 0.9);
+    border: 2px solid var(--vcolor);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text; font-size: 15px; line-height: 1;
+    color: var(--vcolor);
+    pointer-events: auto; cursor: pointer;
+  }
+  .edge-veh::after {                  /* rim arrow, aimed by --angle */
+    content: ""; position: absolute; left: 50%; top: 50%;
+    border: 5px solid transparent; border-left: 8px solid var(--vcolor);
+    border-right: 0;
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(21px);
+  }
+
   .map-empty {
     position: absolute; inset: 0; z-index: 2; text-align: center;
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -566,6 +583,8 @@
     </div>
     <div id="map-wrap" class="awaiting" hidden>
       <div id="map"></div>
+      <!-- Off-screen board vehicles, pinned to the map edge nearest to them. -->
+      <div id="edge-markers" aria-hidden="true"></div>
       <div class="map-empty placeholder" id="map-empty">
         <div>Search for a stop to see it on the map.</div>
         <div class="ph-icon">&#x1F30F;&#xFE0E;</div>
@@ -1231,37 +1250,28 @@
         },
       });
 
-      // Ghosts: timetable-estimated positions for board trips with no live GPS.
-      // Drawn below the real vehicles and the viewed stop — an estimate must
-      // never outrank a fix. Faded icon + a dashed-looking hollow ring + a "~N"
-      // label all say "approximate".
+      // Ghosts: timetable-estimated positions for board trips with no live
+      // GPS. Drawn with exactly the same weight as the live dots — the map
+      // no longer distinguishes scheduled from live (the halo-ring-for-
+      // estimated idea was dubious, and the ring is now the off-screen edge
+      // marker's shape); the board's 🛜/📅 column carries that fact.
       map.addLayer({
         id: "ghost-ping", type: "circle", source: "ghosts",
         filter: PING_OFF,
         paint: {
-          "circle-radius": 10, "circle-color": ["get", "color"],
-          "circle-opacity": 0.2,
-          "circle-stroke-width": 2, "circle-stroke-color": ["get", "color"],
-          "circle-stroke-opacity": 0.7,
-        },
-      });
-      // A hollow ring under every ghost, so it reads as a placeholder rather
-      // than a solid presence even before you notice the faded glyph.
-      map.addLayer({
-        id: "ghost-halo", type: "circle", source: "ghosts",
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 10.5, 15, 16.5],
-          "circle-color": "rgba(0,0,0,0)",
-          "circle-stroke-width": 1.5,
+          "circle-radius": 10,
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.35,
+          "circle-stroke-width": 2,
           "circle-stroke-color": ["get", "color"],
-          "circle-stroke-opacity": 0.55,
+          "circle-stroke-opacity": 0.9,
         },
       });
       map.addLayer({
         id: "ghost-dot", type: "symbol", source: "ghosts",
         layout: {
           "icon-image": ["get", "icon"],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.75, 15, 1.23],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.9, 15, 1.5],
           "icon-allow-overlap": true,
           // Always drawn, but must not BLOCK the street furniture: a marker
           // sitting at a stop would otherwise suppress the nearby stop icons
@@ -1269,11 +1279,11 @@
           // stop was losing that collision and vanishing).
           "icon-ignore-placement": true,
         },
-        paint: { "icon-opacity": 0.5 },   // estimated, not live
       });
       map.addLayer({
         id: "ghost-label", type: "symbol", source: "ghosts",
         layout: {
+          // "~" = estimated: unambiguous, and cheaper than any ring was.
           "text-field": ["concat", "~", ["get", "minutes"], " min"],
           "text-font": ["Noto Sans Medium"],
           "text-size": 11, "text-offset": [0, 2.3],
@@ -1281,7 +1291,6 @@
         },
         paint: {
           "text-color": ["coalesce", ["get", "color"], "#c9d4de"],
-          "text-opacity": 0.75,
           "text-halo-color": "#0c1013", "text-halo-width": 1.4,
         },
       });
@@ -1394,6 +1403,10 @@
       // less annoying failure.
       map.on("movestart", (e) => { if (e.originalEvent) autoFit = false; });
       map.on("moveend", () => { programmatic = false; });
+      // Edge markers track the viewport continuously — a pan or zoom changes
+      // which vehicles are off-screen and where their arrows point.
+      map.on("move", syncEdgeMarkers);
+      map.on("resize", syncEdgeMarkers);
 
       mapReady = true;
       cameraMove(() => map.resize());
@@ -1797,11 +1810,10 @@
     // draws as a ghost — a trip can have live TIMES (TripUpdates) yet no
     // live POSITION (VehiclePositions); the 348s do exactly that.
     let vehs = (keptStops.length > 1 && lt.vehicles) || [];
-    let ghostVeh = false;
     if (!vehs.length && keptStops.length > 1) {
       const g = (lastData.__ghosts || lastData.ghosts || [])
         .find((x) => x.trip_id === selectedTrip);
-      if (g) { vehs = [{ trip_id: g.trip_id, lat: g.lat, lon: g.lon }]; ghostVeh = true; }
+      if (g) vehs = [{ trip_id: g.trip_id, lat: g.lat, lon: g.lon }];
     }
     if (vehs.length) {
       const track = panel.querySelector(".ttrack");
@@ -1830,8 +1842,7 @@
         if (!best || best.d2 > 10000 * 10000) continue;
         const i = Math.min(Math.floor(best.frac), rows.length - 2);
         const el = document.createElement("div");
-        el.className = "tveh" + (v.trip_id === selectedTrip ? " me" : "")
-                     + (ghostVeh ? " ghost" : "");
+        el.className = "tveh" + (v.trip_id === selectedTrip ? " me" : "");
         el.style.top = `${yOf(i) + (best.frac - i) * (yOf(i + 1) - yOf(i))}px`;
         el.textContent = asText(glyph);
         track.appendChild(el);
@@ -2124,8 +2135,8 @@
       }),
     });
 
-    // Ghosts: same icon and colour as the live dots so the pairing to a row is
-    // identical, but the layers render them faded and ringed.
+    // Ghosts: drawn identically to the live dots — scheduled-vs-live is the
+    // board's 🛜/📅 column's job, not the map's.
     const ghosts = data.__ghosts || data.ghosts || [];
     map.getSource("ghosts").setData({
       type: "FeatureCollection",
@@ -2149,6 +2160,7 @@
 
     drawRoutes(data);
     fitView(data, vehicles, ghosts);
+    syncEdgeMarkers();
 
     const shownCount = data.departures.length - (data.__hidden || 0);
     const live = vehicles.length, est = ghosts.length;
@@ -2156,6 +2168,60 @@
       live + est === 0 ? "no positions for these services"
       : est === 0 ? `${live} of ${shownCount} tracking live`
       : `${live} live · ${est} estimated`;
+  }
+
+  // A board vehicle outside the current view still deserves a presence:
+  // its marker is clamped to the nearest map edge, with a rim arrow aimed
+  // at the real position. Rebuilt wholesale on every map move — the set is
+  // at most the board's row count, so this stays cheap.
+  function syncEdgeMarkers() {
+    const holder = $("edge-markers");
+    if (!holder) return;
+    if (!mapReady || !lastData || !stopId) { holder.replaceChildren(); return; }
+    const w = map.getContainer().clientWidth;
+    const h = map.getContainer().clientHeight;
+    const M = 26;                     // keeps the whole ring inside the map
+    const colors = lastData.__colors || {};
+    const modeOf = {};
+    lastData.departures.forEach((d) => { modeOf[d.trip_id] = d.route_type; });
+    const frag = document.createDocumentFragment();
+    const placed = [];                // markers already pinned, for fanning
+    for (const v of [...(lastData.__vehicles || []), ...(lastData.__ghosts || [])]) {
+      const pt = map.project([v.lon, v.lat]);
+      if (pt.x >= 0 && pt.x <= w && pt.y >= 0 && pt.y <= h) continue;
+      let x = Math.min(Math.max(pt.x, M), w - M);
+      let y = Math.min(Math.max(pt.y, M), h - M);
+      // A whole fleet off in one direction clamps to the same spot and
+      // stacks. Slide colliders along the edge they are pinned to (wrapping
+      // within it); each arrow is aimed from its FINAL spot, so a displaced
+      // marker still points at its own vehicle.
+      const slideY = x === M || x === w - M;   // on a vertical edge
+      for (let guard = 0; guard < 50; guard++) {
+        if (!placed.some((p) => Math.hypot(p[0] - x, p[1] - y) < 34)) break;
+        if (slideY) {
+          y += 34; if (y > h - M) y = M + (y - M) % (h - 2 * M);
+        } else {
+          x += 34; if (x > w - M) x = M + (x - M) % (w - 2 * M);
+        }
+      }
+      placed.push([x, y]);
+      const el = document.createElement("div");
+      el.className = "edge-veh";
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.style.setProperty("--vcolor", colors[v.trip_id] || "#3fb950");
+      el.style.setProperty("--angle",
+        `${Math.atan2(pt.y - y, pt.x - x) * 180 / Math.PI}deg`);
+      el.textContent = asText(MODE_EMOJI[modeOf[v.trip_id]] ?? DEFAULT_EMOJI);
+      el.title = `${v.route ?? ""} · ${v.headsign ?? ""} · `
+               + `${v.estimated ? "~" : ""}${v.minutes} min — show on map`;
+      el.addEventListener("click", () => {
+        cameraMove(() => map.easeTo({ center: [v.lon, v.lat], duration: 600 }));
+        pingVehicle(v.trip_id);
+      });
+      frag.appendChild(el);
+    }
+    holder.replaceChildren(frag);
   }
 
   // --- departures board --------------------------------------------------
@@ -2228,9 +2294,13 @@
         const numClass = routeLabel.length > 8 ? "num xwide"
                        : routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
+        // "~" marks a timetable-derived countdown, same mark as the map's
+        // estimated labels. (The timeline stays bare — a tilde on every
+        // stop time would be noise; its header 🛜/📅 says it once.)
         const eta = d.minutes <= 0
           ? `<div class="due">DUE</div>`
-          : `<div class="num">${d.minutes}</div><div class="unit">MIN</div>`;
+          : `<div class="num">${d.realtime ? "" : "~"}${d.minutes}</div>` +
+            `<div class="unit">MIN</div>`;
         const bits = [MODES[d.route_type] ?? ""];
         if (d.platform) bits.push(`Platform ${d.platform}`);
         bits.push(new Date(d.predicted * 1000)

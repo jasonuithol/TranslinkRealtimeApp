@@ -1088,10 +1088,17 @@ def trip_stops(trip_id: str, region: str = "seq"):
             "lat": r["stop_lat"],
             "lon": r["stop_lon"],
             "route_type": r["route_type"],
+            # GTFS wall-clock in the region's timezone, "HH:MM:SS", hours may
+            # exceed 24 on after-midnight runs. Kept as text: an epoch would
+            # need the service date, and this response is cached for a day.
+            "sched": r["departure_time"] or r["arrival_time"],
+            # For pairing with trip-times' delay propagation list.
+            "seq": r["stop_sequence"],
         }
         for r in con.execute(
             """
-            SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon, r.route_type
+            SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon, r.route_type,
+                   st.departure_time, st.arrival_time, st.stop_sequence
             FROM stop_times st
             JOIN stops s  ON s.stop_id = st.stop_id
             JOIN trips t  ON t.trip_id = st.trip_id
@@ -1110,6 +1117,42 @@ def trip_stops(trip_id: str, region: str = "seq"):
         {"trip_id": trip_id, "stops": stops},
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@app.get("/api/r/{region}/trip-times/{trip_id}")
+@app.get("/api/trip-times/{trip_id}")
+def trip_times(trip_id: str, region: str = "seq"):
+    """Live per-stop arrivals for one trip, from the TripUpdates cache.
+
+    Kept apart from trip-stops: that list is static for the life of a
+    timetable and cached for a day, while this overlay changes every poll.
+    Empty when the trip has no realtime — the stop list then shows the
+    schedule alone."""
+    region_cfg(region)
+    st = STATE[region]
+    rt = st["rt"].get(trip_id) or {}
+
+    # Only the selected trip's own vehicle. Route-mates were tried and were
+    # confusing on the timeline — each stop shows one arrival time, so a
+    # second vehicle beside it reads as a contradiction.
+    vehicles = []
+    v = st["vp"].get(trip_id)
+    if v and v.get("lat") is not None:
+        vehicles = [{"trip_id": trip_id, "lat": v["lat"], "lon": v["lon"]}]
+
+    return {
+        "trip_id": trip_id,
+        "stops": {
+            sid: {"t": rec.get("arrival"), "delay": rec.get("delay"),
+                  "skipped": bool(rec.get("skipped"))}
+            for sid, rec in rt.get("stops", {}).items()
+        },
+        # Sorted (stop_sequence, delay) pairs: an update applies to every
+        # later stop until the next update — the same propagation rule the
+        # board uses for feeds that only publish the next stop or two.
+        "delays": rt.get("seq", []),
+        "vehicles": vehicles,
+    }
 
 
 @app.get("/api/r/{region}/shape/{shape_id}")

@@ -231,6 +231,113 @@
   @keyframes rowflash {
     50% { background: color-mix(in srgb, var(--vcolor) 24%, var(--panel)); }
   }
+  /* Trip stop-list: when a service is selected its full calling pattern
+     overlays the arrivals list, leaving the badge column visible so the
+     board still reads as a board. The thick line down the left is the same
+     route trace the map draws, in the same colour; each stop is a station
+     dot on it. */
+  .board { position: relative; }
+  .trip-panel {
+    position: absolute; inset: 0 0 0 160px;   /* clear of the badge column */
+    display: flex; flex-direction: column;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    z-index: 5;
+  }
+  .tp-head {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font-size: 13px; color: var(--muted); white-space: nowrap;
+  }
+  .tp-head .tp-dest {
+    color: var(--text); font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 🛜/📅 beside the badge — the board's source column, relocated here
+     while the panel covers it. */
+  .tp-head .tp-src {
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text;
+    font-size: 18px; color: var(--vcolor); flex: none;
+  }
+  .tp-close {
+    margin-left: auto; flex: none;
+    background: none; border: 0; color: var(--muted);
+    font: inherit; font-size: 20px; line-height: 1; cursor: pointer;
+    padding: 2px 6px;
+  }
+  .tp-close:hover { color: var(--text); }
+  .tstops {
+    flex: 1; overflow-y: auto;
+    margin: 10px 14px 10px 24px;
+    scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  }
+  /* The line, its dots and the vehicle markers all live INSIDE the scroll
+     content (a border-left on the scroll container clipped anything hung
+     off it to a sliver). The track is the positioning context. */
+  /* Height follows the stops, not the panel: the line must END at the
+     terminus, not run on to the panel floor when the panel is taller. */
+  .ttrack { position: relative; padding: 4px 0 4px 30px; }
+  .ttrack::before {                   /* the route line, full list height */
+    content: ""; position: absolute; left: 9px; top: 0; bottom: 0;
+    width: 6px; background: var(--vcolor);
+  }
+  .tstop {
+    position: relative;
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; padding: 5px 0; font-size: 13px;
+  }
+  .tstop::before {                    /* station dot, centred on the line */
+    content: ""; position: absolute; left: -18px; top: 50%;
+    width: 8px; height: 8px; transform: translate(-50%, -50%);
+    border-radius: 50%; background: var(--panel);
+    border: 2px solid var(--vcolor);
+  }
+  /* A live vehicle, sitting on the line at its position along the run.
+     Same recipe as the badge: black plate, glyph in the service colour. */
+  .tveh {
+    position: absolute; left: 12px; transform: translate(-50%, -50%);
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #000; border: 2px solid var(--vcolor);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text; font-size: 13px; line-height: 1;
+    color: var(--vcolor);
+    pointer-events: none; z-index: 2;
+  }
+  .tveh.me { border-color: #fff; }    /* the selected service itself */
+  /* Estimated (ghost) position — faded and hollow, the map's ghost
+     language: a placeholder, not a live fix. Declared after .me so the
+     faded ring wins over the white one. */
+  .tveh.ghost {
+    background: var(--panel);
+    border-width: 1.5px;
+    border-color: color-mix(in srgb, var(--vcolor) 55%, transparent);
+    color: color-mix(in srgb, var(--vcolor) 50%, transparent);
+  }
+  .tstop .tname {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Every time in the service colour: whether the run is live or timetabled
+     is said ONCE, by the 🛜/📅 beside the badge in the panel header (and by
+     the vehicle marker being solid or ghosted) — not re-encoded per row.
+     Grey is reserved for .past rows, where the whole row dims. */
+  .tstop .ttime {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px;
+    color: var(--vcolor); flex: none;
+  }
+  .tstop.past { opacity: 0.45; }
+  .tstop.here .tname { color: var(--text); font-weight: 600; }
+  .tstop.here::before { background: #fff; border-color: #fff; }
+  .tstop.skipped .tname, .tstop.skipped .ttime {
+    text-decoration: line-through; color: var(--muted);
+  }
+  /* Collapsed history: "⋯ 12 earlier stops" above the last three served. */
+  .tmore {
+    padding: 4px 0 6px; font-size: 11px;
+    font-family: "IBM Plex Mono", monospace; color: var(--muted);
+  }
+
   @keyframes pulse { 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) {
     .due { animation: none !important; }
@@ -1354,9 +1461,12 @@
     if (!tripId || tripStopsCache.has(tripId) || tripStopsPending.has(tripId)) return;
     tripStopsPending.add(tripId);
     try {
-      const res = await fetch(api(`/trip-stops/${encodeURIComponent(tripId)}`));
+      // ?v bumped on schema change (v2: scheduled times added) — the
+      // response is cached for a day, same lesson as all-stops.
+      const res = await fetch(api(`/trip-stops/${encodeURIComponent(tripId)}?v=2`));
       tripStopsCache.set(tripId, res.ok ? (await res.json()).stops : null);
       drawLandmarks();
+      renderTripPanel();
     } catch {
       /* leave unset so a later selection retries */
     } finally {
@@ -1514,6 +1624,7 @@
       const d = (lastData?.departures || []).find((x) => x.trip_id === selectedTrip);
       if (d) ensureShape(d.shape_id);
       ensureTripStops(selectedTrip);
+      refreshTripTimes(selectedTrip);
     }
     document.querySelectorAll(".row.selected")
       .forEach((r) => r.classList.remove("selected"));
@@ -1523,6 +1634,217 @@
     }
     if (lastData) drawRoutes(lastData);
     drawLandmarks();
+    renderTripPanel();
+  }
+
+  // Live per-stop arrivals for the selected trip; refetched on the board's
+  // poll cadence while a trip is selected. Absence just means the panel
+  // shows the timetable alone.
+  const tripTimesCache = new Map();
+  async function refreshTripTimes(tripId) {
+    if (!tripId) return;
+    try {
+      const res = await fetch(api(`/trip-times/${encodeURIComponent(tripId)}`));
+      if (res.ok) {
+        tripTimesCache.set(tripId, await res.json());
+        renderTripPanel();
+      }
+    } catch { /* scheduled times still render */ }
+  }
+
+  // GTFS wall-clock "HH:MM:SS" (hours may exceed 24 after midnight) plus a
+  // delay in seconds → "HH:MM" for display.
+  const schedPlus = (hms, plusS) => {
+    const [h, m, s] = String(hms).split(":").map(Number);
+    const t = h * 3600 + m * 60 + (s || 0) + (plusS || 0);
+    const hh = String(Math.floor(t / 3600) % 24).padStart(2, "0");
+    return `${hh}:${String(Math.floor((t % 3600) / 60)).padStart(2, "0")}`;
+  };
+
+  // The selected service's full calling pattern, overlaid on the arrivals
+  // list (the badge column stays visible). Rebuilt on every board render —
+  // the board render wipes #board — so scroll position is carried across
+  // rebuilds of the same trip.
+  let panelTripRendered = null;
+  function renderTripPanel() {
+    const board = $("board");
+    const old = board.querySelector(".trip-panel");
+    const keepScroll = old && panelTripRendered === selectedTrip
+      ? old.querySelector(".tstops").scrollTop : null;
+    if (old) old.remove();
+    panelTripRendered = null;
+    board.style.minHeight = "";        // reclaimed whenever the panel closes
+    if (!selectedTrip || !stopId) return;
+    const d = (lastData?.departures || []).find((x) => x.trip_id === selectedTrip);
+    if (!d) return;                    // service has left the board
+    const stops = tripStopsCache.get(selectedTrip);
+    const lt = tripTimesCache.get(selectedTrip) || {};
+    const live = lt.stops || {};
+    const delays = lt.delays || [];   // sorted (stop_sequence, delay) pairs
+    // An update applies to every later stop until the next update — the same
+    // propagation the board applies for feeds publishing only the next stop.
+    const propDelay = (seq) => {
+      let d = null;
+      for (const [s, dl] of delays) { if (s <= seq) d = dl; else break; }
+      return d;
+    };
+    const vcolor = (lastData.__colors || {})[selectedTrip] || "#3fb950";
+    // 24-hour, to match the schedule-derived times beside it in the list.
+    const fmtEpoch = (t) => new Date(t * 1000)
+      .toLocaleTimeString("en-GB", {hour12: false, hour: "2-digit",
+                                    minute: "2-digit",
+                                    ...(regionTz ? {timeZone: regionTz} : {})});
+    // Region wall-clock now, for greying stops already served. String
+    // comparison is enough at HH:MM granularity; after-midnight rows
+    // (GTFS hours ≥ 24 map past 00:00) may briefly mis-grey — harmless.
+    const nowHM = new Date().toLocaleTimeString("en-GB",
+      {hour12: false, hour: "2-digit", minute: "2-digit",
+       ...(regionTz ? {timeZone: regionTz} : {})});
+    const nowS = Date.now() / 1000;
+    const hereId = d.stop_id || stopId;   // the boarding platform, not the parent
+    let items, keptStops = [];
+    if (!stops) {
+      items = `<div class="tstop"><span class="tname">Loading stops…</span></div>`;
+    } else {
+      const recs = stops.map((s) => {
+        const lr = live[s.stop_id];
+        const delay = lr?.delay ?? propDelay(s.seq);
+        let shown, isLive = false, past;
+        if (lr?.t) {
+          shown = fmtEpoch(lr.t);
+          isLive = true;
+          past = lr.t < nowS - 30;
+        } else if (s.sched) {
+          isLive = delay !== null && delay !== undefined;
+          shown = schedPlus(s.sched, isLive ? delay : 0);
+          past = shown < nowHM && Number(s.sched.split(":")[0]) < 24;
+        } else {
+          shown = "";
+          past = false;
+        }
+        return { s, lr, shown, isLive, past: past && s.stop_id !== hereId };
+      });
+      // History is context, not the point: keep only the three most recently
+      // served stops, and say how many came before rather than cutting
+      // silently. (The viewed stop is never "past", so it is never dropped.)
+      const pastIdx = recs.map((r, i) => (r.past ? i : -1)).filter((i) => i >= 0);
+      const hideSet = new Set(pastIdx.slice(0, -3));
+      const kept = recs.filter((_, i) => !hideSet.has(i));
+      keptStops = kept.map((r) => r.s);
+      items = (hideSet.size
+          ? `<div class="tmore">&ctdot; ${hideSet.size} earlier stops</div>` : "")
+        + kept.map(({ s, lr, shown, past }) => {
+            const cls = ["tstop",
+                         lr?.skipped && "skipped",
+                         s.stop_id === hereId && "here",
+                         past && "past"]
+                        .filter(Boolean).join(" ");
+            return `<div class="${cls}"><span class="tname">${s.stop_name}</span>` +
+                   `<span class="ttime">${lr?.skipped ? "skipped" : shown}</span></div>`;
+          }).join("");
+    }
+    const panel = document.createElement("div");
+    panel.className = "trip-panel";
+    panel.style.setProperty("--vcolor", vcolor);
+    // The header speaks the board's language: the service's badge, then the
+    // same 🛜/📅 source mark its row carries (the panel covers that column).
+    const routeLabel = d.route ?? "";
+    const numClass = routeLabel.length > 8 ? "num xwide"
+                   : routeLabel.length > 4 ? "num wide" : "num";
+    panel.innerHTML = `
+      <div class="tp-head">
+        <div class="badge" style="color:${vcolor}">
+          <span class="mode">${asText(MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI)}</span>
+          <span class="${numClass}">${routeLabel}</span>
+        </div>
+        <span class="tp-src" title="${d.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
+              >${asText(d.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span>
+        <span class="tp-dest">→ ${d.headsign ?? ""}</span>
+        <button class="tp-close" aria-label="Close stop list">&times;</button>
+      </div>
+      <div class="tstops"><div class="ttrack">${items}</div></div>`;
+    panel.querySelector(".tp-close").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      selectRoute(selectedTrip);       // toggles the selection off
+    });
+    // The rows underneath must not also react to clicks on the panel.
+    panel.addEventListener("click", (ev) => ev.stopPropagation());
+    board.appendChild(panel);
+    const list = panel.querySelector(".tstops");
+
+    // Side by side with the map, the stop list may outgrow the arrivals
+    // list: stretch the board to the map's height so the timeline uses the
+    // space instead of scrolling inside a short strip. Stacked (phone)
+    // layout keeps the board height — growing it would just push the map
+    // out of reach.
+    // The class alone is not enough — it is set whenever a map exists, but
+    // the two-column layout only engages at the stylesheet's breakpoint.
+    const wrap = $("map-wrap");
+    if ($("split").classList.contains("side-by-side")
+        && window.matchMedia("(min-width: 900px)").matches && !wrap.hidden) {
+      const mh = wrap.getBoundingClientRect().height;
+      if (mh > board.getBoundingClientRect().height) {
+        board.style.minHeight = `${mh}px`;
+      }
+    }
+
+    // The selected service's vehicle, hung on the line at its spot: the
+    // position is projected onto the stop-to-stop polyline, and the winning
+    // segment's fraction is mapped onto the rendered rows. (One vehicle
+    // only, by design — every stop shows one arrival time, so a second
+    // vehicle on the timeline read as a contradiction.) No live GPS does
+    // not mean no marker: fall back to the same estimated position the map
+    // draws as a ghost — a trip can have live TIMES (TripUpdates) yet no
+    // live POSITION (VehiclePositions); the 348s do exactly that.
+    let vehs = (keptStops.length > 1 && lt.vehicles) || [];
+    let ghostVeh = false;
+    if (!vehs.length && keptStops.length > 1) {
+      const g = (lastData.__ghosts || lastData.ghosts || [])
+        .find((x) => x.trip_id === selectedTrip);
+      if (g) { vehs = [{ trip_id: g.trip_id, lat: g.lat, lon: g.lon }]; ghostVeh = true; }
+    }
+    if (vehs.length) {
+      const track = panel.querySelector(".ttrack");
+      // Projection runs over the RENDERED stops (history beyond three served
+      // stops is collapsed), so fractions and .tstop rows stay 1:1.
+      const stops_ = keptStops;
+      const rows = [...track.querySelectorAll(".tstop")];
+      const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
+      const kx = 111320 * Math.cos(stops_[0].lat * Math.PI / 180), ky = 110540;
+      const yOf = (i) => rows[i].offsetTop + rows[i].offsetHeight / 2;
+      for (const v of vehs) {
+        let best = null;
+        for (let i = 0; i < stops_.length - 1; i++) {
+          const ax = stops_[i].lon * kx,     ay = stops_[i].lat * ky;
+          const bx = stops_[i + 1].lon * kx, by = stops_[i + 1].lat * ky;
+          const px = v.lon * kx,            py = v.lat * ky;
+          const dx = bx - ax, dy = by - ay;
+          const t = Math.max(0, Math.min(1,
+            ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
+          const qx = ax + t * dx - px, qy = ay + t * dy - py;
+          const d2 = qx * qx + qy * qy;
+          if (!best || d2 < best.d2) best = { frac: i + t, d2 };
+        }
+        // A route-mate more than ~10 km off this trip's line is running a
+        // pattern these stops don't describe — placing it would just lie.
+        if (!best || best.d2 > 10000 * 10000) continue;
+        const i = Math.min(Math.floor(best.frac), rows.length - 2);
+        const el = document.createElement("div");
+        el.className = "tveh" + (v.trip_id === selectedTrip ? " me" : "")
+                     + (ghostVeh ? " ghost" : "");
+        el.style.top = `${yOf(i) + (best.frac - i) * (yOf(i + 1) - yOf(i))}px`;
+        el.textContent = asText(glyph);
+        track.appendChild(el);
+      }
+    }
+
+    if (keepScroll !== null) {
+      list.scrollTop = keepScroll;
+    } else {
+      const here = panel.querySelector(".tstop.here");
+      if (here) list.scrollTop = here.offsetTop - list.clientHeight / 2;
+    }
+    panelTripRendered = selectedTrip;
   }
 
   // MapLibre draws label text from pre-built glyph PBFs, and ours cover latin
@@ -1951,6 +2273,10 @@
       }
     }
 
+    // The render wiped #board, and the selected trip's stop list with it.
+    lastData = data;                  // renderTripPanel reads lastData
+    renderTripPanel();
+
     const age = data.realtime_feed_age;
     // Three honest states: no feeds configured for this region (no key —
     // waiting would never end), configured but not yet polled, or live.
@@ -1973,6 +2299,7 @@
       renderBoard(data);
       lastData = data;
       updateMap(data);
+      if (selectedTrip) refreshTripTimes(selectedTrip);
     } catch (err) {
       $("board").innerHTML = `<div class="error">${err.message}</div>`;
     }

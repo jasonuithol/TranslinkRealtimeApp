@@ -56,6 +56,7 @@
     color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap;
     padding: 0 16px; cursor: pointer;
   }
+  .near-me[hidden] { display: none; }
   .near-me:hover { color: var(--text); border-color: var(--amber-dim); }
   .near-me:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   .search-close {
@@ -759,6 +760,14 @@
       fitResults();
     }, q.length >= 6 ? 500 : 250);
   });
+
+  // "near me" is only offered where it can actually deliver: the device must
+  // have a geolocation API, and the page must be a secure context (https, or
+  // localhost during dev) — browsers silently deny geolocation on plain http,
+  // so on the bare-IP VPS the button would be a dead end.
+  if (!("geolocation" in navigator) || !window.isSecureContext) {
+    $("near-me").hidden = true;
+  }
 
   $("near-me").addEventListener("click", () => {
     const box = $("results");

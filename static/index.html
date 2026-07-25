@@ -46,6 +46,17 @@
   .change:hover { color: var(--text); border-color: var(--amber-dim); }
   .change:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
+  /* The little goose flies you home — back to the landing and its city
+     quick-starts. Same amber ink as the hero bird. */
+  .home-goose {
+    font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text;
+    font-size: 26px; line-height: 1;
+    color: var(--amber); text-decoration: none;
+    align-self: center;
+  }
+  .home-goose:hover { text-shadow: 0 0 10px rgba(255, 180, 0, 0.55); }
+  .home-goose:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
 
   .search { position: relative; margin-bottom: 22px; }
   .search[hidden] { display: none; }
@@ -129,6 +140,19 @@
     visibility: hidden; pointer-events: none;
   }
   body.landing .search { max-width: 560px; margin: 0 auto; }
+  /* City quick-starts live under the search bar but only on the landing —
+     once a stop is chosen, "Change stop" reopens a plain search. */
+  .city-jumps { display: none; }
+  body.landing .city-jumps:not([hidden]) {
+    display: flex; gap: 10px; justify-content: center; margin-top: 14px;
+  }
+  .city-jumps button {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; color: var(--muted); font: inherit; font-size: 13px;
+    padding: 6px 18px; cursor: pointer;
+  }
+  .city-jumps button:hover { color: var(--text); border-color: var(--amber-dim); }
+  .city-jumps button:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   #hero { display: none; }
   body.landing #hero {
     display: flex; flex-direction: column; align-items: center;
@@ -524,6 +548,36 @@
   /* MapLibre's own chrome, toned down to match the board */
   .maplibregl-ctrl-attrib { background: rgba(12,16,19,.8) !important; }
   .maplibregl-ctrl-attrib a { color: #7f8c99 !important; }
+  /* Pan d-pad: a plus of four buttons below the zoom control. The group box
+     itself goes transparent so the empty corner cells don't render as a big
+     white slab — each button carries its own chrome instead. */
+  .pan-pad {
+    display: grid; grid-template-columns: repeat(3, 29px);
+    background: transparent !important; box-shadow: none !important;
+  }
+  .pan-pad button {
+    font-size: 13px; color: #333; background: #fff; border-radius: 4px;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.1);
+  }
+  .pan-pad button + button { border-top: none; }
+  .pan-pad button:nth-child(1) { grid-area: 1 / 2; }
+  .pan-pad button:nth-child(2) { grid-area: 2 / 1; }
+  .pan-pad button:nth-child(3) { grid-area: 2 / 2; font-size: 17px; }
+  .pan-pad button:nth-child(4) { grid-area: 2 / 3; }
+  .pan-pad button:nth-child(5) { grid-area: 3 / 2; }
+  /* Zoom −/+ as a row, so the whole control stack stays compact. */
+  .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) {
+    display: flex; flex-direction: row-reverse;
+  }
+  .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) button + button { border-top: none; }
+  .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) button:first-child {
+    border-left: 1px solid #ddd;
+  }
+  /* Scale bar, restyled for the dark map. */
+  .maplibregl-ctrl-scale {
+    background: rgba(12,16,19,.75); color: #cfd8e3; border-color: #7f8c99;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px;
+  }
   .maplibregl-popup-content {
     background: var(--panel); color: var(--text);
     font-family: Archivo, system-ui, sans-serif; font-size: 13px;
@@ -548,6 +602,8 @@
     <!-- Only once a stop is chosen; before that the name would just say
          "Next service", which costs a line and tells you nothing. -->
     <div class="titlebar" id="titlebar" hidden>
+      <a class="home-goose" href="/" title="Home page"
+         aria-label="Home page">&#x1FABF;&#xFE0E;</a>
       <h1 id="stop-name"></h1>
       <button class="change" id="change-stop" type="button">Change stop</button>
     </div>
@@ -571,6 +627,9 @@
       <button class="near-me" id="near-me" type="button"
               title="Find stops near your current location">near me</button>
     </div>
+    <!-- One-tap starts: each city's central station, no typing. Filled from
+         /api/regions so only ingested cities are offered. Landing only. -->
+    <div class="city-jumps" id="city-jumps" hidden></div>
     <div class="search-results" id="results" hidden></div>
   </div>
 
@@ -664,6 +723,27 @@
   const regionsReady = fetch("/api/regions").then((r) => r.json())
     .then((regions) => { regionList = regions; })
     .catch(() => { /* search stays single-region, no pan-swap */ });
+
+  // One tap from the landing to each city's central station. Same-region
+  // picks board in place; the rest go through the usual region-swap reload.
+  const CITY_JUMPS = [
+    { rid: "seq", label: "Brisbane",  sid: "place_censta" },
+    { rid: "syd", label: "Sydney",    sid: "t:200060" },
+    { rid: "mel", label: "Melbourne", sid: "2:vic:rail:FSS" },
+  ];
+  regionsReady.then(() => {
+    const wrap = $("city-jumps");
+    for (const { rid, label, sid } of CITY_JUMPS) {
+      if (!regionList.some((r) => r.id === rid)) continue;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.addEventListener("click", () =>
+        rid === region ? selectStop(sid) : openInRegion(rid, sid));
+      wrap.appendChild(b);
+    }
+    wrap.hidden = !wrap.childElementCount;
+  });
   // With no stop there is nothing but the search, so it is always open. Once a
   // stop is chosen the search folds away and "Change stop" brings it back.
   let searchOpen = !stopId;
@@ -1143,6 +1223,46 @@
     });
     window.__map = map;   // debug/UI-test handle (see also ?mapdebug=1)
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), "bottom-left");
+    // Pan buttons for pointer-less setups: drag needs a mouse or finger and
+    // MapLibre's arrow keys need the canvas focused, so panning gets real
+    // buttons under the zoom control. A press is the user taking the camera,
+    // exactly like a drag — so switch auto-fit off (panBy carries no
+    // originalEvent, which is what the movestart takeover check keys on).
+    map.addControl({
+      onAdd(m) {
+        const el = document.createElement("div");
+        el.className = "maplibregl-ctrl maplibregl-ctrl-group pan-pad";
+        for (const [glyph, label, dx, dy] of [
+          ["▲", "Pan up", 0, -1], ["◀", "Pan left", -1, 0],
+          ["⚲", "Centre on stop", 0, 0],
+          ["▶", "Pan right", 1, 0], ["▼", "Pan down", 0, 1],
+        ]) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = glyph;
+          b.title = label;
+          b.setAttribute("aria-label", label);
+          b.addEventListener("click", () => {
+            if (!dx && !dy) {   // home: back to the selected stop
+              const s = lastData?.stop;
+              if (s?.stop_lat != null) {
+                cameraMove(() => m.easeTo({
+                  center: [s.stop_lon, s.stop_lat], duration: 600 }));
+              }
+              return;
+            }
+            autoFit = false;
+            m.panBy([dx * m.getContainer().clientWidth * 0.4,
+                     dy * m.getContainer().clientHeight * 0.4],
+                    { duration: 300 });
+          });
+          el.appendChild(b);
+        }
+        return el;
+      },
+      onRemove(_) { },
+    }, "top-right");
 
     // A bad style silently yields a blank map: MapLibre reports it here and
     // nowhere else, and a style error stops 'load' firing at all, so every

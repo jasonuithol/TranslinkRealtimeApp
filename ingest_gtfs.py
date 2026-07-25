@@ -52,9 +52,10 @@ REGIONS = {
         "url": "https://data.ptv.vic.gov.au/downloads/gtfs.zip",
         "db": Path(os.environ.get("MEL_GTFS_DB") or SEQ_DB.parent / "gtfs-mel.sqlite3"),
         # Inner zips to load: PTV numbers them by mode. Metropolitan Melbourne:
-        # 2 = metro train, 3 = tram, 4 = metro bus. (1/5/6 are regional
-        # train/coach/bus — add them here if the board should cover Victoria.)
-        "modes": ["2", "3", "4"],
+        # 2 = metro train, 3 = tram, 4 = metro bus; plus V/Line: 1 = regional
+        # train, 5 = regional coach. (6 = regional town buses — add it here if
+        # the board should cover those too.)
+        "modes": ["1", "2", "3", "4", "5"],
     },
     "syd": {
         "db": Path(os.environ.get("SYD_GTFS_DB") or SEQ_DB.parent / "gtfs-syd.sqlite3"),
@@ -253,6 +254,43 @@ def load_feed_zip(con: sqlite3.Connection, zf: zipfile.ZipFile, prefix: str = ""
         con.commit()
 
 
+def merge_shared_stations(con: sqlite3.Connection) -> None:
+    """Collapse per-mode copies of the same station onto one parent.
+
+    PTV ships the whole Victorian rail-station registry (ids `vic:rail:<code>`)
+    in EVERY rail mode's inner zip, so after per-mode prefixing a station
+    served by both V/Line and Metro exists twice (1:vic:rail:FSS and
+    2:vic:rail:FSS) — two identical search results, each showing only its own
+    mode's departures. Keep one parent per underlying station — the metro (2:)
+    copy where it exists, so pre-V/Line deep links keep resolving — repoint the
+    other copy's served platforms at it, and drop the leftover duplicate
+    furniture (entrances, decision points, lifts, the parent row itself)."""
+    parents: dict[str, list[str]] = {}
+    for (sid,) in con.execute(
+        "SELECT stop_id FROM stops WHERE location_type = 1"
+        "  AND stop_id LIKE '_:vic:rail:%'"
+    ):
+        parents.setdefault(sid.split(":", 1)[1], []).append(sid)
+    merged = 0
+    for core, ids in parents.items():
+        if len(ids) < 2:
+            continue
+        ids.sort(key=lambda s: (not s.startswith("2:"), s))
+        canonical, dupes = ids[0], ids[1:]
+        for dup in dupes:
+            con.execute(
+                """UPDATE stops SET parent_station = ? WHERE parent_station = ?
+                   AND stop_id IN (SELECT DISTINCT stop_id FROM stop_times)""",
+                (canonical, dup),
+            )
+            con.execute("DELETE FROM stops WHERE parent_station = ?", (dup,))
+            con.execute("DELETE FROM stops WHERE stop_id = ?", (dup,))
+        merged += 1
+    if merged:
+        con.commit()
+        print(f"  merged {merged} stations shared between modes")
+
+
 def ingest(region: str, zips: list[tuple[str, Path]]) -> None:
     # Build into a temp file and swap it in atomically. SCHEMA drops every table
     # first, so ingesting over a live DB would leave the running server querying
@@ -293,6 +331,7 @@ def ingest(region: str, zips: list[tuple[str, Path]]) -> None:
                         with zipfile.ZipFile(tmp_zip.name) as inner:
                             load_feed_zip(con, inner, prefix=f"{mode}:")
 
+    merge_shared_stations(con)
     n = con.execute("SELECT COUNT(*) FROM stop_times").fetchone()[0]
     con.close()
     os.replace(tmp_path, db_path)

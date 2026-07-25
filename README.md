@@ -27,7 +27,7 @@ that spans every region (each result row carries its state).
 | Region | Static GTFS | Realtime | Key needed |
 | --- | --- | --- | --- |
 | `seq` — Translink South East Queensland | public | TripUpdates + VehiclePositions + Alerts | none |
-| `mel` — PTV Melbourne (metro train, tram, metro bus) | public | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.vic.gov.au](https://opendata.transport.vic.gov.au/) (realtime only) |
+| `mel` — PTV Melbourne + V/Line Victoria (metro & regional train, tram, metro bus, regional coach) | public | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.vic.gov.au](https://opendata.transport.vic.gov.au/) (realtime only) |
 | `syd` — TfNSW Sydney (train, metro, bus, ferry, light rail) | keyed | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.nsw.gov.au](https://opendata.transport.nsw.gov.au/) (static **and** realtime) |
 
 Melbourne works **without** a key as a schedule-only board (arrival times from

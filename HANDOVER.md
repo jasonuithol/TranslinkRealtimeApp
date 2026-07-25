@@ -131,13 +131,19 @@ times and the map shows timetable-estimated ghosts.
 - A region is only offered once its DB exists — no Melbourne ingest, no
   switcher, zero behaviour change for a SEQ-only deployment.
 - **Melbourne (`mel`)**: PTV's static GTFS is one outer zip with a *nested* zip
-  per mode (2 = metro train, 3 = tram, 4 = metro bus; ids only unique within a
-  mode). `ingest_gtfs.py --region mel` loads modes 2/3/4 and prefixes every id
-  `<mode>:`; the RT poller config carries the same prefix per feed so realtime
-  ids land on the ingested ones. PTV uses Google's *extended* route types
-  (400 = metro rail, 701 = bus, 900s = tram) — `normalize_route_type()`
-  collapses them to the basic 0-4 set at ingest so rail-station detection, mode
-  emoji and labels all just work. 11.6 M stop_times; ~4 min ingest.
+  per mode (1 = V/Line train, 2 = metro train, 3 = tram, 4 = metro bus,
+  5 = V/Line coach; ids only unique within a mode). `ingest_gtfs.py --region
+  mel` loads modes 1/2/3/4/5 and prefixes every id `<mode>:`; the RT poller
+  config carries the same prefix per feed so realtime ids land on the ingested
+  ones (V/Line has its own `vline/*` RT feeds under prefix 1). PTV uses
+  Google's *extended* route types (400 = metro rail, 204 = coach, 701 = bus,
+  900s = tram) — `normalize_route_type()` collapses them to the basic 0-4 set
+  at ingest so rail-station detection, mode emoji and labels all just work.
+  PTV also ships the same `vic:rail:*` station registry in every rail mode's
+  zip, so a station served by both V/Line and Metro would exist twice after
+  prefixing — `merge_shared_stations()` collapses those onto the metro (`2:`)
+  parent post-ingest so Southern Cross is one search result boarding both.
+  11.8 M stop_times; ~4 min ingest.
 - **Melbourne realtime needs a (free) registered key** and the host has moved
   between VIC data portals, so it is entirely env-driven — unset means
   static-only: `MEL_TRIP_UPDATES="2|https://…;3|https://…"` (mode prefix per

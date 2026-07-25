@@ -50,9 +50,9 @@ if [[ -n "$KEY" ]]; then
   MEL_ENV=(
     -e MEL_API_KEY="$KEY"
     -e MEL_API_KEY_HEADER=KeyID
-    -e MEL_TRIP_UPDATES="2|${VIC}/metro/trip-updates;3|${VIC}/tram/trip-updates;4|${VIC}/bus/trip-updates"
-    -e MEL_VEHICLE_POSITIONS="2|${VIC}/metro/vehicle-positions;3|${VIC}/tram/vehicle-positions;4|${VIC}/bus/vehicle-positions"
-    -e MEL_ALERTS="2|${VIC}/metro/service-alerts;3|${VIC}/tram/service-alerts"
+    -e MEL_TRIP_UPDATES="1|${VIC}/vline/trip-updates;2|${VIC}/metro/trip-updates;3|${VIC}/tram/trip-updates;4|${VIC}/bus/trip-updates"
+    -e MEL_VEHICLE_POSITIONS="1|${VIC}/vline/vehicle-positions;2|${VIC}/metro/vehicle-positions;3|${VIC}/tram/vehicle-positions;4|${VIC}/bus/vehicle-positions"
+    -e MEL_ALERTS="1|${VIC}/vline/service-alerts;2|${VIC}/metro/service-alerts;3|${VIC}/tram/service-alerts"
   )
   echo "==> Melbourne realtime: ON"
 else

@@ -49,13 +49,11 @@
   /* The little goose flies you home — back to the landing and its city
      quick-starts. Same amber ink as the hero bird. */
   .home-goose {
-    font-family: "Noto Emoji", system-ui, sans-serif;
-    font-variant-emoji: text;
-    font-size: 26px; line-height: 1;
     color: var(--amber); text-decoration: none;
     align-self: center;
   }
-  .home-goose:hover { text-shadow: 0 0 10px rgba(255, 180, 0, 0.55); }
+  .home-goose svg { height: 26px; display: block; }
+  .home-goose:hover svg { filter: drop-shadow(0 0 6px rgba(255, 180, 0, 0.55)); }
   .home-goose:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
 
   .search { position: relative; margin-bottom: 22px; }
@@ -162,15 +160,17 @@
     display: flex; flex-direction: column; align-items: center;
     margin: max(14vh, 48px) 0 34px;
   }
-  /* The goose: monochrome outline from the emoji subset, inked in the board's
-     LED amber so it reads as part of the signage, not a sticker. */
-  #hero .goose {
-    font-family: "Noto Emoji", system-ui, sans-serif;
-    font-variant-emoji: text;
-    font-size: 96px; line-height: 1;
-    color: var(--amber);
-    text-shadow: 0 0 28px rgba(255, 180, 0, 0.35);
+  /* The goose: the emoji glyph's own outlines, lifted from the subset font
+     into an inline SVG so the body can take a solid fill — green under the
+     gold line art (green and gold, for Australia). Same shape everywhere,
+     no colour-emoji font roulette. drop-shadow glows where text-shadow
+     can't reach an SVG. */
+  #hero .goose { color: var(--amber); }
+  #hero .goose svg {
+    height: 96px; display: block;
+    filter: drop-shadow(0 0 28px rgba(255, 180, 0, 0.35));
   }
+  .goose-body { fill: #00843d; }   /* Australian national green */
 
   .board {
     border: 1px solid var(--line);
@@ -600,6 +600,12 @@
      (the script runs synchronously at the end of the body). -->
 <body class="landing">
 <main>
+<!-- The goose, as reusable vector art: outer contour of the emoji glyph
+     filled green, the full line art in the current text colour on top. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="goose-shape"><path class="goose-body" d="M1267 74Q1181 74 1127.0 35.0Q1073 -4 1023 -103Q1013 -123 991.5 -149.5Q970 -176 935.0 -212.5Q900 -249 849 -300Q773 -377 737.0 -464.0Q701 -551 701 -666Q701 -734 726.0 -809.5Q751 -885 803 -977Q847 -1054 865.0 -1109.0Q883 -1164 883 -1223Q883 -1293 847.5 -1333.0Q812 -1373 727 -1400L475 -1443Q440 -1448 440 -1484Q440 -1498 448.5 -1510.5Q457 -1523 470 -1530L577 -1590Q593 -1599 605.5 -1614.0Q618 -1629 630 -1656Q641 -1679 656.5 -1692.5Q672 -1706 690 -1706Q701 -1706 708 -1701Q740 -1718 782.0 -1729.0Q824 -1740 855 -1740Q946 -1740 1019.5 -1692.0Q1093 -1644 1136.0 -1562.0Q1179 -1480 1179 -1376Q1179 -1293 1164.0 -1204.0Q1149 -1115 1149 -1053Q1149 -1001 1161.0 -967.0Q1173 -933 1207 -895Q1228 -899 1250.5 -901.0Q1273 -903 1294 -903Q1372 -903 1454.0 -879.0Q1536 -855 1642 -799Q1725 -756 1778.5 -734.0Q1832 -712 1882.0 -705.0Q1932 -698 2004 -698Q2057 -698 2092.0 -699.0Q2127 -700 2160 -701Q2111 -621 2081.5 -567.0Q2052 -513 2034.5 -473.5Q2017 -434 2003 -396Q1948 -248 1871.0 -156.5Q1794 -65 1683.0 -22.5Q1572 20 1415 22Q1350 74 1267 74Z"/><path fill="currentColor" d="M1267 74Q1181 74 1127.0 35.0Q1073 -4 1023 -103Q1013 -123 991.5 -149.5Q970 -176 935.0 -212.5Q900 -249 849 -300Q773 -377 737.0 -464.0Q701 -551 701 -666Q701 -734 726.0 -809.5Q751 -885 803 -977Q847 -1054 865.0 -1109.0Q883 -1164 883 -1223Q883 -1293 847.5 -1333.0Q812 -1373 727 -1400L475 -1443Q440 -1448 440 -1484Q440 -1498 448.5 -1510.5Q457 -1523 470 -1530L577 -1590Q593 -1599 605.5 -1614.0Q618 -1629 630 -1656Q641 -1679 656.5 -1692.5Q672 -1706 690 -1706Q701 -1706 708 -1701Q740 -1718 782.0 -1729.0Q824 -1740 855 -1740Q946 -1740 1019.5 -1692.0Q1093 -1644 1136.0 -1562.0Q1179 -1480 1179 -1376Q1179 -1293 1164.0 -1204.0Q1149 -1115 1149 -1053Q1149 -1001 1161.0 -967.0Q1173 -933 1207 -895Q1228 -899 1250.5 -901.0Q1273 -903 1294 -903Q1372 -903 1454.0 -879.0Q1536 -855 1642 -799Q1725 -756 1778.5 -734.0Q1832 -712 1882.0 -705.0Q1932 -698 2004 -698Q2057 -698 2092.0 -699.0Q2127 -700 2160 -701Q2111 -621 2081.5 -567.0Q2052 -513 2034.5 -473.5Q2017 -434 2003 -396Q1948 -248 1871.0 -156.5Q1794 -65 1683.0 -22.5Q1572 20 1415 22Q1350 74 1267 74ZM1060 340Q954 340 915.5 325.0Q877 310 877 280Q877 243 956 224Q1045 202 1077.5 183.5Q1110 165 1126 131L1181 16L1346 20Q1319 56 1292.5 116.0Q1266 176 1266 231Q1266 296 1218.5 318.0Q1171 340 1060 340ZM1587 325Q1511 325 1486.0 311.5Q1461 298 1461 271Q1461 245 1494 232Q1565 206 1584.5 191.5Q1604 177 1604 153Q1604 124 1578.5 78.5Q1553 33 1503 -37L1670 -72L1727 33Q1752 79 1779.5 101.0Q1807 123 1807 155Q1807 174 1788.5 204.5Q1770 235 1743.5 264.5Q1717 294 1691 311Q1678 320 1655.5 322.5Q1633 325 1587 325ZM1467 -221Q1319 -221 1204.5 -272.5Q1090 -324 1024.5 -414.5Q959 -505 959 -621Q959 -648 962.5 -673.0Q966 -698 970 -711L1048 -695Q1045 -687 1042.0 -663.5Q1039 -640 1039 -621Q1039 -528 1094.0 -455.5Q1149 -383 1245.5 -342.0Q1342 -301 1467 -301Q1540 -301 1606.5 -327.5Q1673 -354 1725 -402L1653 -457L1701 -521L1849 -410Q1757 -311 1666.0 -266.0Q1575 -221 1467 -221ZM1267 -6Q1298 -6 1325.5 -18.0Q1353 -30 1385 -58Q1538 -58 1640.0 -92.5Q1742 -127 1809.5 -207.0Q1877 -287 1927 -424Q1939 -457 1963.5 -511.0Q1988 -565 2019 -618Q2009 -618 2000.0 -618.0Q1991 -618 1982 -618Q1914 -618 1861.5 -627.0Q1809 -636 1750.0 -660.5Q1691 -685 1602 -730Q1503 -781 1432.5 -802.0Q1362 -823 1294 -823Q1263 -823 1235.5 -819.0Q1208 -815 1182 -804Q1121 -861 1095.0 -918.5Q1069 -976 1069 -1053Q1069 -1099 1076.5 -1155.0Q1084 -1211 1091.5 -1268.5Q1099 -1326 1099 -1376Q1099 -1457 1066.5 -1521.5Q1034 -1586 979.0 -1623.0Q924 -1660 855 -1660Q827 -1660 788.0 -1648.0Q749 -1636 738 -1624Q736 -1609 734.5 -1593.0Q733 -1577 733 -1559Q733 -1537 735.0 -1518.5Q737 -1500 741 -1480Q863 -1438 913.0 -1380.5Q963 -1323 963 -1223Q963 -1153 942.0 -1088.5Q921 -1024 871 -935Q824 -852 802.5 -787.5Q781 -723 781 -666Q781 -601 793.5 -547.5Q806 -494 833.5 -447.5Q861 -401 906 -356Q971 -291 1008.5 -250.5Q1046 -210 1065.5 -184.5Q1085 -159 1094 -139Q1132 -63 1168.5 -34.5Q1205 -6 1267 -6ZM855 -1532Q837 -1532 825.0 -1544.0Q813 -1556 813 -1574Q813 -1592 825.0 -1604.0Q837 -1616 855 -1616Q873 -1616 885.0 -1604.0Q897 -1592 897 -1574Q897 -1556 885.0 -1544.0Q873 -1532 855 -1532Z"/></g>
+</defs></svg>
+
   <header>
     <!-- No region row: the region is implicit — search results carry their
          state, and panning the map far enough swaps regions by itself. -->
@@ -607,7 +613,7 @@
          "Next service", which costs a line and tells you nothing. -->
     <div class="titlebar" id="titlebar" hidden>
       <a class="home-goose" href="/" title="Home page"
-         aria-label="Home page">&#x1FABF;&#xFE0E;</a>
+         aria-label="Home page"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></a>
       <h1 id="stop-name"></h1>
       <button class="change" id="change-stop" type="button">Change stop</button>
     </div>
@@ -615,7 +621,7 @@
 
   <!-- Landing logo; only visible while no stop is chosen. -->
   <div id="hero">
-    <div class="goose" role="img" aria-label="Next Service">&#x1FABF;&#xFE0E;</div>
+    <div class="goose" role="img" aria-label="Next Service"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></div>
   </div>
 
   <div class="search" id="search-wrap">
@@ -735,6 +741,8 @@
     { rid: "seq", label: "Brisbane",  sid: "place_censta", extras: [
         { label: "Varsity Lakes", sid: "place_varsta" },   // train + bus
         { label: "Helensvale",    sid: "place_helsta" },   // train + tram
+        { label: "Kippa-Ring",    sid: "place_kprsta" },   // train
+        { label: "Noosa Heads",   sid: "place_nhdstn" },   // bus interchange
     ] },
     { rid: "syd", label: "Sydney",    sid: "t:200060", extras: [
         { label: "Wollongong", sid: "t:250020" },

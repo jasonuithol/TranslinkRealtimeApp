@@ -144,8 +144,12 @@
      once a stop is chosen, "Change stop" reopens a plain search. */
   .city-jumps { display: none; }
   body.landing .city-jumps:not([hidden]) {
-    display: flex; gap: 10px; justify-content: center; margin-top: 14px;
+    display: flex; gap: 10px; justify-content: center; align-items: flex-start;
+    margin-top: 14px;
   }
+  /* A column per city: the city pill on top, favourite interchanges under. */
+  .city-col { display: flex; flex-direction: column; gap: 8px; }
+  .city-jumps button.sub { font-size: 12px; padding: 4px 14px; }
   .city-jumps button {
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 999px; color: var(--muted); font: inherit; font-size: 13px;
@@ -724,25 +728,46 @@
     .then((regions) => { regionList = regions; })
     .catch(() => { /* search stays single-region, no pan-swap */ });
 
-  // One tap from the landing to each city's central station. Same-region
-  // picks board in place; the rest go through the usual region-swap reload.
+  // One tap from the landing into the network: each city's central station,
+  // with favourite interchanges tucked under their city. Same-region picks
+  // board in place; the rest go through the usual region-swap reload.
   const CITY_JUMPS = [
-    { rid: "seq", label: "Brisbane",  sid: "place_censta" },
-    { rid: "syd", label: "Sydney",    sid: "t:200060" },
-    { rid: "mel", label: "Melbourne", sid: "2:vic:rail:FSS" },
+    { rid: "seq", label: "Brisbane",  sid: "place_censta", extras: [
+        { label: "Varsity Lakes", sid: "place_varsta" },   // train + bus
+        { label: "Helensvale",    sid: "place_helsta" },   // train + tram
+    ] },
+    { rid: "syd", label: "Sydney",    sid: "t:200060", extras: [
+        { label: "Wollongong", sid: "t:250020" },
+        { label: "Penrith",    sid: "t:275010" },
+        { label: "Gosford",    sid: "t:225040" },
+    ] },
+    { rid: "mel", label: "Melbourne", sid: "2:vic:rail:FSS", extras: [
+        { label: "Geelong",   sid: "1:vic:rail:GEL" },   // V/Line
+        { label: "Frankston", sid: "2:vic:rail:FKN" },   // metro
+    ] },
   ];
   regionsReady.then(() => {
     const wrap = $("city-jumps");
-    for (const { rid, label, sid } of CITY_JUMPS) {
-      if (!regionList.some((r) => r.id === rid)) continue;
+    const jump = (rid, sid, label, cls) => {
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = label;
+      if (cls) b.className = cls;
       b.addEventListener("click", () =>
         rid === region ? selectStop(sid) : openInRegion(rid, sid));
-      wrap.appendChild(b);
+      return b;
+    };
+    for (const { rid, label, sid, extras } of CITY_JUMPS) {
+      if (!regionList.some((r) => r.id === rid)) continue;
+      const col = document.createElement("div");
+      col.className = "city-col";
+      col.appendChild(jump(rid, sid, label));
+      for (const x of extras || []) {
+        col.appendChild(jump(rid, x.sid, x.label, "sub"));
+      }
+      wrap.appendChild(col);
     }
-    wrap.hidden = !wrap.childElementCount;
+    wrap.hidden = !wrap.querySelector("button");
   });
   // With no stop there is nothing but the search, so it is always open. Once a
   // stop is chosen the search folds away and "Change stop" brings it back.

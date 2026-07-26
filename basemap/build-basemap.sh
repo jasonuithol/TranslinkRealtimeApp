@@ -25,11 +25,15 @@ CACHE_DIR="${CACHE_DIR:-/cache}"
 #                         one coach that continues to Adelaide is out of box.
 #   REGION=syd            Sydney + the intercity network: Newcastle, Lithgow,
 #                         Goulburn and Bomaderry/Kiama are all in the timetable
+#   REGION=ade            settled South Australia — the Adelaide Metro feed
+#                         carries country coaches out to Ceduna/Port Lincoln
+#                         and the Kangaroo Island ferry, not just the metro
 REGION="${REGION:-seq}"
 case "$REGION" in
   seq) DEFAULT_BBOX="151.8,-28.3,153.6,-26.0" ;;
   mel) DEFAULT_BBOX="140.9,-39.2,150.3,-33.9" ;;
   syd) DEFAULT_BBOX="149.5,-35.0,151.9,-32.6" ;;
+  ade) DEFAULT_BBOX="133.4,-38.1,141.1,-31.9" ;;
   *)   echo "Unknown REGION '$REGION' — set BBOX and OUT_NAME yourself." >&2
        DEFAULT_BBOX="" ;;
 esac

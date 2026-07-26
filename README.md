@@ -1,9 +1,9 @@
-# Next Service — a live departures board for Brisbane, Melbourne & Sydney
+# Next Service — a live departures board for Brisbane, Melbourne, Sydney & Adelaide
 
 A "next service arriving in X minutes" board with a live map, for any public
-transport stop in **South East Queensland (Translink)**, **metropolitan
-Melbourne (PTV)** or **Sydney (TfNSW)** — trains, metro, trams, buses and
-ferries. One codebase, one UI, a region switcher in the header, and a search
+transport stop in **South East Queensland (Translink)**, **Victoria (PTV +
+V/Line)**, **Sydney (TfNSW)** or **South Australia (Adelaide Metro)** —
+trains, metro, trams, buses and ferries. One codebase, one UI, a region switcher in the header, and a search
 that spans every region (each result row carries its state).
 
 - **Live departures board** — realtime arrival predictions overlaid on the
@@ -29,6 +29,7 @@ that spans every region (each result row carries its state).
 | `seq` — Translink South East Queensland | public | TripUpdates + VehiclePositions + Alerts | none |
 | `mel` — PTV Melbourne + V/Line Victoria (metro & regional train, tram, metro bus, regional coach) | public | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.vic.gov.au](https://opendata.transport.vic.gov.au/) (realtime only) |
 | `syd` — TfNSW Sydney (train, metro, bus, ferry, light rail) | keyed | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.nsw.gov.au](https://opendata.transport.nsw.gov.au/) (static **and** realtime) |
+| `ade` — Adelaide Metro South Australia (train, tram, bus, country coaches, Kangaroo Island ferry) | public | TripUpdates + VehiclePositions + Alerts | none |
 
 Melbourne works **without** a key as a schedule-only board (arrival times from
 the timetable, map positions estimated). With a key, it's fully live — set the
@@ -51,10 +52,12 @@ podman build -t translink-departures .
 podman volume create translink-data
 
 # Timetables (SEQ ~1 min after download; Melbourne's zip is 292 MB;
-# Sydney downloads one zip per mode and needs your TfNSW key)
+# Sydney downloads one zip per mode and needs your TfNSW key;
+# Adelaide is one small public zip)
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region mel
 podman run --rm -v translink-data:/data -e SYD_API_KEY=<key> translink-departures python ingest_gtfs.py --region syd
+podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region ade
 
 # Self-built vector basemaps (Planetiler, separate builder image; the first
 # build downloads ~2 GB of OSM/Natural Earth sources into the cache volume)
@@ -62,6 +65,7 @@ podman build -f basemap/Containerfile -t translink-basemap .
 podman run --rm -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 podman run --rm -e REGION=mel -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 podman run --rm -e REGION=syd -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
+podman run --rm -e REGION=ade -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 
 podman run -d -p 8000:8000 -v translink-data:/data translink-departures
 ```
@@ -119,6 +123,8 @@ timetable.
   writing) via the Transport Victoria Open Data portal.
 - NSW data © Transport for NSW (CC BY 4.0 at time of writing) via the TfNSW
   Open Data Hub.
+- SA data © Adelaide Metro / Government of South Australia (CC BY 4.0 at time
+  of writing) via gtfs.adelaidemetro.com.au.
 - Basemap © OpenMapTiles © OpenStreetMap contributors; geocoding by
   OpenStreetMap/Nominatim.
 

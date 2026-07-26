@@ -22,7 +22,10 @@ IMAGE_REF="${IMAGE_REF:-ghcr.io/jasonuithol/translink-departures:latest}"
 APP_PORT="${APP_PORT:-8000}"
 MEL_BASEMAP_SRC="${MEL_BASEMAP_SRC:-/tmp/mel.pmtiles}"
 SYD_BASEMAP_SRC="${SYD_BASEMAP_SRC:-/tmp/syd.pmtiles}"
+ADE_BASEMAP_SRC="${ADE_BASEMAP_SRC:-/tmp/ade.pmtiles}"
 INGEST_MEL="${INGEST_MEL:-yes}"
+# Adelaide's static zip is public, keyless and small (~18 MB).
+INGEST_ADE="${INGEST_ADE:-yes}"
 # Sydney's static downloads need the TfNSW key; 'auto' ingests only when the
 # quadlet already carries SYD_API_KEY (i.e. enable-syd-vps.sh has run).
 INGEST_SYD="${INGEST_SYD:-auto}"
@@ -53,6 +56,12 @@ if [[ "${INGEST_MEL}" == "yes" ]]; then
   echo "==> Ingesting the Melbourne timetable (PTV zip is ~292 MB; a few minutes)…"
   as_deploy "podman run --rm -v translink-data:/data '${IMAGE_REF}' \
     python ingest_gtfs.py --region mel"
+fi
+
+if [[ "${INGEST_ADE}" == "yes" ]]; then
+  echo "==> Ingesting the Adelaide timetable…"
+  as_deploy "podman run --rm -v translink-data:/data '${IMAGE_REF}' \
+    python ingest_gtfs.py --region ade"
 fi
 
 # The Sydney downloads are authenticated, so the ingest needs the key the
@@ -92,6 +101,7 @@ install_basemap() {
 }
 install_basemap "${MEL_BASEMAP_SRC}" mel
 install_basemap "${SYD_BASEMAP_SRC}" syd
+install_basemap "${ADE_BASEMAP_SRC}" ade
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"

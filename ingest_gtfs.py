@@ -20,6 +20,8 @@ Regions:
        (--key or SYD_API_KEY; sent as `Authorization: apikey <key>`). Same
        per-feed prefixing as mel. A source that 404s is skipped with a
        warning, so an endpoint moving doesn't sink the whole ingest.
+  ade  Adelaide Metro — one flat GTFS zip, ids globally unique, no key
+       (same shape as seq; bus, tram and train in the one feed).
 
 The static feeds change roughly weekly; re-run this to refresh.
 Only the tables needed for a departures board are loaded.
@@ -56,6 +58,12 @@ REGIONS = {
         # train, 5 = regional coach. (6 = regional town buses — add it here if
         # the board should cover those too.)
         "modes": ["1", "2", "3", "4", "5"],
+    },
+    "ade": {
+        "url": "https://gtfs.adelaidemetro.com.au/v1/static/latest/google_transit.zip",
+        "db": Path(os.environ.get("ADE_GTFS_DB") or SEQ_DB.parent / "gtfs-ade.sqlite3"),
+        # One flat zip, no prefixing — same shape as seq.
+        "modes": None,
     },
     "syd": {
         "db": Path(os.environ.get("SYD_GTFS_DB") or SEQ_DB.parent / "gtfs-syd.sqlite3"),

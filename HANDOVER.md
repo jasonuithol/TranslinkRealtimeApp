@@ -190,6 +190,19 @@ times and the map shows timetable-estimated ghosts.
   emoji subset since v5. Verified end-to-end against mock per-mode zips:
   ingest → three-region search (NSW rows, ☸/🏫 icons) → ferry board with ⛴
   badges and harbour ghosts on the self-built `syd.pmtiles`.
+- **Adelaide (`ade`, added 2026-07-26)**: the easy region — Adelaide Metro is
+  SEQ-shaped end to end. One flat public GTFS zip (~18 MB, ids globally
+  unique, basic route types already: 0 tram / 2 rail / 3 bus / 4 ferry), and
+  public **keyless** GTFS-RT at `gtfs.adelaidemetro.com.au/v1/realtime/`
+  {trip_updates, vehicle_positions, service_alerts} — hardcoded in `REGIONS`
+  like SEQ's, no env needed anywhere. Watch-outs: the feed is state-wide, not
+  metro — country coaches to Ceduna/Port Lincoln and the SEALNK Kangaroo
+  Island ferry — so the `ade` basemap bbox covers settled SA (learned from
+  the Geelong blank-map bug: the basemap must cover the *network*, not the
+  city). Adelaide Railway Station is a single flat stop `6665` (no parent
+  station, all 1,679 rail trips terminate there); the tram stop outside is a
+  separate parent `50093`. Their portal calls the RT feeds "BETA".
+  ~1 M stop_times; DB `/data/gtfs-ade.sqlite3` (`ADE_GTFS_DB` to override).
 
 ## Keys & credentials needed for full functionality
 

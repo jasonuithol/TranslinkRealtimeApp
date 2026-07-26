@@ -153,6 +153,28 @@ REGIONS: dict = {
         "geocode_viewbox": "150.5,-34.25,151.4,-33.35",
         "center": [151.2093, -33.8688],
     },
+    "ade": {
+        "name": "Adelaide Metro · Adelaide",
+        "state": "SA",
+        "tz": ZoneInfo("Australia/Adelaide"),
+        "db": Path(os.environ.get("ADE_GTFS_DB") or DB_PATH.parent / "gtfs-ade.sqlite3"),
+        "basemap": BASEMAP_DIR / "ade.pmtiles",
+        # Adelaide Metro's GTFS-RT is public and keyless, SEQ-style: one flat
+        # feed of each kind, ids matching the unprefixed static feed.
+        # Verified live 2026-07-26 (gtfs.adelaidemetro.com.au, "BETA").
+        "trip_updates": [
+            {"url": "https://gtfs.adelaidemetro.com.au/v1/realtime/trip_updates",
+             "prefix": ""}],
+        "vehicle_positions": [
+            {"url": "https://gtfs.adelaidemetro.com.au/v1/realtime/vehicle_positions",
+             "prefix": ""}],
+        "alerts": [
+            {"url": "https://gtfs.adelaidemetro.com.au/v1/realtime/service_alerts",
+             "prefix": ""}],
+        "headers": {},
+        "geocode_viewbox": "138.4,-35.4,139.1,-34.4",
+        "center": [138.6007, -34.9212],
+    },
 }
 
 # A region is offered to the frontend only once its timetable exists, so a

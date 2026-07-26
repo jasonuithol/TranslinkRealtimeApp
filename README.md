@@ -22,6 +22,16 @@ that spans every region (each result row carries its state).
   be placed on the map (live GPS, en route per the timetable, or about to
   depart its origin).
 
+## Screenshots  
+  
+![Home Page](screenshot-home.png)
+
+![Arrivals](screenshot-arrivals.png)
+
+![Route Timetable](screenshot-timeline.png)
+
+![Map](screenshot-map.png)
+  
 ## Regions
 
 | Region | Static GTFS | Realtime | Key needed |

@@ -250,7 +250,34 @@ times and the map shows timetable-estimated ghosts.
   browsing mode (the "clicked Stradbroke, lost the goose" bug). The
   moveend hand-over is now gated on `!stopId`: it only runs while
   browsing, never while a stop's board is anchored.
-- **Timezone badge (2026-07-26)**: six networks span three Australian
+- **TV / D-pad input mode (2026-07-27)**: smart TVs and consoles have no
+  mouse, so the board carries a joystick input mode — auto-detected
+  (`(pointer: none)` media query OR a TV/console user agent), persisted,
+  and always overridable from the fixed 🖱/🕹 chip top-right. In it, arrow
+  keys walk every visible control tab-style (`focusables()` filters by
+  rect + `visibility`, which drops the landing's parked split; Left/Right
+  stay with the caret inside text inputs — cycle out with Up/Down) and a
+  plain `:focus` ring is forced visible under `body.joy`. The map div is
+  focusable; Enter on it opens **map joystick mode**: a centre reticle
+  (`#joy-reticle`), arrows pan (`autoFit=false`, same as a drag), and a
+  250 ms scan (`joyWatch`) arms a 1 s dwell whenever a clickable feature
+  sits inside the ring — the fill's 1 s sweep is the countdown. Two ways
+  in: OK/Enter with the map focused (canvas focus counts — a mouse click
+  focuses MapLibre's canvas, not our #map entry), or clicking the map
+  while in joystick input mode (the spec'd path; the entering click is
+  consumed, capture-phase, so it doesn't also select what was under the
+  pointer — and so is the exiting one, making click a clean toggle). Firing
+  resolves the target like the real click pipeline: vehicles/ghosts get a
+  synthetic canvas click at their projected point (icons are
+  centre-anchored, so it lands); stops are `selectStop`ed directly, because
+  their icons are **bottom-anchored** — a pixel click at the raw point
+  slips under the icon and reads as empty map (that bug shipped for one
+  test run). A fired target is latched (`joyFiredKey`) so an unchanged ring
+  doesn't re-click every 1.25 s — for a stop that was an infinite
+  re-select loop. A real (`isTrusted`) click, Escape, or a TV back button
+  (LG 461 / Samsung 10009) exits back to normal cycling. The 15 s board
+  refresh restores focus to the same row by `data-trip` so a D-pad user
+  parked mid-list isn't dumped to `<body>` twice a minute.
   timezones, so the titlebar shows the region's clock ("AWST", "ACST", …)
   next to the stop name — derived client-side from the config's IANA `tz`
   via `Intl.DateTimeFormat(…, {timeZoneName: "short"})`, so DST renames

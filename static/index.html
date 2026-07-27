@@ -54,6 +54,48 @@
     padding: 2px 9px; white-space: nowrap;
   }
   .tzbadge:empty { display: none; }
+  /* Input-mode chip: TVs and consoles drive with a D-pad, not a mouse.
+     Auto-detected at load, always overridable from here. */
+  .input-toggle {
+    position: fixed; top: 10px; right: 12px; z-index: 60;
+    background: rgba(10, 12, 16, 0.8);
+    border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: 11px; letter-spacing: 0.06em;
+    padding: 3px 10px; cursor: pointer; white-space: nowrap;
+  }
+  .input-toggle:hover { color: var(--text); border-color: var(--amber-dim); }
+  .input-toggle:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
+  /* In joystick mode focus is walked programmatically — no click or Tab ever
+     earns :focus-visible — so whatever holds focus must always show a ring. */
+  body.joy :focus { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* Joystick mode on the map: a centre reticle; whatever sits inside it for
+     one second gets the click. The fill's 1 s sweep IS the countdown. */
+  #joy-reticle {
+    position: absolute; inset: 0; margin: auto; z-index: 4;
+    width: 58px; height: 58px; border-radius: 50%;
+    border: 2px solid var(--amber);
+    box-shadow: 0 0 12px rgba(255, 180, 0, 0.4);
+    pointer-events: none;
+  }
+  #joy-reticle[hidden] { display: none; }
+  /* Announce itself: the ring pops in at the map's centre on entry. */
+  #joy-reticle:not([hidden]) { animation: reticle-pop 0.25s ease-out; }
+  @keyframes reticle-pop {
+    from { transform: scale(1.7); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+  #joy-reticle::before, #joy-reticle::after {
+    content: ""; position: absolute; background: var(--amber); opacity: 0.35;
+  }
+  #joy-reticle::before { left: -12px; right: -12px; top: 50%; height: 1px; }
+  #joy-reticle::after { top: -12px; bottom: -12px; left: 50%; width: 1px; }
+  #joy-reticle .fill {
+    position: absolute; inset: 5px; border-radius: 50%;
+    background: rgba(255, 180, 0, 0.28); transform: scale(0);
+  }
+  #joy-reticle.arming .fill { transform: scale(1); transition: transform 1s linear; }
+  #joy-reticle.fired { background: rgba(255, 180, 0, 0.45); }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
   /* The little goose flies you home — back to the landing and its city
      quick-starts. Same amber ink as the hero bird. */
@@ -615,6 +657,10 @@
   <g id="goose-shape"><path class="goose-body" d="M1267 74Q1181 74 1127.0 35.0Q1073 -4 1023 -103Q1013 -123 991.5 -149.5Q970 -176 935.0 -212.5Q900 -249 849 -300Q773 -377 737.0 -464.0Q701 -551 701 -666Q701 -734 726.0 -809.5Q751 -885 803 -977Q847 -1054 865.0 -1109.0Q883 -1164 883 -1223Q883 -1293 847.5 -1333.0Q812 -1373 727 -1400L475 -1443Q440 -1448 440 -1484Q440 -1498 448.5 -1510.5Q457 -1523 470 -1530L577 -1590Q593 -1599 605.5 -1614.0Q618 -1629 630 -1656Q641 -1679 656.5 -1692.5Q672 -1706 690 -1706Q701 -1706 708 -1701Q740 -1718 782.0 -1729.0Q824 -1740 855 -1740Q946 -1740 1019.5 -1692.0Q1093 -1644 1136.0 -1562.0Q1179 -1480 1179 -1376Q1179 -1293 1164.0 -1204.0Q1149 -1115 1149 -1053Q1149 -1001 1161.0 -967.0Q1173 -933 1207 -895Q1228 -899 1250.5 -901.0Q1273 -903 1294 -903Q1372 -903 1454.0 -879.0Q1536 -855 1642 -799Q1725 -756 1778.5 -734.0Q1832 -712 1882.0 -705.0Q1932 -698 2004 -698Q2057 -698 2092.0 -699.0Q2127 -700 2160 -701Q2111 -621 2081.5 -567.0Q2052 -513 2034.5 -473.5Q2017 -434 2003 -396Q1948 -248 1871.0 -156.5Q1794 -65 1683.0 -22.5Q1572 20 1415 22Q1350 74 1267 74Z"/><path fill="currentColor" d="M1267 74Q1181 74 1127.0 35.0Q1073 -4 1023 -103Q1013 -123 991.5 -149.5Q970 -176 935.0 -212.5Q900 -249 849 -300Q773 -377 737.0 -464.0Q701 -551 701 -666Q701 -734 726.0 -809.5Q751 -885 803 -977Q847 -1054 865.0 -1109.0Q883 -1164 883 -1223Q883 -1293 847.5 -1333.0Q812 -1373 727 -1400L475 -1443Q440 -1448 440 -1484Q440 -1498 448.5 -1510.5Q457 -1523 470 -1530L577 -1590Q593 -1599 605.5 -1614.0Q618 -1629 630 -1656Q641 -1679 656.5 -1692.5Q672 -1706 690 -1706Q701 -1706 708 -1701Q740 -1718 782.0 -1729.0Q824 -1740 855 -1740Q946 -1740 1019.5 -1692.0Q1093 -1644 1136.0 -1562.0Q1179 -1480 1179 -1376Q1179 -1293 1164.0 -1204.0Q1149 -1115 1149 -1053Q1149 -1001 1161.0 -967.0Q1173 -933 1207 -895Q1228 -899 1250.5 -901.0Q1273 -903 1294 -903Q1372 -903 1454.0 -879.0Q1536 -855 1642 -799Q1725 -756 1778.5 -734.0Q1832 -712 1882.0 -705.0Q1932 -698 2004 -698Q2057 -698 2092.0 -699.0Q2127 -700 2160 -701Q2111 -621 2081.5 -567.0Q2052 -513 2034.5 -473.5Q2017 -434 2003 -396Q1948 -248 1871.0 -156.5Q1794 -65 1683.0 -22.5Q1572 20 1415 22Q1350 74 1267 74ZM1060 340Q954 340 915.5 325.0Q877 310 877 280Q877 243 956 224Q1045 202 1077.5 183.5Q1110 165 1126 131L1181 16L1346 20Q1319 56 1292.5 116.0Q1266 176 1266 231Q1266 296 1218.5 318.0Q1171 340 1060 340ZM1587 325Q1511 325 1486.0 311.5Q1461 298 1461 271Q1461 245 1494 232Q1565 206 1584.5 191.5Q1604 177 1604 153Q1604 124 1578.5 78.5Q1553 33 1503 -37L1670 -72L1727 33Q1752 79 1779.5 101.0Q1807 123 1807 155Q1807 174 1788.5 204.5Q1770 235 1743.5 264.5Q1717 294 1691 311Q1678 320 1655.5 322.5Q1633 325 1587 325ZM1467 -221Q1319 -221 1204.5 -272.5Q1090 -324 1024.5 -414.5Q959 -505 959 -621Q959 -648 962.5 -673.0Q966 -698 970 -711L1048 -695Q1045 -687 1042.0 -663.5Q1039 -640 1039 -621Q1039 -528 1094.0 -455.5Q1149 -383 1245.5 -342.0Q1342 -301 1467 -301Q1540 -301 1606.5 -327.5Q1673 -354 1725 -402L1653 -457L1701 -521L1849 -410Q1757 -311 1666.0 -266.0Q1575 -221 1467 -221ZM1267 -6Q1298 -6 1325.5 -18.0Q1353 -30 1385 -58Q1538 -58 1640.0 -92.5Q1742 -127 1809.5 -207.0Q1877 -287 1927 -424Q1939 -457 1963.5 -511.0Q1988 -565 2019 -618Q2009 -618 2000.0 -618.0Q1991 -618 1982 -618Q1914 -618 1861.5 -627.0Q1809 -636 1750.0 -660.5Q1691 -685 1602 -730Q1503 -781 1432.5 -802.0Q1362 -823 1294 -823Q1263 -823 1235.5 -819.0Q1208 -815 1182 -804Q1121 -861 1095.0 -918.5Q1069 -976 1069 -1053Q1069 -1099 1076.5 -1155.0Q1084 -1211 1091.5 -1268.5Q1099 -1326 1099 -1376Q1099 -1457 1066.5 -1521.5Q1034 -1586 979.0 -1623.0Q924 -1660 855 -1660Q827 -1660 788.0 -1648.0Q749 -1636 738 -1624Q736 -1609 734.5 -1593.0Q733 -1577 733 -1559Q733 -1537 735.0 -1518.5Q737 -1500 741 -1480Q863 -1438 913.0 -1380.5Q963 -1323 963 -1223Q963 -1153 942.0 -1088.5Q921 -1024 871 -935Q824 -852 802.5 -787.5Q781 -723 781 -666Q781 -601 793.5 -547.5Q806 -494 833.5 -447.5Q861 -401 906 -356Q971 -291 1008.5 -250.5Q1046 -210 1065.5 -184.5Q1085 -159 1094 -139Q1132 -63 1168.5 -34.5Q1205 -6 1267 -6ZM855 -1532Q837 -1532 825.0 -1544.0Q813 -1556 813 -1574Q813 -1592 825.0 -1604.0Q837 -1616 855 -1616Q873 -1616 885.0 -1604.0Q897 -1592 897 -1574Q897 -1556 885.0 -1544.0Q873 -1532 855 -1532Z"/></g>
 </defs></svg>
 
+  <!-- Mouse vs joystick (D-pad) input. Auto-detected for TVs and consoles;
+       this chip is the manual override either way. -->
+  <button id="input-toggle" class="input-toggle" type="button"></button>
+
   <header>
     <!-- No region row: the region is implicit — search results carry their
          state, and panning the map far enough swaps regions by itself. -->
@@ -661,9 +707,14 @@
       </div>
     </div>
     <div id="map-wrap" class="awaiting" hidden>
-      <div id="map"></div>
+      <!-- Focusable so the D-pad cycle can land on the map; Enter then opens
+           joystick mode (see the TV/D-pad input section in the script). -->
+      <div id="map" tabindex="0" role="application"
+           aria-label="Map. Press OK for joystick mode."></div>
       <!-- Off-screen board vehicles, pinned to the map edge nearest to them. -->
       <div id="edge-markers" aria-hidden="true"></div>
+      <!-- Joystick-mode dwell reticle: arrows pan the map underneath it. -->
+      <div id="joy-reticle" hidden><div class="fill"></div></div>
       <div class="map-empty placeholder" id="map-empty">
         <div>Search for a stop to see it on the map.</div>
         <div class="ph-icon">&#x1F30F;&#xFE0E;</div>
@@ -2460,6 +2511,9 @@
   function renderBoard(data) {
     $("stop-name").textContent = data.stop.stop_name;
     const board = $("board");
+    // The rebuild below destroys the focused row; a D-pad user parked mid-list
+    // would be dumped back to <body> every refresh. Only rows carry data-trip.
+    const keepTrip = document.activeElement?.dataset?.trip;
     board.innerHTML = "";
     if (data.departures.length === 0) {
       board.innerHTML = `<div class="empty">No services in the next 90 minutes.</div>`;
@@ -2550,6 +2604,11 @@
         board.appendChild(row);
       });
 
+    if (keepTrip) {
+      const back = board.querySelector(`.row[data-trip="${CSS.escape(keepTrip)}"]`);
+      if (back) back.focus({ preventScroll: true });
+    }
+
     // Measure once from a real row, then redraw now that the count is known.
     if (!rowHeight) {
       const first = board.querySelector(".row");
@@ -2604,6 +2663,227 @@
       updateMap(lastData);
     }, 150);
   });
+
+  // --- TV / D-pad input (smart TVs, game consoles) -------------------------
+  // Arrow keys walk the visible controls tab-style and Enter activates; with
+  // the map focused, Enter opens "joystick mode": arrows pan the map under a
+  // centre reticle, and any marker that sits inside the ring for one second
+  // gets the click. A real (trusted) click hands back to normal cycling.
+  // Auto-detected from the UA / pointer media query; the chip at the top
+  // right overrides it either way (persisted).
+  const TV_UA = /smart-?tv|tizen|web0s|netcast|hbbtv|vidaa|roku|crkey|bravia|playstation|xbox|nintendo/i;
+  let joy = false;
+  let joyMapOn = false, joyDwell = null, joyScan = null, joyTargetKey = null;
+  let joyFiredKey = null;   // last target clicked — don't machine-gun it
+  // Everything clickable on the map, in the same priority order the click
+  // handler resolves (vehicles beat stops).
+  const JOY_LAYERS = ["vehicle-dot", "ghost-dot", "landmarks", "all-stops"];
+
+  function applyInputMode() {
+    document.body.classList.toggle("joy", joy);
+    const t = $("input-toggle");
+    t.textContent = joy ? "\u{1F579}︎ joystick" : "\u{1F5B1}︎ mouse";
+    t.title = joy
+      ? "Joystick mode: arrows move, OK/Enter selects. Activate for mouse mode."
+      : "Mouse mode. Activate for joystick mode (D-pad navigation).";
+    if (!joy) joyMapExit();
+  }
+
+  // Visible-and-usable controls, in DOM order (which tracks reading order).
+  // The parked landing split is visibility:hidden, so it filters out; rows
+  // scrolled below the fold must stay IN (cycleFocus scrolls to them).
+  function focusables() {
+    return [...document.querySelectorAll(
+      "button, input, select, a[href], [tabindex='0']",
+    )].filter((el) => {
+      if (el.disabled || el.closest("[hidden]")) return false;
+      // The canvas is focusable on its own; #map is the cycle's map entry.
+      if (el.classList.contains("maplibregl-canvas")) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 &&
+             getComputedStyle(el).visibility !== "hidden";
+    });
+  }
+
+  function cycleFocus(dir) {
+    const els = focusables();
+    if (!els.length) return;
+    let i = els.indexOf(document.activeElement);
+    i = i === -1 ? (dir > 0 ? 0 : els.length - 1)
+                 : (i + dir + els.length) % els.length;
+    els[i].focus({ preventScroll: true });
+    els[i].scrollIntoView({ block: "nearest" });
+  }
+
+  function joyCenterTarget() {
+    const layers = JOY_LAYERS.filter((l) => map.getLayer(l));
+    if (!layers.length) return null;
+    const w = map.getContainer().clientWidth / 2;
+    const h = map.getContainer().clientHeight / 2;
+    const R = 20;   // px, matches the drawn ring
+    return map.queryRenderedFeatures(
+      [[w - R, h - R], [w + R, h + R]], { layers })[0] || null;
+  }
+
+  function joyCancelDwell() {
+    clearTimeout(joyDwell);
+    joyDwell = null;
+    joyTargetKey = null;
+    $("joy-reticle").classList.remove("arming");
+  }
+
+  // Polled while joystick mode is on: markers drift under a still reticle
+  // (vehicles move every refresh), so watching map events alone isn't enough.
+  const joyKey = (t) => {
+    const p = t.properties || {};
+    return `${t.layer.id}:${p.stop_id || p.trip_id || p.name || ""}`;
+  };
+
+  function joyWatch() {
+    if (!joyMapOn) return;
+    if (map.isMoving()) { joyFiredKey = null; joyCancelDwell(); return; }
+    const t = joyCenterTarget();
+    if (!t) { joyFiredKey = null; joyCancelDwell(); return; }
+    const key = joyKey(t);
+    if (key === joyFiredKey) return;          // already clicked; wait for a new target
+    if (key === joyTargetKey && joyDwell) return;   // countdown already running
+    joyCancelDwell();
+    joyTargetKey = key;
+    const ret = $("joy-reticle");
+    void ret.offsetWidth;               // restart the sweep animation
+    ret.classList.add("arming");
+    joyDwell = setTimeout(joyFire, 1000);
+  }
+
+
+  function joyFire() {
+    joyCancelDwell();
+    if (!joyMapOn) return;
+    const t = joyCenterTarget();
+    if (!t) return;
+    joyFiredKey = joyKey(t);
+    const p = t.properties || {};
+    if ((t.layer.id === "landmarks" || t.layer.id === "all-stops") && p.stop_id) {
+      // Stop icons are bottom-anchored — drawn ABOVE their point — so a
+      // synthetic pixel click at the point itself slips underneath the icon
+      // and reads as empty map. The ring already resolved the target; jump
+      // straight to what the click handler would have done.
+      selectStop(p.stop_id);
+    } else {
+      // Vehicles and ghosts are centre-anchored: a synthetic click at their
+      // exact point runs their own popup handler like a real mouse click.
+      const pt = map.project(t.geometry.coordinates);
+      const c = map.getCanvas();
+      const r = c.getBoundingClientRect();
+      c.dispatchEvent(new MouseEvent("click", {
+        bubbles: true, cancelable: true,
+        clientX: r.left + pt.x, clientY: r.top + pt.y,
+      }));
+    }
+    const ret = $("joy-reticle");
+    ret.classList.add("fired");
+    setTimeout(() => ret.classList.remove("fired"), 300);
+  }
+
+  // A real click exits and is consumed — leaving joystick mode shouldn't ALSO
+  // select whatever happened to sit under the pointer.
+  function joyRealClick(e) {
+    if (!e.isTrusted) return;
+    e.stopPropagation();
+    e.preventDefault();
+    joyMapExit();
+  }
+
+  function joyMapEnter() {
+    if (joyMapOn || !mapReady) return;
+    joyMapOn = true;
+    $("joy-reticle").hidden = false;
+    // Capture phase: leave joystick mode on a real click, then let the click
+    // itself land normally.
+    map.getContainer().addEventListener("click", joyRealClick, true);
+    joyScan = setInterval(joyWatch, 250);
+    const hint = document.querySelector("#map-caption .hint");
+    if (hint) hint.textContent =
+      "hold a marker in the ring 1 s to select · OK clicks · back exits";
+  }
+
+  function joyMapExit() {
+    if (!joyMapOn) return;
+    joyMapOn = false;
+    $("joy-reticle").hidden = true;
+    map.getContainer().removeEventListener("click", joyRealClick, true);
+    clearInterval(joyScan);
+    joyScan = null;
+    joyFiredKey = null;
+    joyCancelDwell();
+    const hint = document.querySelector("#map-caption .hint");
+    if (hint) hint.textContent = "click a service to show its route";
+    $("map").focus({ preventScroll: true });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!joy || e.defaultPrevented) return;
+    const k = e.key;
+    if (joyMapOn) {
+      const step = 90;
+      const pan = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+                    ArrowUp: [0, -step], ArrowDown: [0, step] }[k];
+      if (pan) {
+        e.preventDefault();
+        autoFit = false;          // the user has the camera, same as a drag
+        map.panBy(pan, { duration: 150 });
+        return;
+      }
+      if (k === "Enter") { e.preventDefault(); joyFire(); return; }
+      // Escape, plus the TV remotes' back buttons (LG 461, Samsung 10009).
+      if (k === "Escape" || k === "Back" || k === "XF86Back" ||
+          e.keyCode === 461 || e.keyCode === 10009) {
+        e.preventDefault(); joyMapExit();
+      }
+      return;
+    }
+    // A mouse click on the map lands focus on MapLibre's canvas, not our #map
+    // entry — treat the two as the same thing.
+    const el = document.activeElement;
+    const onMap = el === $("map") ||
+                  (el && el.classList && el.classList.contains("maplibregl-canvas"));
+    if (k === "Enter") {
+      if (onMap) { e.preventDefault(); joyMapEnter(); }
+      return;                     // buttons, rows and inputs handle Enter themselves
+    }
+    const dir = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[k];
+    if (dir === undefined) return;
+    if (onMap && el !== $("map")) $("map").focus();   // cycle from the map entry
+    // A text box keeps its caret keys; up/down still walk away from it.
+    if (el && el.tagName === "INPUT" &&
+        (k === "ArrowLeft" || k === "ArrowRight")) return;
+    e.preventDefault();
+    cycleFocus(dir);
+  });
+
+  // The spec'd way in: the map, highlighted and then clicked, opens joystick
+  // mode (and the entering click is consumed — it shouldn't also select
+  // whatever sat under the pointer). Capture phase, so this runs before
+  // MapLibre's own canvas handlers; harmless in mouse mode.
+  $("map").addEventListener("click", (e) => {
+    if (!joy || joyMapOn || !e.isTrusted || !mapReady) return;
+    e.stopPropagation();
+    e.preventDefault();
+    joyMapEnter();
+  }, true);
+
+  {
+    const saved = localStorage.getItem("input-mode");
+    joy = saved ? saved === "joystick"
+        : TV_UA.test(navigator.userAgent) ||
+          matchMedia("(pointer: none)").matches;
+  }
+  $("input-toggle").addEventListener("click", () => {
+    joy = !joy;
+    localStorage.setItem("input-mode", joy ? "joystick" : "mouse");
+    applyInputMode();
+  });
+  applyInputMode();
 
   syncChrome();
   initMap();

@@ -23,9 +23,19 @@ APP_PORT="${APP_PORT:-8000}"
 MEL_BASEMAP_SRC="${MEL_BASEMAP_SRC:-/tmp/mel.pmtiles}"
 SYD_BASEMAP_SRC="${SYD_BASEMAP_SRC:-/tmp/syd.pmtiles}"
 ADE_BASEMAP_SRC="${ADE_BASEMAP_SRC:-/tmp/ade.pmtiles}"
+PER_BASEMAP_SRC="${PER_BASEMAP_SRC:-/tmp/per.pmtiles}"
+DAR_BASEMAP_SRC="${DAR_BASEMAP_SRC:-/tmp/dar.pmtiles}"
+QLD_BASEMAP_SRC="${QLD_BASEMAP_SRC:-/tmp/qld.pmtiles}"
 INGEST_MEL="${INGEST_MEL:-yes}"
 # Adelaide's static zip is public, keyless and small (~18 MB).
 INGEST_ADE="${INGEST_ADE:-yes}"
+# Perth (Transperth/PTA, ~29 MB) and Darwin (NT, ~3 MB) are also public and
+# keyless; both are schedule-only regions (no GTFS-RT exists for either).
+INGEST_PER="${INGEST_PER:-yes}"
+INGEST_DAR="${INGEST_DAR:-yes}"
+# Regional Queensland: eighteen small town zips off the same keyless Translink
+# host as SEQ's, merged into one region (five of the towns have realtime).
+INGEST_QLD="${INGEST_QLD:-yes}"
 # Sydney's static downloads need the TfNSW key; 'auto' ingests only when the
 # quadlet already carries SYD_API_KEY (i.e. enable-syd-vps.sh has run).
 INGEST_SYD="${INGEST_SYD:-auto}"
@@ -62,6 +72,24 @@ if [[ "${INGEST_ADE}" == "yes" ]]; then
   echo "==> Ingesting the Adelaide timetable…"
   as_deploy "podman run --rm -v translink-data:/data '${IMAGE_REF}' \
     python ingest_gtfs.py --region ade"
+fi
+
+if [[ "${INGEST_PER}" == "yes" ]]; then
+  echo "==> Ingesting the Perth timetable…"
+  as_deploy "podman run --rm -v translink-data:/data '${IMAGE_REF}' \
+    python ingest_gtfs.py --region per"
+fi
+
+if [[ "${INGEST_DAR}" == "yes" ]]; then
+  echo "==> Ingesting the Darwin timetable…"
+  as_deploy "podman run --rm -v translink-data:/data '${IMAGE_REF}' \
+    python ingest_gtfs.py --region dar"
+fi
+
+if [[ "${INGEST_QLD}" == "yes" ]]; then
+  echo "==> Ingesting the regional Queensland timetables (18 small zips)…"
+  as_deploy "podman run --rm -v translink-data:/data '${IMAGE_REF}' \
+    python ingest_gtfs.py --region qld"
 fi
 
 # The Sydney downloads are authenticated, so the ingest needs the key the
@@ -102,6 +130,9 @@ install_basemap() {
 install_basemap "${MEL_BASEMAP_SRC}" mel
 install_basemap "${SYD_BASEMAP_SRC}" syd
 install_basemap "${ADE_BASEMAP_SRC}" ade
+install_basemap "${PER_BASEMAP_SRC}" per
+install_basemap "${DAR_BASEMAP_SRC}" dar
+install_basemap "${QLD_BASEMAP_SRC}" qld
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"

@@ -27,10 +27,10 @@ SKIP_BASEMAP="${SKIP_BASEMAP:-no}"
 if [[ "$SKIP_BASEMAP" != "yes" ]]; then
   # The basemaps live inside the local rootless volume; cat each out via a
   # throwaway container rather than poking at the storage path directly.
-  for region in mel syd ade; do
+  for region in mel syd ade per dar qld; do
     if podman run --rm -v translink-data:/data alpine test -f "/data/basemap/${region}.pmtiles" 2>/dev/null; then
       TMP_MAP="$(mktemp "/tmp/${region}.pmtiles.XXXXXX")"
-      trap 'rm -f /tmp/mel.pmtiles.?????? /tmp/syd.pmtiles.?????? /tmp/ade.pmtiles.??????' EXIT
+      trap 'rm -f /tmp/mel.pmtiles.?????? /tmp/syd.pmtiles.?????? /tmp/ade.pmtiles.?????? /tmp/per.pmtiles.?????? /tmp/dar.pmtiles.?????? /tmp/qld.pmtiles.??????' EXIT
       echo "==> Exporting ${region} basemap from the local volume…"
       podman run --rm -v translink-data:/data alpine cat "/data/basemap/${region}.pmtiles" > "$TMP_MAP"
       echo "==> Copying basemap to ${VPS}:/tmp/${region}.pmtiles ($(du -h "$TMP_MAP" | cut -f1))…"
@@ -45,4 +45,4 @@ fi
 
 echo "==> Copying update-vps.sh and running it on ${VPS}…"
 scp -q "${HERE}/update-vps.sh" "${VPS}:/tmp/update-vps.sh"
-ssh -t "$VPS" "INGEST_MEL='${INGEST_MEL:-yes}' INGEST_SYD='${INGEST_SYD:-auto}' INGEST_ADE='${INGEST_ADE:-yes}' bash /tmp/update-vps.sh"
+ssh -t "$VPS" "INGEST_MEL='${INGEST_MEL:-yes}' INGEST_SYD='${INGEST_SYD:-auto}' INGEST_ADE='${INGEST_ADE:-yes}' INGEST_PER='${INGEST_PER:-yes}' INGEST_DAR='${INGEST_DAR:-yes}' INGEST_QLD='${INGEST_QLD:-yes}' bash /tmp/update-vps.sh"

@@ -45,6 +45,15 @@
   }
   .change:hover { color: var(--text); border-color: var(--amber-dim); }
   .change:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
+  /* Every time on the page is the network's wall clock, and six networks now
+     span three Australian timezones — say which one, right beside the stop
+     name that all those times belong to. */
+  .tzbadge {
+    border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: 11px; letter-spacing: 0.06em;
+    padding: 2px 9px; white-space: nowrap;
+  }
+  .tzbadge:empty { display: none; }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
   /* The little goose flies you home — back to the landing and its city
      quick-starts. Same amber ink as the hero bird. */
@@ -615,6 +624,7 @@
       <a class="home-goose" href="/" title="Home page"
          aria-label="Home page"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></a>
       <h1 id="stop-name"></h1>
+      <span class="tzbadge" id="tz-badge"></span>
       <button class="change" id="change-stop" type="button">Change stop</button>
     </div>
   </header>
@@ -719,7 +729,20 @@
   // the viewer's zone is a harmless first-paint fallback.
   let regionTz;
   fetch(api("/config")).then((r) => r.json())
-    .then((c) => { regionTz = c.tz; }).catch(() => {});
+    .then((c) => {
+      regionTz = c.tz;
+      // Name the clock those times run on: "AWST", "ACST", … — visible
+      // whenever the titlebar is (i.e. whenever any time is on screen).
+      try {
+        const abbr = new Intl.DateTimeFormat("en-AU",
+            {timeZone: regionTz, timeZoneName: "short"})
+          .formatToParts(new Date())
+          .find((p) => p.type === "timeZoneName").value;
+        const badge = $("tz-badge");
+        badge.textContent = abbr;
+        badge.title = `All times are ${regionTz} (${abbr})`;
+      } catch { /* unknown zone: badge stays empty and hidden */ }
+    }).catch(() => {});
 
   // There is no visible region UI: the ingested-regions list drives the
   // search fan-out (results can come from ANY region, each row carrying its
@@ -744,6 +767,25 @@
         { label: "Kippa-Ring",    sid: "place_kprsta" },   // train
         { label: "Noosa Heads",   sid: "place_nhdstn" },   // bus interchange
     ] },
+    // One merged region, eighteen town networks: every town gets its door.
+    { rid: "qld", label: "Cairns", sid: "cns:place_cnsstn", extras: [
+        { label: "Townsville",      sid: "tsv:890892" },        // City bus hub
+        { label: "Toowoomba",       sid: "twb:place_twbstn" },  // bus station
+        { label: "Mackay",          sid: "mky:810862" },        // Caneland stn
+        { label: "Rockhampton",     sid: "rky:860450" },        // Stockland
+        { label: "Bundaberg",       sid: "bun:730001" },        // City Centre
+        { label: "Hervey Bay",      sid: "mhb:840017" },        // Stockland
+        { label: "Gladstone",       sid: "glt:760022" },        // Centre Plaza
+        { label: "Gympie",          sid: "gym:770021" },        // Gympie Central
+        { label: "Warwick",         sid: "war:900000" },        // Post Office
+        { label: "Bowen",           sid: "bow:720000" },        // Williams St
+        { label: "Airlie Beach",    sid: "wht:710018" },        // Airlie Central
+        { label: "Innisfail",       sid: "inn:790000" },        // Central Arcade
+        { label: "Maleny",          sid: "mal:830011" },        // Maple St
+        { label: "Kilcoy",          sid: "kil:740106" },        // coach stop
+        { label: "Magnetic Island", sid: "mag:820001" },        // Picnic Bay
+        { label: "Stradbroke Is",   sid: "nsi:870029" },        // Dunwich ferry
+    ] },
     { rid: "syd", label: "Sydney",    sid: "t:200060", extras: [
         { label: "Wollongong", sid: "t:250020" },
         { label: "Penrith",    sid: "t:275010" },
@@ -754,6 +796,22 @@
         { label: "Frankston", sid: "2:vic:rail:FKN" },   // metro
     ] },
     { rid: "ade", label: "Adelaide", sid: "6665" },      // Adelaide Railway Stn
+    { rid: "per", label: "Perth",    sid: "56", extras: [   // Perth Stn
+        { label: "Mandurah",     sid: "94" },     // train + bus
+        { label: "Yanchep",      sid: "155" },    // train + bus
+        // The PTA feed is state-wide, so the regional towns come along free.
+        { label: "Bunbury",      sid: "146" },    // bus station
+        { label: "Geraldton",    sid: "70001" },  // Anzac Tce, CBD
+        { label: "Kalgoorlie",   sid: "71434" },  // Exchange Hotel terminal
+        { label: "Albany",       sid: "72597" },  // Peels Pl, CBD
+        { label: "Busselton",    sid: "70633" },  // Kent St
+        { label: "Karratha",     sid: "73247" },  // Karratha City SC
+        { label: "Port Hedland", sid: "73657" },  // Throssell Rd, Sth Hedland
+        { label: "Broome",       sid: "74805" },  // Boulevard shops
+        { label: "Carnarvon",    sid: "73351" },  // Alexandra St
+        { label: "Esperance",    sid: "74587" },  // Transwa bay
+    ] },
+    { rid: "dar", label: "Darwin",   sid: "46" },        // Harry Chan Ave terminus
   ];
   regionsReady.then(() => {
     const wrap = $("city-jumps");
@@ -1325,6 +1383,11 @@
       return 2 * 6371 * Math.asin(Math.sqrt(a));
     };
     map.on("moveend", () => {
+      // Only while browsing (no stop selected). Regions can overlap now —
+      // several qld towns (Stradbroke, Kilcoy, Maleny, Toowoomba, …) sit
+      // within 150 km of Brisbane, so a qld board's own fit-to-stop used to
+      // hand the camera to seq and dump the stop the user had just picked.
+      if (stopId) return;
       if (map.getZoom() < 7) return;
       const c = map.getCenter();
       let best = null, bestD = Infinity;

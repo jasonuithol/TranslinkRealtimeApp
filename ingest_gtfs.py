@@ -22,6 +22,20 @@ Regions:
        warning, so an endpoint moving doesn't sink the whole ingest.
   ade  Adelaide Metro — one flat GTFS zip, ids globally unique, no key
        (same shape as seq; bus, tram and train in the one feed).
+  qld  Translink regional Queensland — eighteen small town networks
+       (Cairns, Townsville, Mackay, …), each its own flat zip on the same
+       keyless host as seq, merged into one region. Ids are only unique
+       within a town, so each id is prefixed "<town>:" syd-style; the
+       realtime feeds (the few towns that have them) declare the same
+       prefix in app.py. A town that 404s is skipped with a warning.
+  dar  NT Department of Transport — one small flat zip, no key. Darwin,
+       Palmerston and the rural routes out to Adelaide River and Kakadu.
+       No public GTFS-RT exists, so the region is schedule-only.
+  per  Transperth / PTA Western Australia — one flat zip, no key. The feed
+       is state-wide (regional town buses to Broome/Carnarvon/Esperance and
+       the Australind train, not just Perth). Schedule-only: no public
+       GTFS-RT. Their headers are space-padded ("stop_id, stop_name, …"),
+       which load_feed_zip normalises.
 
 The static feeds change roughly weekly; re-run this to refresh.
 Only the tables needed for a departures board are loaded.
@@ -65,9 +79,49 @@ REGIONS = {
         # One flat zip, no prefixing — same shape as seq.
         "modes": None,
     },
+    "dar": {
+        # Redirects to dli.nt.gov.au; httpx follows it.
+        "url": "https://dipl.nt.gov.au/data-feeds/bus-gtfs/google-transit-darwin.zip",
+        "db": Path(os.environ.get("DAR_GTFS_DB") or SEQ_DB.parent / "gtfs-dar.sqlite3"),
+        "modes": None,
+    },
+    "per": {
+        "url": "https://www.transperth.wa.gov.au/TimetablePDFs/GoogleTransit/Production/google_transit.zip",
+        "db": Path(os.environ.get("PER_GTFS_DB") or SEQ_DB.parent / "gtfs-per.sqlite3"),
+        "modes": None,
+    },
+    "qld": {
+        "db": Path(os.environ.get("QLD_GTFS_DB") or SEQ_DB.parent / "gtfs-qld.sqlite3"),
+        "modes": None,
+        # One flat zip per town network, same keyless host as seq's zip.
+        # The prefix is the contract with app.py's qld realtime config:
+        # ids in the CNS feed become "cns:...", and the CNS TripUpdates
+        # poller maps its ids onto them. Codes are Translink's own.
+        "sources": [
+            ("bow", "https://gtfsrt.api.translink.com.au/GTFS/BOW_GTFS.zip"),  # Bowen
+            ("bun", "https://gtfsrt.api.translink.com.au/GTFS/BUN_GTFS.zip"),  # Bundaberg
+            ("cns", "https://gtfsrt.api.translink.com.au/GTFS/CNS_GTFS.zip"),  # Cairns
+            ("glt", "https://gtfsrt.api.translink.com.au/GTFS/GLT_GTFS.zip"),  # Gladstone
+            ("gym", "https://gtfsrt.api.translink.com.au/GTFS/GYM_GTFS.zip"),  # Gympie
+            ("inn", "https://gtfsrt.api.translink.com.au/GTFS/INN_GTFS.zip"),  # Innisfail
+            ("kil", "https://gtfsrt.api.translink.com.au/GTFS/KIL_GTFS.zip"),  # Kilcoy
+            ("mag", "https://gtfsrt.api.translink.com.au/GTFS/MAG_GTFS.zip"),  # Magnetic Island bus
+            ("mif", "https://gtfsrt.api.translink.com.au/GTFS/MIF_GTFS.zip"),  # Magnetic Island ferry
+            ("mal", "https://gtfsrt.api.translink.com.au/GTFS/MAL_GTFS.zip"),  # Maleny
+            ("mhb", "https://gtfsrt.api.translink.com.au/GTFS/MHB_GTFS.zip"),  # Maryborough-Hervey Bay
+            ("mky", "https://gtfsrt.api.translink.com.au/GTFS/MKY_GTFS.zip"),  # Mackay
+            ("nsi", "https://gtfsrt.api.translink.com.au/GTFS/NSI_GTFS.zip"),  # Nth Stradbroke Is
+            ("rky", "https://gtfsrt.api.translink.com.au/GTFS/RKY_GTFS.zip"),  # Rockhampton-Yeppoon
+            ("tsv", "https://gtfsrt.api.translink.com.au/GTFS/TSV_GTFS.zip"),  # Townsville
+            ("twb", "https://gtfsrt.api.translink.com.au/GTFS/TWB_GTFS.zip"),  # Toowoomba
+            ("war", "https://gtfsrt.api.translink.com.au/GTFS/WAR_GTFS.zip"),  # Warwick
+            ("wht", "https://gtfsrt.api.translink.com.au/GTFS/WHT_GTFS.zip"),  # Whitsundays
+        ],
+    },
     "syd": {
         "db": Path(os.environ.get("SYD_GTFS_DB") or SEQ_DB.parent / "gtfs-syd.sqlite3"),
         "modes": None,
+        "needs_key": True,
         # One flat "For Realtime" GTFS zip per mode, downloaded separately.
         # The prefix is the contract with app.py's SYD_* realtime env config:
         # ids in feed "t" become "t:...", and the trip-updates feed declared
@@ -242,6 +296,10 @@ def load_feed_zip(con: sqlite3.Connection, zf: zipfile.ZipFile, prefix: str = ""
         rt_idx = cols.index("route_type") if table == "routes" else None
         with zf.open(fname) as raw:
             reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8-sig"))
+            # Transperth pads its headers ("stop_id, stop_name, …"); every
+            # row.get() below would miss, silently loading a table of NULLs.
+            if reader.fieldnames:
+                reader.fieldnames = [f.strip() for f in reader.fieldnames]
             placeholders = ",".join("?" for _ in cols)
             sql = f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({placeholders})"
             batch = []
@@ -371,8 +429,8 @@ if __name__ == "__main__":
                 else:
                     print(f"  ({prefix}: no {p.name} in {src_dir}, skipping)")
         else:
-            headers = syd_headers(args.key)
-            if not headers:
+            headers = syd_headers(args.key) if cfg.get("needs_key") else {}
+            if cfg.get("needs_key") and not headers:
                 sys.exit("Sydney downloads need a TfNSW open data key: "
                          "--key or SYD_API_KEY (free at "
                          "https://opendata.transport.nsw.gov.au/)")

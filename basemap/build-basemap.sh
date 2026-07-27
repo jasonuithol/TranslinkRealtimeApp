@@ -28,12 +28,23 @@ CACHE_DIR="${CACHE_DIR:-/cache}"
 #   REGION=ade            settled South Australia — the Adelaide Metro feed
 #                         carries country coaches out to Ceduna/Port Lincoln
 #                         and the Kangaroo Island ferry, not just the metro
+#   REGION=per            WA's populated crescent — the PTA feed is state-wide:
+#                         regional town buses reach Broome, Carnarvon,
+#                         Kalgoorlie, Esperance and Albany, not just Transperth
+#   REGION=dar            Darwin/Palmerston plus the rural routes: Adelaide
+#                         River south, Kakadu (Jabiru/Ubirr) east
+#   REGION=qld            regional Queensland's eighteen town networks, dotted
+#                         down the whole eastern seaboard: Cairns/Innisfail in
+#                         the north to Warwick in the south
 REGION="${REGION:-seq}"
 case "$REGION" in
   seq) DEFAULT_BBOX="151.8,-28.3,153.6,-26.0" ;;
+  qld) DEFAULT_BBOX="145.4,-28.5,153.8,-16.5" ;;
   mel) DEFAULT_BBOX="140.9,-39.2,150.3,-33.9" ;;
   syd) DEFAULT_BBOX="149.5,-35.0,151.9,-32.6" ;;
   ade) DEFAULT_BBOX="133.4,-38.1,141.1,-31.9" ;;
+  per) DEFAULT_BBOX="113.4,-35.3,122.5,-17.7" ;;
+  dar) DEFAULT_BBOX="130.6,-13.4,133.1,-12.1" ;;
   *)   echo "Unknown REGION '$REGION' — set BBOX and OUT_NAME yourself." >&2
        DEFAULT_BBOX="" ;;
 esac

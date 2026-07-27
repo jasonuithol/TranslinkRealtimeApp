@@ -124,6 +124,61 @@ REGIONS: dict = {
         "geocode_viewbox": "151.8,-28.3,153.6,-26.0",
         "center": [153.026, -27.4705],
     },
+    "qld": {
+        "name": "Translink · Regional Queensland",
+        "state": "QLD",
+        "tz": ZoneInfo("Australia/Brisbane"),
+        "db": Path(os.environ.get("QLD_GTFS_DB") or DB_PATH.parent / "gtfs-qld.sqlite3"),
+        "basemap": BASEMAP_DIR / "qld.pmtiles",
+        # Eighteen town networks merged into one DB, each ingested under a
+        # "<town>:" prefix (see ingest_gtfs.py). Translink publishes keyless
+        # GTFS-RT for five of them — Cairns, Bowen, Innisfail, Maryborough-
+        # Hervey Bay and North Stradbroke Island (verified live 2026-07-27);
+        # the other towns fall back to timetable ghosts, per-trip, for free.
+        "trip_updates": [
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/CNS/TripUpdates",
+             "prefix": "cns:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/BOW/TripUpdates",
+             "prefix": "bow:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/INN/TripUpdates",
+             "prefix": "inn:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/MHB/TripUpdates",
+             "prefix": "mhb:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/NSI/TripUpdates",
+             "prefix": "nsi:"},
+        ],
+        "vehicle_positions": [
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/CNS/VehiclePositions",
+             "prefix": "cns:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/BOW/VehiclePositions",
+             "prefix": "bow:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/INN/VehiclePositions",
+             "prefix": "inn:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/MHB/VehiclePositions",
+             "prefix": "mhb:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/NSI/VehiclePositions",
+             "prefix": "nsi:"},
+        ],
+        "alerts": [
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/CNS/Alerts",
+             "prefix": "cns:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/BOW/Alerts",
+             "prefix": "bow:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/INN/Alerts",
+             "prefix": "inn:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/MHB/Alerts",
+             "prefix": "mhb:"},
+            {"url": "https://gtfsrt.api.translink.com.au/api/realtime/NSI/Alerts",
+             "prefix": "nsi:"},
+        ],
+        "headers": {},
+        # Five feeds per kind against the host seq also polls: pace them a
+        # little rather than firing the burst back-to-back every cycle.
+        "req_gap_s": 0.25,
+        # The towns dot the whole eastern seaboard, Cairns down to Warwick.
+        "geocode_viewbox": "144.5,-28.5,153.6,-16.4",
+        "center": [145.7710, -16.9203],
+    },
     "mel": {
         "name": "PTV · Melbourne",
         "state": "VIC",
@@ -174,6 +229,37 @@ REGIONS: dict = {
         "headers": {},
         "geocode_viewbox": "138.4,-35.4,139.1,-34.4",
         "center": [138.6007, -34.9212],
+    },
+    "per": {
+        "name": "Transperth · Perth",
+        "state": "WA",
+        "tz": ZoneInfo("Australia/Perth"),
+        "db": Path(os.environ.get("PER_GTFS_DB") or DB_PATH.parent / "gtfs-per.sqlite3"),
+        "basemap": BASEMAP_DIR / "per.pmtiles",
+        # No public GTFS-RT exists for WA (checked 2026-07-26) — schedule-only:
+        # timetable times, ghost markers. Empty lists keep the pollers off and
+        # flip the board's status to "timetable only".
+        "trip_updates": [],
+        "vehicle_positions": [],
+        "alerts": [],
+        "headers": {},
+        "geocode_viewbox": "115.6,-32.7,116.1,-31.4",
+        "center": [115.8605, -31.9505],
+    },
+    "dar": {
+        "name": "NT Transport · Darwin",
+        "state": "NT",
+        "tz": ZoneInfo("Australia/Darwin"),
+        "db": Path(os.environ.get("DAR_GTFS_DB") or DB_PATH.parent / "gtfs-dar.sqlite3"),
+        "basemap": BASEMAP_DIR / "dar.pmtiles",
+        # The NT Bus Tracker app is realtime, but its backend is not published
+        # as GTFS-RT (checked 2026-07-26) — schedule-only, like keyless mel.
+        "trip_updates": [],
+        "vehicle_positions": [],
+        "alerts": [],
+        "headers": {},
+        "geocode_viewbox": "130.7,-12.9,131.2,-12.2",
+        "center": [130.8411, -12.4634],
     },
 }
 

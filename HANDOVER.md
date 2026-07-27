@@ -203,6 +203,59 @@ times and the map shows timetable-estimated ghosts.
   station, all 1,679 rail trips terminate there); the tram stop outside is a
   separate parent `50093`. Their portal calls the RT feeds "BETA".
   ~1 M stop_times; DB `/data/gtfs-ade.sqlite3` (`ADE_GTFS_DB` to override).
+- **Perth (`per`) and Darwin (`dar`), added 2026-07-26**: the first
+  *permanently schedule-only* regions — neither WA nor NT publishes any
+  GTFS-RT (NT's Bus Tracker app is live but its backend isn't open data;
+  checked 2026-07-26). `REGIONS` entries carry empty feed lists, which the
+  existing keyless-Melbourne machinery already understood: pollers stay off,
+  `realtime_configured` false, board status reads "timetable only", every
+  vehicle is a timetable ghost. Both static zips are public and keyless.
+  Watch-outs: **Transperth space-pads its CSV headers** ("stop_id,
+  stop_name, …") in stops/shapes/transfers — `load_feed_zip` strips
+  fieldnames once, or every `row.get()` misses and the tables load as NULLs.
+  The WA feed is state-wide (PTA regional town buses: Broome, Carnarvon,
+  Kalgoorlie, Esperance, Albany, plus the Australind train) — ~1.68 M
+  stop_times, our biggest DB, and the `per` basemap bbox covers the whole
+  populated crescent. Darwin's feed reaches Adelaide River and Kakadu
+  (Ubirr); NT pads its lat/lon *values* with spaces (SQLite's REAL affinity
+  copes). No parent stations in dar at all; Perth Stn is parent `56`, the
+  city terminus in dar is "Darwin Harry Chan Ave" flat stop `46`. Zip URLs:
+  `dipl.nt.gov.au/data-feeds/bus-gtfs/google-transit-darwin.zip` (redirects
+  to dli.nt.gov.au) and
+  `www.transperth.wa.gov.au/TimetablePDFs/GoogleTransit/Production/google_transit.zip`.
+- **Regional Queensland (`qld`), added 2026-07-27**: eighteen Translink
+  town networks merged into ONE region — Cairns (`cns`), Townsville (`tsv`),
+  Mackay (`mky`), Toowoomba (`twb`), Rockhampton–Yeppoon (`rky`), Bundaberg
+  (`bun`), Maryborough–Hervey Bay (`mhb`), Gladstone (`glt`), Gympie
+  (`gym`), Warwick (`war`), Bowen (`bow`), Whitsundays (`wht`), Innisfail
+  (`inn`), Kilcoy (`kil`), Maleny (`mal`), Magnetic Island bus (`mag`) +
+  ferry (`mif`), North Stradbroke Island (`nsi`). Each is a small keyless
+  zip at `gtfsrt.api.translink.com.au/GTFS/<CODE>_GTFS.zip`, ingested
+  syd-style under a `<town>:` prefix (ids are only unique within a town).
+  **Five towns have keyless GTFS-RT** (all three kinds, verified live
+  2026-07-27): CNS, BOW, INN, MHB, NSI at
+  `gtfsrt.api.translink.com.au/api/realtime/<CODE>/{TripUpdates,VehiclePositions,Alerts}`
+  — configured with per-feed prefixes exactly like Sydney's, plus
+  `req_gap_s: 0.25` to pace the 5-feed bursts against the host SEQ also
+  polls. The other towns' endpoints return valid-but-empty FeedMessages, so
+  they're left unconfigured; their services show as timetable ghosts.
+  ~229 K stop_times; DB `/data/gtfs-qld.sqlite3` (`QLD_GTFS_DB` override).
+  Cairns has a real parent station `cns:place_cnsstn` (Cairns City, Lake
+  St); most towns' hubs are flat stops (see CITY_JUMPS for the curated
+  per-town door stops). Basemap bbox is the whole eastern seaboard strip,
+  Cairns to Warwick. **Regions can now overlap geographically** — several
+  qld towns (Stradbroke, Kilcoy, Maleny, Toowoomba, Gympie, Warwick) sit
+  within 150 km of Brisbane, which made the map's cross-region pan hand-over
+  fire off a qld board's own fit-to-stop and dump the user into seq
+  browsing mode (the "clicked Stradbroke, lost the goose" bug). The
+  moveend hand-over is now gated on `!stopId`: it only runs while
+  browsing, never while a stop's board is anchored.
+- **Timezone badge (2026-07-26)**: six networks span three Australian
+  timezones, so the titlebar shows the region's clock ("AWST", "ACST", …)
+  next to the stop name — derived client-side from the config's IANA `tz`
+  via `Intl.DateTimeFormat(…, {timeZoneName: "short"})`, so DST renames
+  (AEST↔AEDT) come free. Times were already rendered in the region's zone;
+  the badge just says so.
 
 ## Keys & credentials needed for full functionality
 
@@ -227,6 +280,14 @@ limit), GHCR image pulls (public), Protomaps→self-built basemaps (none).
 - SYD static + realtime: `https://api.transport.nsw.gov.au/{v1,v2}/gtfs/…`,
   ALL keyed (`Authorization: apikey <key>`); exact per-mode URLs live in
   `ingest_gtfs.py` (static) and the `SYD_*` env (realtime) — probe first
+- ADE static + realtime: `https://gtfs.adelaidemetro.com.au/v1/…` (keyless)
+- PER static: `https://www.transperth.wa.gov.au/TimetablePDFs/GoogleTransit/Production/google_transit.zip`
+  (keyless; no realtime exists)
+- DAR static: `https://dipl.nt.gov.au/data-feeds/bus-gtfs/google-transit-darwin.zip`
+  (keyless, redirects to dli.nt.gov.au; no realtime exists)
+- QLD regional static: `https://gtfsrt.api.translink.com.au/GTFS/<CODE>_GTFS.zip`
+  (keyless; 18 codes, see ingest_gtfs.py). Realtime for CNS/BOW/INN/MHB/NSI:
+  `https://gtfsrt.api.translink.com.au/api/realtime/<CODE>/{TripUpdates,VehiclePositions,Alerts}`
 - Geocoding: `nominatim.openstreetmap.org`, proxied via `/api/r/{region}/geocode`
   — identified UA, server-enforced 1 req/s, 24 h cache, bounded to the region
   bbox, explicit user action only (the "Search as an address" row). Fair-use

@@ -25,11 +25,6 @@ AWST, …) badged beside the stop name.
 - **The board and the map always agree**: a service is listed only if it can
   be placed on the map (live GPS, en route per the timetable, or about to
   depart its origin).
-- **TV / console friendly** — a D-pad-first input mode (auto-detected on
-  smart TVs and consoles, manual 🖱/🕹 toggle top-right): arrow keys walk the
-  controls tab-style, and OK on the map opens a joystick mode where arrows
-  pan under a centre reticle and any marker held in the ring for a second
-  gets clicked.
 
 ## Screenshots  
   

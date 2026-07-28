@@ -18,6 +18,7 @@ import sqlite3
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -207,6 +208,32 @@ REGIONS: dict = {
         "req_gap_s": 0.5,
         "geocode_viewbox": "150.5,-34.25,151.4,-33.35",
         "center": [151.2093, -33.8688],
+    },
+    "nsw": {
+        "name": "NSW TrainLink · Regional NSW & Interstate",
+        "state": "NSW",
+        "tz": ZoneInfo("Australia/Sydney"),
+        "db": Path(os.environ.get("NSW_GTFS_DB") or DB_PATH.parent / "gtfs-nsw.sqlite3"),
+        "basemap": BASEMAP_DIR / "nsw.pmtiles",
+        # The interstate region: TrainLink XPTs to Melbourne & Brisbane,
+        # Xplorers to Canberra/Armidale/Broken Hill, plus the connecting
+        # coaches. Same TfNSW key as syd (the ingest reads SYD_API_KEY);
+        # realtime is env-driven like syd's — set NSW_TRIP_UPDATES etc.
+        # (see deploy/enable-syd-vps.sh, which writes both). Unset = the
+        # region still works schedule-only.
+        "trip_updates": _env_rt_feeds("NSW", "TRIP_UPDATES"),
+        "vehicle_positions": _env_rt_feeds("NSW", "VEHICLE_POSITIONS"),
+        "alerts": _env_rt_feeds("NSW", "ALERTS"),
+        "headers": _syd_headers(),
+        # Stops span Adelaide (the Broken Hill coach terminus) to Brisbane to
+        # Melbourne — the viewbox is most of south-east Australia, deliberately.
+        "geocode_viewbox": "138.4,-38.4,153.7,-27.2",
+        # Dubbo, NOT Sydney: the map's browse hand-over picks the nearest
+        # region center, and a Sydney center here would steal southern-CBD
+        # browsing from syd (Central is 2.5 km from syd's own center). An
+        # inland center means rural panning lands on TrainLink and city
+        # panning stays with the city networks.
+        "center": [148.6012, -32.2465],
     },
     "ade": {
         "name": "Adelaide Metro · Adelaide",
@@ -941,14 +968,68 @@ async def geocode(q: str, region: str = "seq"):
     return results
 
 
-@app.get("/api/r/{region}/departures/{stop_id}")
-@app.get("/api/departures/{stop_id}")
-def departures(stop_id: str, region: str = "seq"):
+# ---------------------------------------------------------------------------
+# One physical station, several timetables. TfNSW publishes its networks as
+# separate feeds — ingested here as `syd` (suburban t:/m:/b:/f:/l*: prefixes)
+# and `nsw` (TrainLink, nt:) — but reuses the bare TSN across all of them:
+# t:200060, m:200060, lc:200060 and nt:200060 are all Central Station. A board
+# must show the station, not our ingest topology, so departures union every
+# sibling stop sharing the TSN, across both regions.
+TSN_REGIONS = ("syd", "nsw")
+
+# Cross-state interchanges share no id in any feed — hand-curated. Each set
+# lists (region, stop_id) pairs that are one physical place; use parents where
+# they exist (a board expands a parent into its child platforms on its own).
+STATION_LINKS = [
+    # Southern Cross: V/Line + Metro parent ↔ TrainLink XPT & coach terminal
+    {("mel", "2:vic:rail:SSS"), ("nsw", "nt:22180")},
+    # Roma Street (Brisbane): QR rail parent ↔ TrainLink XPT & coach terminal
+    {("seq", "place_romsta"), ("nsw", "nt:40001")},
+    # Adelaide Central Bus Station: the Broken Hill coach's far end
+    {("ade", "102954"), ("nsw", "nt:G50001")},
+]
+
+
+@lru_cache(maxsize=4096)
+def sibling_stops(region: str, stop_id: str, parent: str = "") -> tuple:
+    """Same-physical-station stops in sibling feeds, as (region, stop_id)
+    pairs, the anchor itself excluded. Cached: the answer changes only when a
+    timetable is re-ingested, and a stale sibling merely 404s its (skipped)
+    board lookup below."""
+    sibs: list[tuple[str, str]] = []
+    if region in TSN_REGIONS and ":" in stop_id:
+        tsn = stop_id.split(":", 1)[1]
+        for rgn in TSN_REGIONS:
+            if not REGIONS[rgn]["db"].exists():
+                continue
+            con = db(rgn)
+            try:
+                sibs += [
+                    (rgn, r["stop_id"])
+                    for r in con.execute(
+                        "SELECT stop_id FROM stops "
+                        "WHERE substr(stop_id, instr(stop_id, ':') + 1) = ?",
+                        (tsn,),
+                    )
+                ]
+            finally:
+                con.close()
+    for link in STATION_LINKS:
+        if {(region, stop_id), (region, parent)} & link:
+            sibs += [s for s in link if REGIONS[s[0]]["db"].exists()]
+    return tuple(s for s in dict.fromkeys(sibs) if s != (region, stop_id))
+
+
+def _candidate_rows(region: str, stop_id: str):
+    """One region's departure candidates for one stop: scheduled rows merged
+    with realtime, deduped across the two service dates, every row tagged with
+    its source region. Returns (stop_row, rows); 404s if the stop is unknown
+    in this region's timetable."""
     cfg, st = region_cfg(region), STATE[region]
     con = db(region)
     stop = con.execute(
-        "SELECT stop_id, stop_name, location_type, stop_lat, stop_lon "
-        "FROM stops WHERE stop_id=?",
+        "SELECT stop_id, stop_name, location_type, stop_lat, stop_lon, "
+        "parent_station FROM stops WHERE stop_id=?",
         (stop_id,),
     ).fetchone()
     if stop is None:
@@ -1007,6 +1088,7 @@ def departures(stop_id: str, region: str = "seq"):
             results.append(
                 {
                     **dep,
+                    "region": region,
                     "predicted": best,
                     "minutes": max(0, round((best - now_epoch) / 60)),
                     "realtime": realtime,
@@ -1027,8 +1109,54 @@ def departures(stop_id: str, region: str = "seq"):
             prev["predicted"] - prev["scheduled"]
         ):
             best[key] = r
-    results = list(best.values())
+    return stop, list(best.values())
 
+
+@app.get("/api/r/{region}/departures/{stop_id}")
+@app.get("/api/departures/{stop_id}")
+def departures(stop_id: str, region: str = "seq"):
+    stop, results = _candidate_rows(region, stop_id)
+
+    # Union the same physical station's boards from sibling feeds (Central's
+    # suburban trains + metro + light rail + TrainLink; Southern Cross's
+    # V/Line + the XPT). Track which station ids were queried per region —
+    # alerts below are matched against that region's own station ids.
+    station_of: dict = {region: {stop_id}}
+    for rgn, sid in sibling_stops(region, stop_id, stop["parent_station"] or ""):
+        try:
+            _, more = _candidate_rows(rgn, sid)
+        except HTTPException:
+            continue                 # sibling id gone after a re-ingest: skip
+        results.extend(more)
+        station_of.setdefault(rgn, set()).add(sid)
+
+    # A parent among the siblings expands to children a sibling already
+    # covered, so the same physical departure can arrive twice — keep one.
+    seen_rows: dict = {}
+    for r in results:
+        seen_rows.setdefault((r["region"], r["trip_id"], r["stop_id"]), r)
+    results = list(seen_rows.values())
+
+    # TfNSW also publishes some services in two feeds at once (the Hunter
+    # line rides in both sydneytrains and nswtrains): different trip ids,
+    # but the same platform TSN, route and minute is one physical train.
+    # Keep the copy that carries realtime, else the anchor region's.
+    def _phys_key(r):
+        sid = r["stop_id"]
+        return (sid.split(":", 1)[1] if ":" in sid else sid,
+                r["route"], r["scheduled"])
+
+    def _phys_pref(r):  # lower sorts better
+        return (not r["realtime"], r["region"] != region)
+
+    phys: dict = {}
+    for r in results:
+        k = _phys_key(r)
+        if k not in phys or _phys_pref(r) < _phys_pref(phys[k]):
+            phys[k] = r
+    results = list(phys.values())
+
+    now_epoch = int(time.time())
     results.sort(key=lambda d: d["predicted"])
 
     # Board == map: a departure is listed only if we can put it on the map. Work
@@ -1038,42 +1166,62 @@ def departures(stop_id: str, region: str = "seq"):
     # MAX_RESULTS from those. A not-yet-departed run with no position is shown in
     # neither the board nor the map, so the two never disagree and a wobbling
     # time boundary moves a service in and out of both together.
-    gps = {d["trip_id"]: st["vp"].get(d["trip_id"]) for d in results}
-    gps = {tid: v for tid, v in gps.items() if v}
-    need_estimate = [d for d in results if d["trip_id"] not in gps]
-    con_e = db(region)
-    estimated = estimate_ghost_positions(con_e, need_estimate, now_epoch)
-    con_e.close()
+    # Positions come from each row's own region: its VP cache, its DB for the
+    # dead-reckoning. Keyed (region, trip_id) — trip ids only promise
+    # uniqueness within one feed.
+    gps: dict = {}
+    estimated: dict = {}
+    by_region: dict = {}
+    for d in results:
+        by_region.setdefault(d["region"], []).append(d)
+    for rgn, rows in by_region.items():
+        vp = STATE[rgn]["vp"]
+        got = {d["trip_id"]: vp.get(d["trip_id"]) for d in rows}
+        got = {tid: v for tid, v in got.items() if v}
+        need_estimate = [d for d in rows if d["trip_id"] not in got]
+        con_e = db(rgn)
+        est = estimate_ghost_positions(con_e, need_estimate, now_epoch)
+        con_e.close()
+        for tid, v in got.items():
+            gps[(rgn, tid)] = v
+        for tid, v in est.items():
+            estimated[(rgn, tid)] = v
 
-    trackable = [d for d in results if d["trip_id"] in gps or d["trip_id"] in estimated]
+    trackable = [
+        d for d in results
+        if (d["region"], d["trip_id"]) in gps
+        or (d["region"], d["trip_id"]) in estimated
+    ]
     shown = trackable[:MAX_RESULTS]
 
     vehicles = [
         {
             "trip_id": d["trip_id"],
+            "region": d["region"],
             "route": d["route"],
             "route_color": d["route_color"],
             "headsign": d["headsign"],
             "minutes": d["minutes"],
-            **gps[d["trip_id"]],
+            **gps[(d["region"], d["trip_id"])],
         }
         for d in shown
-        if d["trip_id"] in gps
+        if (d["region"], d["trip_id"]) in gps
     ]
     # The rest are en route or staging: a ghost, dead-reckoned from the timetable
     # and drawn distinct from a live fix.
     ghosts = [
         {
             "trip_id": d["trip_id"],
+            "region": d["region"],
             "route": d["route"],
             "headsign": d["headsign"],
             "minutes": d["minutes"],
-            "lat": estimated[d["trip_id"]]["lat"],
-            "lon": estimated[d["trip_id"]]["lon"],
+            "lat": estimated[(d["region"], d["trip_id"])]["lat"],
+            "lon": estimated[(d["region"], d["trip_id"])]["lon"],
             "estimated": True,
         }
         for d in shown
-        if d["trip_id"] not in gps
+        if (d["region"], d["trip_id"]) not in gps
     ]
 
     # The stop across the road. A street-side stop (bus, tram) is almost always
@@ -1087,7 +1235,12 @@ def departures(stop_id: str, region: str = "seq"):
         con_p = db(region)
         dlat = 0.0011  # ~120 m
         dlon = 0.0011 / max(0.2, math.cos(math.radians(stop["stop_lat"])))
-        own = set(stop_ids)
+        own = {stop_id} | {
+            r["stop_id"]
+            for r in con_p.execute(
+                "SELECT stop_id FROM stops WHERE parent_station=?", (stop_id,)
+            )
+        }
         for r in con_p.execute(
             """
             SELECT stop_id, stop_name, stop_lat, stop_lon
@@ -1127,50 +1280,58 @@ def departures(stop_id: str, region: str = "seq"):
     # trip-level alerts). Each row carries indices into a single response-level
     # map, so an alert spanning half the board is sent once, not twelve times.
     used_alerts: dict = {}
-    al = st["al"]
     for dep in shown:
+        rgn = dep["region"]
+        al = STATE[rgn]["al"]
         ids = list(al["by_route"].get(dep["route_id"], []))
-        for sid in (dep["stop_id"], stop_id):
+        for sid in (dep["stop_id"], *station_of.get(rgn, ())):
             ids.extend(al["by_stop"].get(sid, []))
-        ids = sorted(set(ids))
-        dep["alert_ids"] = ids
-        for i in ids:
-            used_alerts[str(i)] = al["alerts"][i]
+        # Ids are namespaced by region — each region numbers its own alert
+        # list from zero, and a merged board draws from several at once.
+        dep["alert_ids"] = [f"{rgn}:{i}" for i in sorted(set(ids))]
+        for key in dep["alert_ids"]:
+            used_alerts[key] = al["alerts"][int(key.split(":", 1)[1])]
 
     # Tag every departure with the shape its trip follows, so any row on the
     # board can have its route drawn on demand — not just the tracked ones. The
     # geometry itself is fetched separately and cached by the client: it never
     # changes, and resending thousands of points on each 15s poll would dwarf
     # the part of the payload that does.
-    tracked_trips = [v["trip_id"] for v in vehicles]
-    shown_trips = [d["trip_id"] for d in shown]
-    if shown_trips:
-        con3 = db(region)
-        marks = ",".join("?" for _ in shown_trips)
-        shape_of = {
-            r["trip_id"]: r["shape_id"]
-            for r in con3.execute(
-                f"SELECT trip_id, shape_id FROM trips WHERE trip_id IN ({marks})",
-                shown_trips,
-            )
-        }
+    shape_of: dict = {}
+    for rgn in {d["region"] for d in shown}:
+        trips = [d["trip_id"] for d in shown if d["region"] == rgn]
+        con3 = db(rgn)
+        marks = ",".join("?" for _ in trips)
+        for r in con3.execute(
+            f"SELECT trip_id, shape_id FROM trips WHERE trip_id IN ({marks})",
+            trips,
+        ):
+            shape_of[(rgn, r["trip_id"])] = r["shape_id"]
         con3.close()
-        for d in shown:
-            d["shape_id"] = shape_of.get(d["trip_id"])
-        for v in vehicles:
-            v["shape_id"] = shape_of.get(v["trip_id"])
+    for d in shown:
+        d["shape_id"] = shape_of.get((d["region"], d["trip_id"]))
+    for v in vehicles:
+        v["shape_id"] = shape_of.get((v["region"], v["trip_id"]))
 
+    # Feed status spans every region on the board: a keyless mel board that
+    # borrows nsw's live XPT rows must not claim "timetable only".
+    merged = list(station_of)
+    ages_rt = [STATE[r]["rt_fetch"] for r in merged if STATE[r]["rt_fetch"]]
+    ages_vp = [STATE[r]["vp_fetch"] for r in merged if STATE[r]["vp_fetch"]]
     return {
         "stop": dict(stop),
         "generated_at": now_epoch,
-        # False = this region has NO realtime feeds configured (no key): the
-        # status must say "timetable only", not "waiting for first fetch".
-        "realtime_configured": bool(cfg["trip_updates"] or cfg["vehicle_positions"]),
+        # False = NO merged region has realtime feeds configured (no key):
+        # the status must say "timetable only", not "waiting for first fetch".
+        "realtime_configured": any(
+            bool(REGIONS[r]["trip_updates"] or REGIONS[r]["vehicle_positions"])
+            for r in merged
+        ),
         "realtime_feed_age": (
-            round(time.time() - st["rt_fetch"]) if st["rt_fetch"] else None
+            round(time.time() - max(ages_rt)) if ages_rt else None
         ),
         "vehicle_feed_age": (
-            round(time.time() - st["vp_fetch"]) if st["vp_fetch"] else None
+            round(time.time() - max(ages_vp)) if ages_vp else None
         ),
         "departures": shown,
         "vehicles": vehicles,

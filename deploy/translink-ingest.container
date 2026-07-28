@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh the Translink static GTFS timetable
+Description=Refresh every region's static GTFS timetable
 
 [Container]
 ContainerName=translink-ingest
@@ -7,13 +7,19 @@ Image=ghcr.io/jasonuithol/translink-departures:latest
 Volume=translink-data.volume:/data
 Environment=GTFS_DB=/data/gtfs.sqlite3
 # Same image as the server; argv override runs the ingest instead of uvicorn.
-Exec=python ingest_gtfs.py
+# "all" refreshes every region (TfNSW rotates Sydney's train trip ids to a
+# new timetable version within days, so weekly-SEQ-only left syd realtime
+# silently unmatched). Keyed regions (syd, nsw) refresh only when
+# enable-syd-vps.sh has written SYD_API_KEY below; a region that fails is
+# skipped and keeps serving its previous timetable (atomic swap).
+Exec=python ingest_gtfs.py --region all
 
 [Service]
 # Runs to completion rather than staying up. The ingest swaps the finished DB
 # in atomically, so the server keeps serving throughout and needs no restart.
 Type=oneshot
-# The real SEQ feed is a few hundred MB unzipped; give it room on a small VPS.
-TimeoutStartSec=1800
+# Melbourne alone is a 292 MB zip and a multi-GB ingest; the full sweep needs
+# real room on a small VPS.
+TimeoutStartSec=5400
 
 # No [Install] section: this is triggered by translink-ingest.timer, not by boot.

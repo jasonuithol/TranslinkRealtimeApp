@@ -26,6 +26,7 @@ ADE_BASEMAP_SRC="${ADE_BASEMAP_SRC:-/tmp/ade.pmtiles}"
 PER_BASEMAP_SRC="${PER_BASEMAP_SRC:-/tmp/per.pmtiles}"
 DAR_BASEMAP_SRC="${DAR_BASEMAP_SRC:-/tmp/dar.pmtiles}"
 QLD_BASEMAP_SRC="${QLD_BASEMAP_SRC:-/tmp/qld.pmtiles}"
+NSW_BASEMAP_SRC="${NSW_BASEMAP_SRC:-/tmp/nsw.pmtiles}"
 INGEST_MEL="${INGEST_MEL:-yes}"
 # Adelaide's static zip is public, keyless and small (~18 MB).
 INGEST_ADE="${INGEST_ADE:-yes}"
@@ -39,6 +40,8 @@ INGEST_QLD="${INGEST_QLD:-yes}"
 # Sydney's static downloads need the TfNSW key; 'auto' ingests only when the
 # quadlet already carries SYD_API_KEY (i.e. enable-syd-vps.sh has run).
 INGEST_SYD="${INGEST_SYD:-auto}"
+# NSW TrainLink (`nsw`) uses the same TfNSW key — same 'auto' rule.
+INGEST_NSW="${INGEST_NSW:-auto}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "This script must be run as root." >&2
@@ -111,6 +114,19 @@ else
   echo "==> Sydney ingest skipped (no SYD_API_KEY in the quadlet yet)."
 fi
 
+if [[ "${INGEST_NSW}" == "yes" || ( "${INGEST_NSW}" == "auto" && -n "$SYD_KEY" ) ]]; then
+  if [[ -n "$SYD_KEY" ]]; then
+    echo "==> Ingesting the NSW TrainLink timetable (one TfNSW zip)…"
+    as_deploy "podman run --rm -v translink-data:/data -e SYD_API_KEY='${SYD_KEY}' \
+      '${IMAGE_REF}' python ingest_gtfs.py --region nsw"
+  else
+    echo "==> INGEST_NSW requested but no SYD_API_KEY in the quadlet — run"
+    echo "    deploy/enable-syd-vps.sh first. Skipping the TrainLink ingest."
+  fi
+else
+  echo "==> NSW TrainLink ingest skipped (no SYD_API_KEY in the quadlet yet)."
+fi
+
 install_basemap() {
   local src="$1" name="$2"
   if [[ -f "$src" ]]; then
@@ -133,6 +149,7 @@ install_basemap "${ADE_BASEMAP_SRC}" ade
 install_basemap "${PER_BASEMAP_SRC}" per
 install_basemap "${DAR_BASEMAP_SRC}" dar
 install_basemap "${QLD_BASEMAP_SRC}" qld
+install_basemap "${NSW_BASEMAP_SRC}" nsw
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"
@@ -185,14 +202,20 @@ if curl -fsS --max-time 10 "http://localhost:${APP_PORT}/api/regions" 2>/dev/nul
   check "syd config"      "http://localhost:${APP_PORT}/api/r/syd/config"    '"basemap"'
   check "syd search"      "http://localhost:${APP_PORT}/api/r/syd/stops/search?q=Circular" '"stop_id"'
 fi
+# Same deal for NSW TrainLink — only once its timetable exists.
+if curl -fsS --max-time 10 "http://localhost:${APP_PORT}/api/regions" 2>/dev/null | grep -q '"nsw"'; then
+  check "nsw config"      "http://localhost:${APP_PORT}/api/r/nsw/config"    '"basemap"'
+  check "nsw search"      "http://localhost:${APP_PORT}/api/r/nsw/stops/search?q=Central" '"stop_id"'
+fi
 
 echo
 if [[ $fail -eq 0 ]]; then
   echo "════════════════════════════════════════════════════════"
   echo "  Updated. Board: http://<this-vps-ip>:${APP_PORT}"
   echo "  Melbourne: same URL — the ⇄ switch appears in the eyebrow."
-  echo "  NOTE: the weekly ingest timer refreshes SEQ only; re-run"
-  echo "  this script (or the ingest line in it) to refresh Melbourne."
+  echo "  NOTE: the weekly ingest timer refreshes every region (keyed ones"
+  echo "  only once enable-syd-vps.sh has written the key into the ingest"
+  echo "  quadlet). This script also refreshes them all right now."
   echo "════════════════════════════════════════════════════════"
 else
   echo "One or more health checks FAILED — see above. The previous"

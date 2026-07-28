@@ -8,6 +8,10 @@ Usage:
     python ingest_gtfs.py --region mel gtfs.zip    # Melbourne: local zip
     python ingest_gtfs.py --region syd --key K     # Sydney: download + ingest
     python ingest_gtfs.py --region syd DIR/        # Sydney: dir of <prefix>.zip
+    python ingest_gtfs.py --region all             # every region (the weekly
+                                                   # refresh; keyed regions are
+                                                   # skipped without a key, a
+                                                   # failed region is skipped)
 
 Regions:
   seq  Translink South East Queensland — one flat GTFS zip, ids globally unique.
@@ -22,6 +26,11 @@ Regions:
        warning, so an endpoint moving doesn't sink the whole ingest.
   ade  Adelaide Metro — one flat GTFS zip, ids globally unique, no key
        (same shape as seq; bus, tram and train in the one feed).
+  nsw  NSW TrainLink — TfNSW's `nswtrains` "For Realtime" zip: the regional
+       trains (XPT Sydney–Melbourne/Brisbane, Xplorer to Canberra, Armidale
+       & Broken Hill) plus the connecting coach network. Same key and auth
+       as syd (--key or SYD_API_KEY), ingested under a single "nt:" prefix
+       so app.py's realtime config maps the feed's ids onto it.
   qld  Translink regional Queensland — eighteen small town networks
        (Cairns, Townsville, Mackay, …), each its own flat zip on the same
        keyless host as seq, merged into one region. Ids are only unique
@@ -137,6 +146,18 @@ REGIONS = {
             ("lw", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail/innerwest"),
             ("lc", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail/cbdandsoutheast"),
             ("lp", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail/parramatta"),
+        ],
+    },
+    "nsw": {
+        "db": Path(os.environ.get("NSW_GTFS_DB") or SEQ_DB.parent / "gtfs-nsw.sqlite3"),
+        "modes": None,
+        "needs_key": True,
+        # NSW TrainLink regional trains + coaches — the interstate services
+        # (XPT to Melbourne & Brisbane, Xplorer to Canberra) that syd's
+        # comment declares out of scope. One feed, but still prefixed so the
+        # NSW_* realtime env config (same TfNSW key as syd) can address it.
+        "sources": [
+            ("nt", "https://api.transport.nsw.gov.au/v1/gtfs/schedule/nswtrains"),
         ],
     },
 }
@@ -404,24 +425,14 @@ def ingest(region: str, zips: list[tuple[str, Path]]) -> None:
     print(f"Done. {n:,} stop_times rows in {db_path}")
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("zip", nargs="?",
-                    help="already-downloaded feed zip (or, for a multi-source "
-                         "region, a directory of <prefix>.zip files)")
-    ap.add_argument("--region", default="seq", choices=sorted(REGIONS))
-    ap.add_argument("--key", default=os.environ.get("SYD_API_KEY", ""),
-                    help="API key for regions whose downloads need one "
-                         "(syd; default $SYD_API_KEY)")
-    args = ap.parse_args()
-
-    cfg = REGIONS[args.region]
+def run_region(region: str, zip_arg: str | None, key: str) -> None:
+    cfg = REGIONS[region]
     if "sources" in cfg:
         pairs: list[tuple[str, Path]] = []
-        if args.zip:
-            src_dir = Path(args.zip)
+        if zip_arg:
+            src_dir = Path(zip_arg)
             if not src_dir.is_dir():
-                sys.exit(f"{args.region} takes a DIRECTORY of <prefix>.zip files")
+                sys.exit(f"{region} takes a DIRECTORY of <prefix>.zip files")
             for prefix, _url in cfg["sources"]:
                 p = src_dir / f"{prefix}.zip"
                 if p.exists():
@@ -429,13 +440,13 @@ if __name__ == "__main__":
                 else:
                     print(f"  ({prefix}: no {p.name} in {src_dir}, skipping)")
         else:
-            headers = syd_headers(args.key) if cfg.get("needs_key") else {}
+            headers = syd_headers(key) if cfg.get("needs_key") else {}
             if cfg.get("needs_key") and not headers:
-                sys.exit("Sydney downloads need a TfNSW open data key: "
+                sys.exit("TfNSW downloads need an open data key: "
                          "--key or SYD_API_KEY (free at "
                          "https://opendata.transport.nsw.gov.au/)")
             for prefix, url in cfg["sources"]:
-                dest = cfg["db"].parent / f"{args.region}_{prefix}.zip"
+                dest = cfg["db"].parent / f"{region}_{prefix}.zip"
                 try:
                     download_feed(url, dest, headers=headers)
                 except httpx.HTTPStatusError as e:
@@ -445,11 +456,50 @@ if __name__ == "__main__":
                 pairs.append((prefix, dest))
         if not pairs:
             sys.exit("nothing to ingest")
-        ingest(args.region, pairs)
+        ingest(region, pairs)
     else:
-        if args.zip:
-            zpath = Path(args.zip)
+        if zip_arg:
+            zpath = Path(zip_arg)
         else:
-            zpath = cfg["db"].parent / f"{args.region}_gtfs.zip"
+            zpath = cfg["db"].parent / f"{region}_gtfs.zip"
             download_feed(cfg["url"], zpath)
-        ingest(args.region, [("", zpath)])
+        ingest(region, [("", zpath)])
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("zip", nargs="?",
+                    help="already-downloaded feed zip (or, for a multi-source "
+                         "region, a directory of <prefix>.zip files)")
+    ap.add_argument("--region", default="seq",
+                    choices=sorted(REGIONS) + ["all"])
+    ap.add_argument("--key", default=os.environ.get("SYD_API_KEY", ""),
+                    help="API key for regions whose downloads need one "
+                         "(syd/nsw; default $SYD_API_KEY)")
+    args = ap.parse_args()
+
+    if args.region == "all":
+        # The weekly refresh: every region, downloads only. One region's bad
+        # day must not sink the rest — each ingest is an atomic swap, so a
+        # failed region simply keeps serving its previous timetable.
+        if args.zip:
+            sys.exit("--region all always downloads; it takes no zip/dir")
+        failed = []
+        for region in REGIONS:
+            print(f"=== {region} ===")
+            if REGIONS[region].get("needs_key") and not syd_headers(args.key):
+                print(f"  (skipping {region}: needs a TfNSW key and "
+                      "SYD_API_KEY is unset)")
+                continue
+            try:
+                run_region(region, None, args.key)
+            except SystemExit as e:
+                print(f"  !! {region}: {e.code} — previous DB stays in place")
+                failed.append(region)
+            except Exception as e:
+                print(f"  !! {region} failed: {e} — previous DB stays in place")
+                failed.append(region)
+        if failed:
+            print("regions that failed this refresh:", ", ".join(failed))
+    else:
+        run_region(args.region, args.zip, args.key)

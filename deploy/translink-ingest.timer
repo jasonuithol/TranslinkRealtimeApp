@@ -5,8 +5,10 @@ Description=Weekly Translink GTFS timetable refresh
 # generates from translink-ingest.container.
 
 [Timer]
-# The feed changes roughly weekly. Sunday 03:30 local: off-peak, and well clear
-# of the after-midnight (25:xx) services the board still needs to show.
+# The feeds change roughly weekly — and TfNSW's train trip ids stop matching
+# realtime within days of a timetable version bump, so this refreshes EVERY
+# region, not just SEQ. Sunday 03:30 local: off-peak, and well clear of the
+# after-midnight (25:xx) services the board still needs to show.
 OnCalendar=Sun *-*-* 03:30:00
 # Randomise slightly so we are not hammering Translink on the stroke of the hour.
 RandomizedDelaySec=900

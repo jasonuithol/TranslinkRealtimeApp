@@ -1,10 +1,12 @@
-# Next Service — a live departures board for Brisbane, Melbourne, Sydney, Adelaide, Perth, Darwin & regional Queensland
+# Next Service — a live departures board for Brisbane, Melbourne, Sydney, Adelaide, Perth, Darwin, regional Queensland & the NSW TrainLink interstate network
 
 A "next service arriving in X minutes" board with a live map, for any public
 transport stop in **Queensland (Translink — South East Queensland plus
 eighteen regional town networks, Cairns to Warwick)**, **Victoria (PTV +
-V/Line)**, **Sydney (TfNSW)**, **South Australia (Adelaide Metro)**,
-**Western Australia (Transperth/PTA)** or the **Northern Territory** —
+V/Line)**, **Sydney (TfNSW)**, **regional NSW & interstate (NSW TrainLink —
+XPTs to Melbourne and Brisbane, Xplorers to Canberra, plus the connecting
+coaches)**, **South Australia (Adelaide Metro)**, **Western Australia
+(Transperth/PTA)** or the **Northern Territory** —
 trains, metro, trams, buses and ferries. One codebase, one UI, a region switcher in the header, and a search
 that spans every region (each result row carries its state). Every time on
 the board is the network's own wall clock, with the timezone (AEST, ACST,
@@ -13,6 +15,12 @@ AWST, …) badged beside the stop name.
 - **Live departures board** — realtime arrival predictions overlaid on the
   timetable, refreshing every 15 s, with per-service colours that stay stable
   as the board advances. 🛜 marks a realtime prediction, 📅 timetable-only.
+- **One board per physical station, however many feeds serve it** — TfNSW
+  publishes suburban trains, metro, light rail and TrainLink as separate
+  feeds, and the big interstate interchanges (Southern Cross, Roma Street,
+  Adelaide Central Bus) span two states' data: boards union all of them, so
+  Central shows the XPT beside the suburbans and Southern Cross shows it
+  beside the V/Line services.
 - **Live map** (MapLibre, fully self-hosted vector basemap) — every listed
   service is on the map: a **solid marker** where the vehicle broadcasts GPS,
   a **ghost marker** dead-reckoned from the timetable where it doesn't. Click
@@ -44,6 +52,7 @@ AWST, …) badged beside the stop name.
 | `qld` — Translink regional Queensland (18 town networks merged: Cairns, Townsville, Mackay, Toowoomba, Rockhampton, Bundaberg, Hervey Bay, Gladstone, Gympie, Warwick, Bowen, Whitsundays, Innisfail, Maleny, Kilcoy, Magnetic Island + ferry, North Stradbroke Island) | public | TripUpdates + VehiclePositions + Alerts for Cairns, Bowen, Innisfail, Maryborough–Hervey Bay & Stradbroke; the rest schedule-only | none |
 | `mel` — PTV Melbourne + V/Line Victoria (metro & regional train, tram, metro bus, regional coach) | public | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.vic.gov.au](https://opendata.transport.vic.gov.au/) (realtime only) |
 | `syd` — TfNSW Sydney (train, metro, bus, ferry, light rail) | keyed | TripUpdates + VehiclePositions + Alerts per mode | free key from [opendata.transport.nsw.gov.au](https://opendata.transport.nsw.gov.au/) (static **and** realtime) |
+| `nsw` — NSW TrainLink regional & interstate (XPT to Melbourne/Brisbane, Xplorer to Canberra/Armidale/Broken Hill, connecting coaches) | keyed | TripUpdates + VehiclePositions + Alerts | same TfNSW key as `syd` |
 | `ade` — Adelaide Metro South Australia (train, tram, bus, country coaches, Kangaroo Island ferry) | public | TripUpdates + VehiclePositions + Alerts | none |
 | `per` — Transperth / PTA Western Australia (train incl. Australind, bus, ferry; regional town buses out to Broome, Carnarvon, Kalgoorlie, Esperance, Albany) | public | none published — schedule-only | none |
 | `dar` — NT Transport Darwin (bus: Darwin, Palmerston, rural to Adelaide River & Kakadu) | public | none published — schedule-only | none |
@@ -58,6 +67,14 @@ Sydney needs its key even for the timetable download (`Authorization: apikey
 environment variables, pre-wired in `deploy/translink.container`; run
 `deploy/probe-syd.sh <key>` first to confirm TfNSW's current v1/v2 endpoint
 split before enabling.
+
+NSW TrainLink (`nsw`) is the interstate region: the XPTs to Melbourne and
+Brisbane, the Xplorers to Canberra, Armidale and Broken Hill, and the coach
+network that feeds them — live GPS included (the trains carry 4Trak
+trackers). It uses the **same** TfNSW key as `syd` for both the timetable
+download and the `NSW_*` realtime variables; `deploy/enable-syd-vps.sh`
+switches both regions on in one go, and `deploy/probe-syd.sh` probes the
+`nswtrains` endpoints alongside Sydney's.
 
 Perth and Darwin publish no realtime feeds at all (the NT Bus Tracker app is
 live, but its backend isn't open data), so both run as permanent
@@ -81,11 +98,13 @@ podman volume create translink-data
 
 # Timetables (SEQ ~1 min after download; Melbourne's zip is 292 MB;
 # Sydney downloads one zip per mode and needs your TfNSW key;
+# NSW TrainLink is one zip on the same TfNSW key;
 # Adelaide, Perth and Darwin are one small public zip each;
 # regional QLD downloads 18 small keyless zips into one merged region)
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region mel
 podman run --rm -v translink-data:/data -e SYD_API_KEY=<key> translink-departures python ingest_gtfs.py --region syd
+podman run --rm -v translink-data:/data -e SYD_API_KEY=<key> translink-departures python ingest_gtfs.py --region nsw
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region ade
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region per
 podman run --rm -v translink-data:/data translink-departures python ingest_gtfs.py --region dar
@@ -101,6 +120,7 @@ podman run --rm -e REGION=ade -v translink-data:/data -v translink-basemap-cache
 podman run --rm -e REGION=per -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 podman run --rm -e REGION=dar -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
 podman run --rm -e REGION=qld -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap
+podman run --rm -e REGION=nsw -v translink-data:/data -v translink-basemap-cache:/cache translink-basemap  # biggest bbox: Broken Hill–Melbourne–Brisbane
 
 podman run -d -p 8000:8000 -v translink-data:/data translink-departures
 ```
@@ -139,8 +159,10 @@ one the map hides and the board works unchanged.
 CI (GitHub Actions) smoke-tests every push against a mock feed and publishes
 `ghcr.io/jasonuithol/translink-departures`; the server container runs under
 rootless Podman with Quadlet units (`deploy/`) and `AutoUpdate=registry`, so a
-push to `main` rolls out on its own. A weekly systemd timer re-ingests the SEQ
-timetable.
+push to `main` rolls out on its own. A weekly systemd timer re-ingests **every
+region's** timetable (`--region all`) — not a nicety: TfNSW rotates Sydney's
+train trip ids to a new timetable version within days, after which realtime
+predictions silently stop matching a stale static feed.
 
 - `deploy/install-vps.sh` — first-time install (run as root on the VPS)
 - `deploy/release-vps.sh root@host` — one local command: ship basemap + run

@@ -36,10 +36,15 @@ CACHE_DIR="${CACHE_DIR:-/cache}"
 #   REGION=qld            regional Queensland's eighteen town networks, dotted
 #                         down the whole eastern seaboard: Cairns/Innisfail in
 #                         the north to Warwick in the south
+#   REGION=nsw            NSW TrainLink's interstate reach: Adelaide west
+#                         (the Broken Hill coach ends there), Melbourne south,
+#                         Brisbane north — most of the south-east of the
+#                         continent, so the biggest tile set
 REGION="${REGION:-seq}"
 case "$REGION" in
   seq) DEFAULT_BBOX="151.8,-28.3,153.6,-26.0" ;;
   qld) DEFAULT_BBOX="145.4,-28.5,153.8,-16.5" ;;
+  nsw) DEFAULT_BBOX="138.4,-38.4,153.7,-27.2" ;;
   mel) DEFAULT_BBOX="140.9,-39.2,150.3,-33.9" ;;
   syd) DEFAULT_BBOX="149.5,-35.0,151.9,-32.6" ;;
   ade) DEFAULT_BBOX="133.4,-38.1,141.1,-31.9" ;;

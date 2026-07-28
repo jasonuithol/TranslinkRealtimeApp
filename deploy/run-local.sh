@@ -8,9 +8,11 @@
 #   ./deploy/run-local.sh <VIC-KEY> <NSW-KEY>   # live Melbourne + Sydney
 #   ./deploy/run-local.sh "" <NSW-KEY>          # live Sydney only
 #
-# First time (or to refresh the TfNSW timetable), ingest Sydney on the way up:
+# First time (or to refresh the TfNSW timetables), ingest Sydney and/or the
+# NSW TrainLink interstate region on the way up (both use the NSW key):
 #
 #   INGEST_SYD=yes ./deploy/run-local.sh "" <NSW-KEY>
+#   INGEST_NSW=yes ./deploy/run-local.sh "" <NSW-KEY>
 #
 # (Runs between build and start, so the freshly built image does the ingest
 # and the app boots onto the new timetable. A few minutes of downloads.)
@@ -45,6 +47,16 @@ if [[ "${INGEST_SYD:-no}" == "yes" ]]; then
     "$IMAGE" python ingest_gtfs.py --region syd
 fi
 
+if [[ "${INGEST_NSW:-no}" == "yes" ]]; then
+  if [[ -z "$NSW_KEY" ]]; then
+    echo "INGEST_NSW=yes needs the NSW key as the second argument." >&2
+    exit 1
+  fi
+  echo "==> Ingesting the NSW TrainLink timetable (one TfNSW zip)…"
+  podman run --rm -v translink-data:/data -e SYD_API_KEY="$NSW_KEY" \
+    "$IMAGE" python ingest_gtfs.py --region nsw
+fi
+
 MEL_ENV=()
 if [[ -n "$KEY" ]]; then
   MEL_ENV=(
@@ -66,10 +78,16 @@ if [[ -n "$NSW_KEY" ]]; then
     -e SYD_TRIP_UPDATES="t|${NSW}/v2/gtfs/realtime/sydneytrains;m|${NSW}/v2/gtfs/realtime/metro;b|${NSW}/v1/gtfs/realtime/buses;f|${NSW}/v1/gtfs/realtime/ferries/sydneyferries;lw|${NSW}/v2/gtfs/realtime/lightrail/innerwest;lc|${NSW}/v1/gtfs/realtime/lightrail/cbdandsoutheast;lp|${NSW}/v1/gtfs/realtime/lightrail/parramatta"
     -e SYD_VEHICLE_POSITIONS="t|${NSW}/v2/gtfs/vehiclepos/sydneytrains;m|${NSW}/v2/gtfs/vehiclepos/metro;b|${NSW}/v1/gtfs/vehiclepos/buses;f|${NSW}/v1/gtfs/vehiclepos/ferries/sydneyferries;lw|${NSW}/v2/gtfs/vehiclepos/lightrail/innerwest;lc|${NSW}/v1/gtfs/vehiclepos/lightrail/cbdandsoutheast;lp|${NSW}/v1/gtfs/vehiclepos/lightrail/parramatta"
     -e SYD_ALERTS="t|${NSW}/v2/gtfs/alerts/sydneytrains;m|${NSW}/v2/gtfs/alerts/metro;b|${NSW}/v2/gtfs/alerts/buses;f|${NSW}/v2/gtfs/alerts/ferries"
+    # NSW TrainLink (the `nsw` region) — same key. Endpoint versions per
+    # deploy/probe-syd.sh; if a probe shows one has moved, fix it here and in
+    # enable-syd-vps.sh.
+    -e NSW_TRIP_UPDATES="nt|${NSW}/v1/gtfs/realtime/nswtrains"
+    -e NSW_VEHICLE_POSITIONS="nt|${NSW}/v1/gtfs/vehiclepos/nswtrains"
+    -e NSW_ALERTS="nt|${NSW}/v2/gtfs/alerts/nswtrains"
   )
-  echo "==> Sydney realtime: ON"
+  echo "==> Sydney + TrainLink realtime: ON"
 else
-  echo "==> Sydney realtime: off (no NSW key given — static timetable + ghosts)"
+  echo "==> Sydney + TrainLink realtime: off (no NSW key given — static timetable + ghosts)"
 fi
 
 podman rm -f "$NAME" >/dev/null 2>&1 || true

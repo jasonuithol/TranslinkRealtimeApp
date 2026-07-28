@@ -774,6 +774,10 @@
         { label: "Penrith",    sid: "t:275010" },
         { label: "Gosford",    sid: "t:225040" },
     ] },
+    // The interstate region: TrainLink XPTs/Xplorers + coaches out of Central.
+    // One door only (the landing is cluttered enough) — Canberra, Albury &c.
+    // can get their own buttons once the declutter lands.
+    { rid: "nsw", label: "TrainLink", sid: "nt:200060" },
     { rid: "mel", label: "Melbourne", sid: "2:vic:rail:FSS", extras: [
         { label: "Geelong",   sid: "1:vic:rail:GEL" },   // V/Line
         { label: "Frankston", sid: "2:vic:rail:FKN" },   // metro
@@ -1073,7 +1077,15 @@
     );
   });
 
-  function selectStop(id) {
+  function selectStop(id, rgn) {
+    // A landmark from a sibling region's traced route: that stop lives in the
+    // other region's timetable, so open it there (a full reload — the map
+    // style, caches and colour state are all per-network).
+    if (rgn && rgn !== region) {
+      localStorage.setItem("region", rgn);
+      location.href = `?region=${encodeURIComponent(rgn)}&stop=${encodeURIComponent(id)}`;
+      return;
+    }
     stopId = id;
     selectedTrip = null;      // a route from the previous stop is not relevant
     // There is something to look at now: uncover the map and give it its full
@@ -1545,7 +1557,8 @@
         const stops = map.queryRenderedFeatures(e.point, { layers: stopLayers });
         if (stops.length) {
           const pick = stops.find((f) => f.layer.id === "landmarks") || stops[0];
-          if (pick.properties.stop_id) selectStop(pick.properties.stop_id);
+          if (pick.properties.stop_id)
+            selectStop(pick.properties.stop_id, pick.properties.region);
           return;
         }
         if (selectedTrip) selectRoute(selectedTrip);   // empty map → clear route
@@ -1599,16 +1612,23 @@
 
   const emptyFC = () => ({ type: "FeatureCollection", features: [] });
 
+  // A merged board can carry rows borrowed from a sibling region (the XPT on
+  // Central's suburban board) — every per-trip fetch must go to the region
+  // the row came from, not the board's.
+  const tripRegion = (tripId) =>
+    (lastData?.departures || []).find((d) => d.trip_id === tripId)?.region || region;
+  const apiIn = (rgn, path) => `/api/r/${rgn || region}${path}`;
+
   // Route geometry is static for the life of a timetable, so fetch each shape
   // once and keep it. `pending` stops a slow fetch being issued repeatedly by
   // successive polls.
   const shapeCache = new Map(), shapePending = new Set();
 
-  async function ensureShape(shapeId) {
+  async function ensureShape(shapeId, rgn) {
     if (!shapeId || shapeCache.has(shapeId) || shapePending.has(shapeId)) return;
     shapePending.add(shapeId);
     try {
-      const res = await fetch(api(`/shape/${encodeURIComponent(shapeId)}`));
+      const res = await fetch(apiIn(rgn, `/shape/${encodeURIComponent(shapeId)}`));
       if (res.ok) {
         shapeCache.set(shapeId, (await res.json()).points);
         if (lastData) drawRoutes(lastData);   // redraw once it lands
@@ -1636,7 +1656,8 @@
     try {
       // ?v bumped on schema change (v2: scheduled times added) — the
       // response is cached for a day, same lesson as all-stops.
-      const res = await fetch(api(`/trip-stops/${encodeURIComponent(tripId)}?v=2`));
+      const res = await fetch(
+        apiIn(tripRegion(tripId), `/trip-stops/${encodeURIComponent(tripId)}?v=2`));
       tripStopsCache.set(tripId, res.ok ? (await res.json()).stops : null);
       drawLandmarks();
       renderTripPanel();
@@ -1656,9 +1677,16 @@
     const routeStops = (selectedTrip && tripStopsCache.get(selectedTrip)) || [];
     const paired = lastData?.paired || [];
     const selfId = lastData?.stop?.stop_id;
+    // A traced trip may belong to a sibling region (an XPT on Central's
+    // board): its stops must open in *that* region, so each landmark
+    // remembers where it came from.
+    const routeRgn = selectedTrip ? tripRegion(selectedTrip) : region;
     const seen = new Set();
     const features = [];
-    for (const l of [...routeStops, ...paired]) {
+    for (const [l, rgn] of [
+      ...routeStops.map((l) => [l, routeRgn]),
+      ...paired.map((l) => [l, region]),
+    ]) {
       if (l.stop_id === selfId || seen.has(l.stop_id)) continue;
       seen.add(l.stop_id);
       features.push({
@@ -1666,6 +1694,7 @@
         geometry: { type: "Point", coordinates: [l.lon, l.lat] },
         properties: {
           stop_id: l.stop_id,   // click a landmark to view it as the stop
+          region: rgn,
           name: l.stop_name,
           icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
         },
@@ -1774,7 +1803,7 @@
     const row = (data.departures || []).find((d) => d.trip_id === selectedTrip);
     const pts = row && shapeCache.get(row.shape_id);
     if (!pts) {
-      if (row) ensureShape(row.shape_id);
+      if (row) ensureShape(row.shape_id, row.region);
       map.getSource("routes").setData(emptyFC());
       return;
     }
@@ -1795,7 +1824,7 @@
       // Start fetching now rather than waiting on the map's draw pass, so both
       // are usually cached by the time they are wanted.
       const d = (lastData?.departures || []).find((x) => x.trip_id === selectedTrip);
-      if (d) ensureShape(d.shape_id);
+      if (d) ensureShape(d.shape_id, d.region);
       ensureTripStops(selectedTrip);
       refreshTripTimes(selectedTrip);
     }
@@ -1817,7 +1846,8 @@
   async function refreshTripTimes(tripId) {
     if (!tripId) return;
     try {
-      const res = await fetch(api(`/trip-times/${encodeURIComponent(tripId)}`));
+      const res = await fetch(
+        apiIn(tripRegion(tripId), `/trip-times/${encodeURIComponent(tripId)}`));
       if (res.ok) {
         tripTimesCache.set(tripId, await res.json());
         renderTripPanel();

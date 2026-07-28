@@ -29,6 +29,7 @@ STATIC=(
   "lw|$BASE/v1/gtfs/schedule/lightrail/innerwest"
   "lc|$BASE/v1/gtfs/schedule/lightrail/cbdandsoutheast"
   "lp|$BASE/v1/gtfs/schedule/lightrail/parramatta"
+  "nt|$BASE/v1/gtfs/schedule/nswtrains"
 )
 # Realtime protobufs (fetched whole; entity count printed via protoc-less grep
 # is meaningless, so size stands in — an empty feed is a few hundred bytes).
@@ -51,6 +52,15 @@ REALTIME=(
   "AL m|$BASE/v2/gtfs/alerts/metro"
   "AL b|$BASE/v2/gtfs/alerts/buses"
   "AL f|$BASE/v2/gtfs/alerts/ferries"
+  # NSW TrainLink (the `nsw` region). Probed on BOTH versions because TfNSW
+  # has moved modes between /v1 and /v2 before — whichever answers 200 with a
+  # non-trivial size is the one the NSW_* env lines should carry.
+  "TU nt|$BASE/v1/gtfs/realtime/nswtrains"
+  "TU nt2|$BASE/v2/gtfs/realtime/nswtrains"
+  "VP nt|$BASE/v1/gtfs/vehiclepos/nswtrains"
+  "VP nt2|$BASE/v2/gtfs/vehiclepos/nswtrains"
+  "AL nt|$BASE/v1/gtfs/alerts/nswtrains"
+  "AL nt2|$BASE/v2/gtfs/alerts/nswtrains"
 )
 
 echo "== static schedule =="
@@ -68,11 +78,14 @@ SCRATCH="$(mktemp)"
 trap 'rm -f "$SCRATCH"' EXIT
 for entry in "${REALTIME[@]}"; do
   label="${entry%%|*}"; url="${entry#*|}"
+  # The \n matters: without it `read` hits EOF, returns 1, and set -e kills
+  # the script before a single realtime line prints.
   read -r code size < <(curl -s --max-time 30 -H "$AUTH" -o "$SCRATCH" \
-    -w "%{http_code} %{size_download}" "$url" || echo "ERR 0")
+    -w "%{http_code} %{size_download}\n" "$url" || echo "ERR 0")
   printf "  %-6s %-3s %8sB  %s\n" "$label" "$code" "$size" "$url"
 done
 
 echo
 echo "All 200s? Then: SYD_API_KEY=$KEY python ingest_gtfs.py --region syd"
-echo "and ./deploy/run-local.sh with the key to see it live."
+echo "(and --region nsw for TrainLink) and ./deploy/run-local.sh with the"
+echo "key to see it live."

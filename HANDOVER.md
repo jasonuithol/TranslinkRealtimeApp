@@ -52,7 +52,10 @@ The basemap step is optional and slow-moving — refresh it occasionally, not
 weekly like the timetable. First build downloads ~2 GB of sources (Australia
 OSM extract, Natural Earth, water polygons) into the cache volume and takes
 ~10 min; rebuilds reuse the cache. Output: 64 MB `seq.pmtiles` on the data
-volume.
+volume. The full per-region set is ~1.5 GB (nsw alone is 590 MB), so when
+releasing to the VPS name just the rebuilt ones:
+`BASEMAP_REGIONS="nsw" ./deploy/release-vps.sh root@…` — the VPS keeps its
+existing copies of the others.
 
 On the VPS it is managed by **Quadlet** units in `deploy/`, installed by
 `deploy/install-vps.sh` — see that script's header for what it assumes about
@@ -250,6 +253,81 @@ times and the map shows timetable-estimated ghosts.
   browsing mode (the "clicked Stradbroke, lost the goose" bug). The
   moveend hand-over is now gated on `!stopId`: it only runs while
   browsing, never while a stop's board is anchored.
+- **NSW TrainLink interstate (`nsw`), added 2026-07-28**: the answer to
+  "any interstate travel options?" — TfNSW's `nswtrains` feed is the
+  regional trains (XPT Sydney–Melbourne and Sydney–Brisbane, Xplorer to
+  Canberra, Armidale, Moree and Broken Hill) plus the connecting coach
+  network, and it has full GTFS-RT (the trains carry 4Trak GPS). The syd
+  ingest comment had explicitly parked it as out of scope; it's now its own
+  region rather than part of `syd` because its stops span Broken Hill to
+  Brisbane to Melbourne — folding it in would have blown out syd's basemap
+  bbox and geocode viewbox. Single source ingested under an `nt:` prefix
+  (one feed, but prefixed so the `NSW_*` env realtime config addresses it
+  syd-style). **Same TfNSW key as syd** for static AND realtime — the
+  ingest reads `SYD_API_KEY`, `enable-syd-vps.sh` writes both regions'
+  quadlet env, `probe-syd.sh` probes the nswtrains endpoints (v1 AND v2 —
+  TfNSW moves modes between versions; probed live 2026-07-28: TU and VP on
+  v1, alerts on v2, exactly as configured — note v1 alerts 401s rather
+  than 404s). Basemap bbox `138.4,-38.4,153.7,-27.2` is the biggest tile
+  set in the app — most of south-east Australia, INCLUDING Adelaide,
+  because the Broken Hill coach terminates at Adelaide Central Bus Station
+  (4 feed stops sit in SA). Overlaps syd, mel, seq, ade and qld geographically;
+  the `!stopId`-gated moveend hand-over (see the qld bullet) is what makes
+  that safe. The region `center` is **Dubbo, deliberately not Sydney**: the
+  browse hand-over picks the nearest region center, so a Sydney-CBD center
+  would steal southern-Sydney browsing from syd. Keep overlapping regions'
+  centers well apart. Home button: single "TrainLink" door at `nt:200060` (Central —
+  TSN verified against the sydneytrains/metro feeds, re-check after the
+  first real ingest); more doors (Canberra, Albury, Wagga, Dubbo) wait for
+  the landing-page declutter.
+- **Merged station boards across region silos (2026-07-29)**: Jason's bug —
+  "I can see XPT routes or normal sydney routes, but not both. please merge
+  them." A board was anchored to one region's DB and pollers, so Central
+  showed suburban trains (`syd`) or TrainLink (`nsw`), never both — and the
+  intra-syd split was worse than reported: `t:200060`, `m:200060` and
+  `lc:200060` are three separate parent stations, so the Central board
+  didn't even show Sydney Metro. Fix, server side (`app.py`):
+  `sibling_stops()` finds the same physical station in sibling feeds — a
+  bare-TSN suffix match across the TfNSW family (`TSN_REGIONS = syd, nsw`;
+  TfNSW reuses TSNs across all its feeds) plus a hand-curated
+  `STATION_LINKS` table for cross-state interchanges with no shared id
+  (Southern Cross `2:vic:rail:SSS`↔`nt:22180`, Roma Street
+  `place_romsta`↔`nt:40001`, Adelaide Central Bus `102954`↔`nt:G50001`;
+  matched against the anchor stop AND its parent). `departures()` unions
+  every sibling board's candidate rows, tags each row/vehicle/ghost with its
+  source `region`, then dedupes twice: (region, trip, stop) for
+  parent/child sibling overlap, and a **physical-service dedupe** — TfNSW
+  publishes the Hunter line in BOTH sydneytrains and nswtrains with
+  different trip ids, so (platform TSN, route, scheduled minute) is one
+  train; the copy with realtime wins, else the anchor region's. Placement,
+  alerts and shape-tagging all run per-region (VP caches and DBs are
+  per-region; alert ids are now namespaced `region:index` since each region
+  numbers its own alert list from zero). `realtime_configured`/feed ages
+  span every merged region — a keyless mel board borrowing live nsw rows
+  must not claim "timetable only". Client side (`index.html`): every
+  per-trip fetch (shape, trip-stops, trip-times) goes to `row.region` via
+  `tripRegion()`/`apiIn()`, not the board's region; traced-route landmarks
+  carry their region and `selectStop()` does a full cross-region navigation
+  when a landmark belongs to a sibling region (per-region caches make a
+  reload correct). `sibling_stops` is lru_cached — the answer only changes
+  on re-ingest, and a stale sibling just 404s its skipped board lookup.
+  Verified on keyless tpanel: Newcastle Interchange merges Hunter trains +
+  TrainLink coach with zero duplicate pairs, tracing the nt: coach from the
+  syd board loads its timeline from the nsw API, seq boards byte-identical
+  to the old image. NOT yet verified with live realtime keys (the
+  realtime-preferred arm of the physical dedupe) — eyeball a keyed tdev or
+  the VPS after deploy.
+- **Static timetables ROT, fast (found 2026-07-28)**: TfNSW encodes the
+  timetable *version* in Sydney train trip ids (`…790.119.…` → `…790.122.…`
+  in five days) and week-dates in ferry trip ids, so realtime matching
+  decays mode-by-mode against a stale static DB — a July-23 syd ingest had
+  trains at 0/556 matched and ferries 8/161 by July-28, while buses (plain
+  numeric ids) still matched 5391/5392. Symptom: feeds report healthy
+  (thousands of TUs polled) but board rows stay 📅. Diagnose with the trip
+  match rate, not /api/feeds. Cure: the weekly ingest timer now runs
+  `ingest_gtfs.py --region all` (every region, atomic swaps, one failure
+  doesn't sink the rest; keyed regions need SYD_API_KEY in the ingest
+  quadlet, which enable-syd-vps.sh writes).
 - **TV/D-pad "joystick" input mode — built and REMOVED (2026-07-27)**: an
   arrow-key-cycling input mode with a dwell-to-click map reticle shipped
   briefly and was pulled the same day at Jason's request ("joystick mode
@@ -295,6 +373,9 @@ limit), GHCR image pulls (public), Protomaps→self-built basemaps (none).
 - QLD regional static: `https://gtfsrt.api.translink.com.au/GTFS/<CODE>_GTFS.zip`
   (keyless; 18 codes, see ingest_gtfs.py). Realtime for CNS/BOW/INN/MHB/NSI:
   `https://gtfsrt.api.translink.com.au/api/realtime/<CODE>/{TripUpdates,VehiclePositions,Alerts}`
+- NSW TrainLink static: `https://api.transport.nsw.gov.au/v1/gtfs/schedule/nswtrains`
+  (keyed, same key as SYD). Realtime: `{v1,v2}/gtfs/{realtime,vehiclepos,alerts}/nswtrains`
+  via the `NSW_*` env — run `deploy/probe-syd.sh` to confirm the v1/v2 split
 - Geocoding: `nominatim.openstreetmap.org`, proxied via `/api/r/{region}/geocode`
   — identified UA, server-enforced 1 req/s, 24 h cache, bounded to the region
   bbox, explicit user action only (the "Search as an address" row). Fair-use

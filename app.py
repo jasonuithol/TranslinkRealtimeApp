@@ -957,9 +957,15 @@ async def geocode(q: str, region: str = "seq"):
                 resp = await client.get(
                     NOMINATIM_URL,
                     params={
-                        "q": q, "format": "jsonv2", "limit": 5,
+                        "q": q, "format": "jsonv2", "limit": 10,
                         "countrycodes": "au", "addressdetails": 1,
-                        "viewbox": cfg["geocode_viewbox"], "bounded": 1,
+                        # The viewbox only BIASES ranking now (no bounded=1):
+                        # local streets sort first, but the query is
+                        # nationwide — so the client asks ONE region instead
+                        # of fanning out to nine, each serialised behind the
+                        # 1 req/s Nominatim policy. Nine bounded lookups made
+                        # every uncached address search take ~9 seconds.
+                        "viewbox": cfg["geocode_viewbox"],
                     },
                     headers={"User-Agent": NOMINATIM_UA},
                 )

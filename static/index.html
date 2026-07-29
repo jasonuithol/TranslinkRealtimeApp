@@ -881,9 +881,11 @@
   }
 
   // Append address candidates to the dropdown (below any stop matches).
-  // Every region is asked — the geocoder is bounded to each region's bbox, so
-  // a Melbourne street typed from a Brisbane browser still resolves. The
-  // server serialises the upstream Nominatim calls to keep its 1 req/s rule.
+  // ONE nationwide query, biased to the current region's viewbox — the
+  // region a clicked address lands in comes from its nearest STOP, so
+  // there is nothing to gain from asking all nine regions, and everything
+  // to lose: the server serialises Nominatim at 1 req/s, so the old
+  // fan-out took ~9 s per uncached address.
   async function searchAddress(q, { clear = true, signal, stale } = {}) {
     stale = stale || (() => false);
     const box = $("results");
@@ -892,22 +894,16 @@
     fitResults();
     try {
       await regionsReady.catch(() => {});
-      const lists = await Promise.all(regionOrder().map(async (r) => {
-        try {
-          const res = await fetch(
-            `/api/r/${r.id}/geocode?q=${encodeURIComponent(q)}`, { signal });
-          if (!res.ok) return null;
-          return (await res.json())
-            .map((p) => ({ ...p, region: r.id, state: r.state }));
-        } catch { return null; }
-      }));
-      if (stale()) return;   // superseded while the geocoders were working
-      if (lists.every((l) => l === null)) throw new Error();
-      // Overlapping geocode viewboxes return the same street from several
-      // regions' lookups — one label, one row.
+      const res = await fetch(api(`/geocode?q=${encodeURIComponent(q)}`),
+                              { signal });
+      if (stale()) return;   // superseded while the geocoder was working
+      if (!res.ok) throw new Error();
+      // Nominatim can return near-duplicate rows — one label, one row.
       const seen = new Set();
-      const places = lists.filter(Boolean).flat()
+      const places = (await res.json())
+        .map((p) => ({ ...p, region, state: stateOf(region) }))
         .filter((p) => !seen.has(p.label) && seen.add(p.label));
+      if (stale()) return;
       if (clear) box.innerHTML = "";
       if (!places.length) {
         if (clear) resultNote(`Nothing found for “${q}”.`);

@@ -861,7 +861,8 @@
   // Every region is asked — the geocoder is bounded to each region's bbox, so
   // a Melbourne street typed from a Brisbane browser still resolves. The
   // server serialises the upstream Nominatim calls to keep its 1 req/s rule.
-  async function searchAddress(q, { clear = true } = {}) {
+  async function searchAddress(q, { clear = true, signal, stale } = {}) {
+    stale = stale || (() => false);
     const box = $("results");
     if (clear) { box.innerHTML = ""; resultNote(`Looking up “${q}”…`); }
     box.hidden = false;
@@ -871,12 +872,13 @@
       const lists = await Promise.all(regionOrder().map(async (r) => {
         try {
           const res = await fetch(
-            `/api/r/${r.id}/geocode?q=${encodeURIComponent(q)}`);
+            `/api/r/${r.id}/geocode?q=${encodeURIComponent(q)}`, { signal });
           if (!res.ok) return null;
           return (await res.json())
             .map((p) => ({ ...p, region: r.id, state: r.state }));
         } catch { return null; }
       }));
+      if (stale()) return;   // superseded while the geocoders were working
       if (lists.every((l) => l === null)) throw new Error();
       // Overlapping geocode viewboxes return the same street from several
       // regions' lookups — one label, one row.
@@ -898,6 +900,7 @@
         );
       });
     } catch {
+      if (stale()) return;   // an aborted run must not paint an error note
       if (clear) { box.innerHTML = ""; resultNote("Address lookup unavailable right now."); }
     } finally {
       fitResults();
@@ -910,12 +913,12 @@
 
   // Stop-name search fans out over every ingested region; the row's state
   // label (QLD/VIC) is what tells two "Central Station"s apart.
-  async function searchStops(q) {
+  async function searchStops(q, signal) {
     await regionsReady.catch(() => {});
     const lists = await Promise.all(regionOrder().map(async (r) => {
       try {
         const res = await fetch(
-          `/api/r/${r.id}/stops/search?q=${encodeURIComponent(q)}`);
+          `/api/r/${r.id}/stops/search?q=${encodeURIComponent(q)}`, { signal });
         return (await res.json())
           .map((s) => ({ ...s, region: r.id, state: r.state }));
       } catch { return []; }
@@ -924,30 +927,42 @@
   }
 
   let searchDebounce;
-  let searchToken = 0;      // drops stale responses that finish out of order
+  let searchToken = 0;      // bumped on EVERY keypress; in-flight runs bail
+  let searchAbort = null;   // …and their fetches are cancelled outright
   $("search").addEventListener("input", (e) => {
     clearTimeout(searchDebounce);
+    // A new keypress abandons the previous search immediately: its fetches
+    // are aborted and any response already in flight is dropped before it
+    // can render (the token check) — stale results must never flash in.
+    searchToken++;
+    if (searchAbort) searchAbort.abort();
     const q = e.target.value.trim();
     if (q.length < 3) { $("results").hidden = true; return; }
+    // Fast typists: nothing is searched until the keyboard has been quiet
+    // for a full second — it also keeps mid-typing queries away from the
+    // shared 1 req/s geocoder.
     searchDebounce = setTimeout(async () => {
-      const token = ++searchToken;
-      const stops = await searchStops(q);
-      if (token !== searchToken) return;
+      const token = searchToken;
+      const stale = () => token !== searchToken;
+      const ctl = (searchAbort = new AbortController());
+      const stops = await searchStops(q, ctl.signal);
+      if (stale()) return;
       const box = $("results");
       box.innerHTML = "";
       stops.forEach(stopEntry);
       // Address lookup happens automatically — nobody should have to say
       // "that was an address": a query starting with a house number is one,
-      // and a longer query matching no stop name probably is too. The longer
-      // debounce below keeps mid-typing queries away from the shared geocoder.
+      // and a longer query matching no stop name probably is too.
       if (looksLikeAddress(q) && q.length >= 6) {
-        await searchAddress(q, { clear: stops.length === 0 });
+        await searchAddress(q, { clear: stops.length === 0,
+                                 signal: ctl.signal, stale });
       } else if (!stops.length && q.length >= 6) {
-        await searchAddress(q);
+        await searchAddress(q, { signal: ctl.signal, stale });
       }
+      if (stale()) return;
       box.hidden = box.children.length === 0;
       fitResults();
-    }, q.length >= 6 ? 500 : 250);
+    }, 1000);
   });
 
   // "near me" is only offered where it can actually deliver: the device must

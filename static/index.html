@@ -757,7 +757,10 @@
     $("titlebar").hidden = !anchored;
     $("search-wrap").hidden = anchored && !searchOpen;
     $("search-close").hidden = !anchored;  // nothing to return to without one
-    $("change-stop").textContent = stopId ? "Change stop" : "Change address";
+    // A selected stop needs no "change" button — the goose is the way back.
+    // The button only serves a pinned browse, to search a different address.
+    $("change-stop").hidden = Boolean(stopId) || !pinnedBrowse;
+    $("change-stop").textContent = "Change address";
     if (!searchOpen) $("results").hidden = true;
   }
   if (pinnedBrowse) {
@@ -1081,7 +1084,8 @@
     closeSearch();            // a stop is chosen: fold the search away
     syncRailStationFilter();  // stop drawing the station we now view in grey
     history.replaceState(null, "", `?region=${region}&stop=${id}`
-      + (pinParam ? `&pin=${pinRaw}` : ""));   // keep the address pin around
+      + (pinParam ? `&pin=${pinRaw}` : "")     // keep the address pin around
+      + (pinParam && pinLabel ? `&pinlabel=${encodeURIComponent(pinLabel)}` : ""));
     refresh();
     clearInterval(timer);
     timer = setInterval(refresh, 15000);
@@ -2439,7 +2443,10 @@
   const BOARD_BOTTOM_GUTTER = 28;   // breathing room + the status line
 
   function renderBoard(data) {
-    $("stop-name").textContent = data.stop.stop_name;
+    // In a pinned session the SEARCHED ADDRESS stays as the title — it is
+    // the user's anchor; the chosen stop is visible on the map and board.
+    $("stop-name").textContent =
+      (pinParam && pinLabel) ? pinLabel : data.stop.stop_name;
     const board = $("board");
     board.innerHTML = "";
     if (data.departures.length === 0) {

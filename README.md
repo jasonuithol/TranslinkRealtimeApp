@@ -27,9 +27,13 @@ AWST, …) badged beside the stop name.
   a row to trace its route; click any grey stop to jump to it; zoom in past
   street level to see every stop in the network.
 - **Disruption alerts** — an amber ⚠ on affected rows opens the details.
-- **Find your stop** — by name, by address (auto-geocoded via a rate-limited
-  Nominatim proxy), or by the *near me* button (browser geolocation; needs
-  HTTPS off-localhost).
+- **Find your stop** — by name, by address, or by the *near me* button
+  (browser geolocation; needs HTTPS off-localhost). An address or located
+  point drops a pin on the map with the surrounding stops framed around it.
+  House numbers resolve **exactly** via a local build of Geoscape's G-NAF
+  (every numbered address in Australia, self-hosted — see
+  `ingest_gnaf.py`), with a rate-limited Nominatim proxy as the fallback
+  for landmarks and unnumbered queries.
 - **The board and the map always agree**: a service is listed only if it can
   be placed on the map (live GPS, en route per the timetable, or about to
   depart its origin).
@@ -211,6 +215,10 @@ The machinery underneath (all callable standalone for surgical work):
   the NTG Open Data Portal / dipl.nt.gov.au.
 - Basemap © OpenMapTiles © OpenStreetMap contributors; geocoding by
   OpenStreetMap/Nominatim.
+- Address data derived from the Geoscape Geocoded National Address File
+  (G-NAF) © Geoscape Australia, licensed by the Commonwealth of Australia
+  under the Open G-NAF EULA (data.gov.au). G-NAF must not be used for the
+  sending of unsolicited mail.
 
 Check each portal for current licensing and attribution requirements.
 

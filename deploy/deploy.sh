@@ -224,19 +224,22 @@ else  # ------------------------------------------------------------- vps ---
   for c in ${PENDING[@]+"${PENDING[@]}"}; do
     if [[ "$c" == basemap-* ]]; then REGIONS="${REGIONS:+$REGIONS }${c#basemap-}"; fi
   done
-  if has image || [[ -n "$REGIONS" ]]; then
+  GNAF=no
+  if has gnaf-db; then GNAF=yes; fi
+  if has image || [[ -n "$REGIONS" ]] || [[ "$GNAF" == "yes" ]]; then
     # The update pulls :latest even on a basemap-only run, so gate whenever
     # the image is what's being deployed here.
     if has image; then image_gate || exit 1; fi
     if [[ "$DRY" == "yes" ]]; then
-      echo "  PLAN release: image pull + update on ${HOST}${REGIONS:+, shipping basemaps: ${REGIONS}}"
+      echo "  PLAN release: image pull + update on ${HOST}${REGIONS:+, shipping basemaps: ${REGIONS}}$([[ "$GNAF" == yes ]] && echo ", shipping G-NAF DB")"
     else
       SKIP_BASEMAP=$([[ -n "$REGIONS" ]] && echo no || echo yes) \
-      BASEMAP_REGIONS="${REGIONS:-}" TARGET_NAME="$TARGET" \
-        "${HERE}/release-vps.sh" "$HOST"   # marks image + shipped basemaps
+      BASEMAP_REGIONS="${REGIONS:-}" SHIP_GNAF="$GNAF" TARGET_NAME="$TARGET" \
+        "${HERE}/release-vps.sh" "$HOST"   # marks image + basemaps + gnaf
     fi
     if has image; then DONE+=(image); fi
     for r in $REGIONS; do DONE+=("basemap-${r}"); done
+    if [[ "$GNAF" == "yes" ]]; then DONE+=(gnaf-db); fi
   fi
 
   # 2. Unit files — after the image (a restart rides on new units anyway),

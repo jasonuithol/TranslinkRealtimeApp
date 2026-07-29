@@ -66,6 +66,37 @@ if [[ "$SKIP_BASEMAP" != "yes" ]]; then
   done
 fi
 
+# The G-NAF address DB ships on request (SHIP_GNAF=yes — deploy.sh sets it
+# from the gnaf-db state component), with the same don't-reship-identical
+# size guard as the basemaps.
+SHIP_GNAF="${SHIP_GNAF:-no}"
+SHIPPED_GNAF=no
+if [[ "$SHIP_GNAF" == "yes" ]]; then
+  if podman run --rm -v translink-data:/data alpine test -f /data/gnaf.sqlite3 2>/dev/null; then
+    LOCAL_SIZE="$(podman run --rm -v translink-data:/data alpine stat -c %s /data/gnaf.sqlite3 2>/dev/null || echo local-unknown)"
+    REMOTE_SIZE="$(ssh "$VPS" "stat -c %s /tmp/gnaf.sqlite3 2>/dev/null \
+      || { DU=\${DEPLOY_USER:-deploy}; sudo -u \"\$DU\" XDG_RUNTIME_DIR=/run/user/\$(id -u \"\$DU\") \
+           podman run --rm -v translink-data:/data alpine stat -c %s /data/gnaf.sqlite3 2>/dev/null; } \
+      || echo 0" 2>/dev/null || echo remote-unknown)"
+    if [[ "$LOCAL_SIZE" == "$REMOTE_SIZE" ]]; then
+      echo "==> G-NAF DB already on ${VPS} (${LOCAL_SIZE} bytes) — skipping the copy."
+      SHIPPED_GNAF=yes
+    else
+      TMP_GNAF="$(mktemp /tmp/gnaf.sqlite3.XXXXXX)"
+      # traps replace, they don't stack — re-cover the basemap tmps too
+      trap 'rm -f /tmp/seq.pmtiles.?????? /tmp/mel.pmtiles.?????? /tmp/syd.pmtiles.?????? /tmp/ade.pmtiles.?????? /tmp/per.pmtiles.?????? /tmp/dar.pmtiles.?????? /tmp/qld.pmtiles.?????? /tmp/nsw.pmtiles.?????? /tmp/gnaf.sqlite3.??????' EXIT
+      echo "==> Exporting the G-NAF address DB from the local volume…"
+      podman run --rm -v translink-data:/data alpine cat /data/gnaf.sqlite3 > "$TMP_GNAF"
+      echo "==> Copying G-NAF DB to ${VPS}:/tmp/gnaf.sqlite3 ($(du -h "$TMP_GNAF" | cut -f1))…"
+      scp -q "$TMP_GNAF" "${VPS}:/tmp/gnaf.sqlite3"
+      SHIPPED_GNAF=yes
+    fi
+  else
+    echo "==> SHIP_GNAF=yes but no gnaf.sqlite3 in the local volume — run"
+    echo "    ingest_gnaf.py first. Skipping."
+  fi
+fi
+
 echo "==> Copying update-vps.sh and running it on ${VPS}…"
 scp -q "${HERE}/update-vps.sh" "${VPS}:/tmp/update-vps.sh"
 # INGEST_* default to auto (= only if that region's DB is missing): the
@@ -78,4 +109,5 @@ MARK=(image)
 for region in ${SHIPPED_BASEMAPS[@]+"${SHIPPED_BASEMAPS[@]}"}; do
   MARK+=("basemap-${region}")
 done
+if [[ "$SHIPPED_GNAF" == "yes" ]]; then MARK+=(gnaf-db); fi
 "${HERE}/mark-deployed.sh" "${TARGET_NAME:-vps}" "${MARK[@]}" || true

@@ -26,7 +26,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, since: 2026-07-29, reason: "pinned map fits camera to pin + surrounding stops; stops drawn as landmarks at any zoom" }
+  image: { status: deployed, at: 2026-07-29 }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.
@@ -40,6 +40,10 @@ components:
   basemap-dar: { status: deployed, at: 2026-07-26 }
   basemap-qld: { status: deployed, at: 2026-07-27 }
   basemap-nsw: { status: deployed, at: 2026-07-29 }
+  # G-NAF address database (house-number geocoding). Built locally by
+  # ingest_gnaf.py (quarterly-ish — G-NAF releases quarterly, addresses
+  # churn slowly), shipped by release-vps.sh when pending (SHIP_GNAF).
+  gnaf-db: { status: pending, since: 2026-07-29, reason: "never shipped — local G-NAF geocoder for exact house numbers (~700 MB)" }
   # Region enablement (keys + realtime env + first ingest). Timetables
   # refresh themselves weekly once quadlet-units + keys are in place.
   enable-syd-nsw: { status: deployed, at: 2026-07-29 }

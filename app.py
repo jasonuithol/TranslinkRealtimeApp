@@ -907,6 +907,82 @@ _STATE_ABBR = {
     "Australian Capital Territory": "ACT",
 }
 
+# ---------------------------------------------------------------------------
+# Local G-NAF geocoder: every street-numbered address in Australia with
+# house-level coordinates (built by ingest_gnaf.py; ~700 MB, quarterly).
+# OSM's residential house-number coverage is patchy — Nominatim pinned
+# "397 Christine Avenue" to an arbitrary point along a 3 km road. When the
+# DB is present and the query leads with a house number, this answers
+# instead; Nominatim stays the fallback for landmarks and unnumbered
+# queries, and for deployments that never ingested G-NAF.
+GNAF_DB = Path(os.environ.get("GNAF_DB") or DB_PATH.parent / "gnaf.sqlite3")
+
+_STREET_ABBR = {
+    "st": "street", "rd": "road", "ave": "avenue", "av": "avenue",
+    "dr": "drive", "drv": "drive", "ct": "court", "crt": "court",
+    "cres": "crescent", "cr": "crescent", "pde": "parade", "hwy": "highway",
+    "tce": "terrace", "pl": "place", "blvd": "boulevard", "bvd": "boulevard",
+    "ln": "lane", "cct": "circuit", "esp": "esplanade", "gr": "grove",
+    "gdns": "gardens", "pkwy": "parkway",
+}
+
+
+def gnaf_geocode(q: str, state_bias: str, limit: int = 8) -> list | None:
+    """House-number lookup. None means 'not applicable' (no DB, or the query
+    doesn't lead with a house number) — the caller falls back to Nominatim.
+    An address short of its exact number returns the NEAREST number on that
+    street, honestly labelled — next door beats a random point mid-road."""
+    if not GNAF_DB.exists():
+        return None
+    m = re.match(r"^\s*(?:\d+\s*/\s*)?(\d+)\s+(.+)", q)
+    if not m:
+        return None
+    num = int(m.group(1))
+    tokens = [_STREET_ABBR.get(t, t)
+              for t in (t.lower() for t in re.findall(r"[A-Za-z']+", m.group(2)))]
+    if not tokens:
+        return None
+    con = sqlite3.connect(GNAF_DB)
+    con.row_factory = sqlite3.Row
+    try:
+        # Every token must appear somewhere across name/type/locality/state;
+        # the current region's state ranks first, like the Nominatim viewbox
+        # bias. bm25 keeps "Christine Avenue" above "Christine Court".
+        fts = " ".join(f'"{t}"' for t in tokens)
+        streets = con.execute(
+            "SELECT s.id, s.name, s.type, s.locality, s.state "
+            "FROM streets_fts f JOIN streets s ON s.id = f.rowid "
+            "WHERE streets_fts MATCH ? "
+            "ORDER BY (s.state = ?) DESC, bm25(streets_fts) LIMIT 40",
+            (fts, state_bias),
+        ).fetchall()
+        out = []
+        for s in streets:
+            a = con.execute(
+                "SELECT num, lat, lon FROM addresses WHERE street_id = ? "
+                "ORDER BY ABS(num - ?) LIMIT 1", (s["id"], num)).fetchone()
+            if a is None:
+                continue
+            title = f"{a['num']} {s['name'].title()}"
+            if s["type"]:
+                title += f" {s['type'].title()}"
+            out.append({
+                "label": f"{title}, {s['locality'].title()} {s['state']}",
+                "lat": a["lat"], "lon": a["lon"],
+                "_exact": a["num"] == num,
+            })
+            if len(out) >= limit:
+                break
+        out.sort(key=lambda r: not r["_exact"])
+        for r in out:
+            r.pop("_exact")
+        return out or None
+    except sqlite3.Error as exc:
+        print(f"[gnaf] lookup failed: {exc}")
+        return None
+    finally:
+        con.close()
+
 
 def _geocode_label(r: dict, state: str) -> str:
     """A short label from Nominatim's structured address: 'lead, suburb STATE'.
@@ -946,6 +1022,11 @@ async def geocode(q: str, region: str = "seq"):
     q = q.strip()
     if len(q) < 4:
         return []
+    # House-numbered queries answer from the local G-NAF when it's ingested —
+    # exact house coordinates, no rate limit, no network.
+    local = gnaf_geocode(q, cfg["state"])
+    if local:
+        return local
     hit = _geocode_cache.get((region, q.lower()))
     if hit and time.time() - hit[0] < GEOCODE_CACHE_S:
         return hit[1]

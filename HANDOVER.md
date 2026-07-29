@@ -377,6 +377,25 @@ times and the map shows timetable-estimated ghosts.
   to the old image. NOT yet verified with live realtime keys (the
   realtime-preferred arm of the physical dedupe) — eyeball a keyed tdev or
   the VPS after deploy.
+- **Local G-NAF geocoder (2026-07-29)**: OSM's residential house-number
+  coverage is patchy — "397 Christine Avenue, Varsity Lakes" has no house
+  number in OSM, so Nominatim pinned an arbitrary point along a 3 km road
+  (Jason: "street numbers don't seem to be taken into account?"). Fix:
+  `ingest_gnaf.py` builds `gnaf.sqlite3` (~streets + numbered addresses +
+  FTS5 street index) from Geoscape's full quarterly G-NAF PSV zip
+  (data.gov.au, ~1.7 GB download; the URL rotates quarterly — the script
+  header says how to find the new one). `gnaf_geocode()` in app.py answers
+  any query leading with a house number: tokens (street-type abbreviations
+  expanded: ave→avenue &c.) FTS-match streets, current region's state
+  ranks first, exact number wins, and a number G-NAF lacks returns the
+  NEAREST number on that street, honestly labelled — next door beats a
+  random mid-road point. Nominatim remains the fallback for landmarks,
+  unnumbered queries, and deployments without the DB (absent file =
+  exactly the old behaviour). Ships like a basemap: built locally,
+  `gnaf-db` component in deploy/state, SHIP_GNAF path in release-vps.sh
+  with the size guard, installed atomically by update-vps.sh. Refresh a
+  few times a year, not weekly. G-NAF EULA: attribution in README, no
+  unsolicited-mail use.
 - **Geocode viewboxes OVERLAP — never trust "the region whose lookup found
   it" (2026-07-29)**: nsw's viewbox spans four states, so an address search
   returns the same street from several regions' Nominatim lookups. Clicking

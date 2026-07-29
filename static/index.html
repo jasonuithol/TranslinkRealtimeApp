@@ -135,6 +135,15 @@
     color: var(--muted); font-size: 12px; margin-left: 6px;
   }
 
+  /* The stop the arrivals belong to: glyph + name atop the board. */
+  .board-head {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 15px;
+    padding: 2px 6px 10px; margin-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .board-head .bh-icon { font-size: 18px; }
+
   /* --- landing ----------------------------------------------------------- */
   /* First load, before any stop is chosen: nothing but the logo and the
      search. The board/map split is NOT display:none-d — MapLibre needs a
@@ -2466,8 +2475,20 @@
       (pinParam && pinLabel) ? pinLabel : data.stop.stop_name;
     const board = $("board");
     board.innerHTML = "";
+    // Which stop these arrivals belong to — its glyph and name. Matters most
+    // in a pinned session, where the titlebar keeps the searched address.
+    const head = document.createElement("div");
+    head.className = "board-head";
+    const bhIcon = document.createElement("span");
+    bhIcon.className = "bh-icon";
+    bhIcon.textContent = asText(stopGlyph(data));
+    const bhName = document.createElement("span");
+    bhName.textContent = data.stop.stop_name;
+    head.append(bhIcon, bhName);
+    board.appendChild(head);
     if (data.departures.length === 0) {
-      board.innerHTML = `<div class="empty">No services in the next 90 minutes.</div>`;
+      board.insertAdjacentHTML("beforeend",
+        `<div class="empty">No services in the next 90 minutes.</div>`);
     }
 
     // Show only what fits, and cut the map to match: a marker with no row on

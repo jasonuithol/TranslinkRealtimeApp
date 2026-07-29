@@ -875,6 +875,9 @@ def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
                 "is_station": r["location_type"] == 1,
                 "route_type": modes.get(r["stop_id"], 3),
                 "dist_m": round(haversine_m(r["stop_lat"], r["stop_lon"])),
+                # For drawing the surrounds of a dropped pin on the map.
+                "lat": r["stop_lat"],
+                "lon": r["stop_lon"],
             }
             for r in rows
             if r["stop_lat"] is not None

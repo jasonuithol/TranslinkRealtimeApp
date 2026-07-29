@@ -676,6 +676,10 @@
     const [lon, lat] = pinRaw.split(",").map(Number);
     return [lon, lat].every(Number.isFinite) ? { lon, lat } : null;
   })();
+  // The stops surrounding a dropped pin — fetched once the map is up, drawn
+  // as clickable landmarks at ANY zoom (the all-stops layer needs z15+, and
+  // a sparse suburb's nearest stops can force the camera further out).
+  let pinStops = [];
 
   // --- region ------------------------------------------------------------
   // One board, many networks. The region picks the timetable DB, the realtime
@@ -878,6 +882,28 @@
     localStorage.setItem("region", rid);
     location.href = `?region=${encodeURIComponent(rid)}`
                   + `&at=${lonlat},16&pin=${lonlat}`;
+  }
+
+  // On a pinned page: fetch the stops around the pin, hand them to the
+  // landmarks layer, and fit the camera so the pin AND its stops are all in
+  // view — a dense corner stays at street zoom (maxZoom caps it), a sparse
+  // suburb zooms out until its stops appear.
+  async function loadPinSurrounds() {
+    if (!pinParam || !mapReady) return;
+    try {
+      const near = (await fetchNearby(pinParam.lat, pinParam.lon, region))
+        .filter((s, i) => i === 0 || s.dist_m <= 1500)
+        .slice(0, 8);
+      if (!near.length) return;   // the pin alone is still worth showing
+      pinStops = near;
+      drawLandmarks();
+      if (browsing) {
+        const b = new maplibregl.LngLatBounds(
+          [pinParam.lon, pinParam.lat], [pinParam.lon, pinParam.lat]);
+        for (const s of pinStops) b.extend([s.lon, s.lat]);
+        cameraMove(() => map.fitBounds(b, { padding: 80, maxZoom: 16.5 }));
+      }
+    } catch { /* the pin alone is still worth showing */ }
   }
 
   // Append address candidates to the dropdown (below any stop matches).
@@ -1549,6 +1575,7 @@
       cameraMove(() => map.resize());
       map.on("zoomend", maybeLoadAllStops);
       maybeLoadAllStops();  // in case the map starts past the threshold
+      loadPinSurrounds();   // pin present: draw + fit its surrounding stops
       if (lastData) updateMap(lastData);
     });
 
@@ -1650,6 +1677,7 @@
     for (const [l, rgn] of [
       ...routeStops.map((l) => [l, routeRgn]),
       ...paired.map((l) => [l, region]),
+      ...pinStops.map((l) => [l, l.region || region]),
     ]) {
       if (l.stop_id === selfId || seen.has(l.stop_id)) continue;
       seen.add(l.stop_id);

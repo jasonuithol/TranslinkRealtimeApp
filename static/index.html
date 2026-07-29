@@ -275,6 +275,8 @@
   .board { position: relative; }
   .trip-panel {
     position: absolute; inset: 0 0 0 160px;   /* clear of the badge column */
+    /* top is set inline to sit just below the board heading (its height
+       varies with name wrapping) — this is only the no-heading fallback. */
     display: flex; flex-direction: column;
     background: var(--panel);
     border-left: 1px solid var(--line);
@@ -1994,6 +1996,10 @@
     const panel = document.createElement("div");
     panel.className = "trip-panel";
     panel.style.setProperty("--vcolor", vcolor);
+    // Sit just below the board heading — the timeline must not cover which
+    // stop it belongs to. (Height measured live: long names wrap.)
+    const bh = board.querySelector(".board-head");
+    if (bh) panel.style.top = `${bh.offsetTop + bh.offsetHeight}px`;
     // The header speaks the board's language: the service's badge, then the
     // same 🛜/📅 source mark its row carries (the panel covers that column).
     const routeLabel = d.route ?? "";

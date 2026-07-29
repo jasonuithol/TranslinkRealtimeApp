@@ -55,8 +55,8 @@
   }
   .tzbadge:empty { display: none; }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
-  /* The little goose flies you home — back to the landing and its city
-     quick-starts. Same amber ink as the hero bird. */
+  /* The little goose flies you home — back to the landing and its search.
+     Same amber ink as the hero bird. */
   .home-goose {
     color: var(--amber); text-decoration: none;
     align-self: center;
@@ -147,23 +147,6 @@
     visibility: hidden; pointer-events: none;
   }
   body.landing .search { max-width: 560px; margin: 0 auto; }
-  /* City quick-starts live under the search bar but only on the landing —
-     once a stop is chosen, "Change stop" reopens a plain search. */
-  .city-jumps { display: none; }
-  body.landing .city-jumps:not([hidden]) {
-    display: flex; gap: 10px; justify-content: center; align-items: flex-start;
-    margin-top: 14px;
-  }
-  /* A column per city: the city pill on top, favourite interchanges under. */
-  .city-col { display: flex; flex-direction: column; gap: 8px; }
-  .city-jumps button.sub { font-size: 12px; padding: 4px 14px; }
-  .city-jumps button {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 999px; color: var(--muted); font: inherit; font-size: 13px;
-    padding: 6px 18px; cursor: pointer;
-  }
-  .city-jumps button:hover { color: var(--text); border-color: var(--amber-dim); }
-  .city-jumps button:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   #hero { display: none; }
   body.landing #hero {
     display: flex; flex-direction: column; align-items: center;
@@ -630,9 +613,6 @@
       <button class="near-me" id="near-me" type="button"
               title="Find stops near your current location">near me</button>
     </div>
-    <!-- One-tap starts: each city's central station, no typing. Filled from
-         /api/regions so only ingested cities are offered. Landing only. -->
-    <div class="city-jumps" id="city-jumps" hidden></div>
     <div class="search-results" id="results" hidden></div>
   </div>
 
@@ -740,89 +720,6 @@
     .then((regions) => { regionList = regions; })
     .catch(() => { /* search stays single-region, no pan-swap */ });
 
-  // One tap from the landing into the network: each city's central station,
-  // with favourite interchanges tucked under their city. Same-region picks
-  // board in place; the rest go through the usual region-swap reload.
-  const CITY_JUMPS = [
-    { rid: "seq", label: "Brisbane",  sid: "place_censta", extras: [
-        { label: "Varsity Lakes", sid: "place_varsta" },   // train + bus
-        { label: "Helensvale",    sid: "place_helsta" },   // train + tram
-        { label: "Kippa-Ring",    sid: "place_kprsta" },   // train
-        { label: "Noosa Heads",   sid: "place_nhdstn" },   // bus interchange
-    ] },
-    // One merged region, eighteen town networks: every town gets its door.
-    { rid: "qld", label: "Cairns", sid: "cns:place_cnsstn", extras: [
-        { label: "Townsville",      sid: "tsv:890892" },        // City bus hub
-        { label: "Toowoomba",       sid: "twb:place_twbstn" },  // bus station
-        { label: "Mackay",          sid: "mky:810862" },        // Caneland stn
-        { label: "Rockhampton",     sid: "rky:860450" },        // Stockland
-        { label: "Bundaberg",       sid: "bun:730001" },        // City Centre
-        { label: "Hervey Bay",      sid: "mhb:840017" },        // Stockland
-        { label: "Gladstone",       sid: "glt:760022" },        // Centre Plaza
-        { label: "Gympie",          sid: "gym:770021" },        // Gympie Central
-        { label: "Warwick",         sid: "war:900000" },        // Post Office
-        { label: "Bowen",           sid: "bow:720000" },        // Williams St
-        { label: "Airlie Beach",    sid: "wht:710018" },        // Airlie Central
-        { label: "Innisfail",       sid: "inn:790000" },        // Central Arcade
-        { label: "Maleny",          sid: "mal:830011" },        // Maple St
-        { label: "Kilcoy",          sid: "kil:740106" },        // coach stop
-        { label: "Magnetic Island", sid: "mag:820001" },        // Picnic Bay
-        { label: "Stradbroke Is",   sid: "nsi:870029" },        // Dunwich ferry
-    ] },
-    { rid: "syd", label: "Sydney",    sid: "t:200060", extras: [
-        { label: "Wollongong", sid: "t:250020" },
-        { label: "Penrith",    sid: "t:275010" },
-        { label: "Gosford",    sid: "t:225040" },
-    ] },
-    // The interstate region: TrainLink XPTs/Xplorers + coaches out of Central.
-    // One door only (the landing is cluttered enough) — Canberra, Albury &c.
-    // can get their own buttons once the declutter lands.
-    { rid: "nsw", label: "TrainLink", sid: "nt:200060" },
-    { rid: "mel", label: "Melbourne", sid: "2:vic:rail:FSS", extras: [
-        { label: "Geelong",   sid: "1:vic:rail:GEL" },   // V/Line
-        { label: "Frankston", sid: "2:vic:rail:FKN" },   // metro
-    ] },
-    { rid: "ade", label: "Adelaide", sid: "6665" },      // Adelaide Railway Stn
-    { rid: "per", label: "Perth",    sid: "56", extras: [   // Perth Stn
-        { label: "Mandurah",     sid: "94" },     // train + bus
-        { label: "Yanchep",      sid: "155" },    // train + bus
-        // The PTA feed is state-wide, so the regional towns come along free.
-        { label: "Bunbury",      sid: "146" },    // bus station
-        { label: "Geraldton",    sid: "70001" },  // Anzac Tce, CBD
-        { label: "Kalgoorlie",   sid: "71434" },  // Exchange Hotel terminal
-        { label: "Albany",       sid: "72597" },  // Peels Pl, CBD
-        { label: "Busselton",    sid: "70633" },  // Kent St
-        { label: "Karratha",     sid: "73247" },  // Karratha City SC
-        { label: "Port Hedland", sid: "73657" },  // Throssell Rd, Sth Hedland
-        { label: "Broome",       sid: "74805" },  // Boulevard shops
-        { label: "Carnarvon",    sid: "73351" },  // Alexandra St
-        { label: "Esperance",    sid: "74587" },  // Transwa bay
-    ] },
-    { rid: "dar", label: "Darwin",   sid: "46" },        // Harry Chan Ave terminus
-  ];
-  regionsReady.then(() => {
-    const wrap = $("city-jumps");
-    const jump = (rid, sid, label, cls) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      if (cls) b.className = cls;
-      b.addEventListener("click", () =>
-        rid === region ? selectStop(sid) : openInRegion(rid, sid));
-      return b;
-    };
-    for (const { rid, label, sid, extras } of CITY_JUMPS) {
-      if (!regionList.some((r) => r.id === rid)) continue;
-      const col = document.createElement("div");
-      col.className = "city-col";
-      col.appendChild(jump(rid, sid, label));
-      for (const x of extras || []) {
-        col.appendChild(jump(rid, x.sid, x.label, "sub"));
-      }
-      wrap.appendChild(col);
-    }
-    wrap.hidden = !wrap.querySelector("button");
-  });
   // With no stop there is nothing but the search, so it is always open. Once a
   // stop is chosen the search folds away and "Change stop" brings it back.
   let searchOpen = !stopId;

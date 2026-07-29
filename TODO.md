@@ -69,11 +69,14 @@ light.
 
 ## UI
 
-- **Clean up the home page** — 45 quick-start buttons and counting
-  (16 QLD towns under Cairns, 12 WA under Perth); Jason: "all the buttons
-  look like a mess from the Yahoo! days". Both the volume and the look
-  need work — it's a late-90s link directory right now. Ideas: collapsible
-  per-city town stacks, top-N with "more…", group by state, or ditch the
-  button wall for something search-first with a handful of featured
-  cities. Once done, give TrainLink its extra doors (Canberra, Albury,
-  Wagga, Dubbo).
+- **Home page declutter — phase 1 done 2026-07-29**: all 45 quick-start
+  buttons removed at Jason's call ("just get rid of all the buttons for
+  now") — the landing is now the goose + search + near-me, search-first.
+  The curated stop ids the buttons held (each city's central station and
+  favourite interchanges, 18 QLD towns, 12 WA towns, TrainLink's
+  `nt:200060`) live in git history at `static/index.html` @ 6a35483,
+  `CITY_JUMPS` — mine that list if a future design wants featured cities
+  back. Still open: whether the landing wants anything more than search
+  (recent stops? a couple of featured cities? state groups?) — that's the
+  "visual design" half of the original complaint, to be designed
+  properly, not bolted on.

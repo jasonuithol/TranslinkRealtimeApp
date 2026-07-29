@@ -822,9 +822,12 @@
   const escapeHtml = (t) => String(t).replace(/[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  // rid: the region the point is known to be in (an address hit knows its
-  // region); null means "no idea" (geolocation) — ask every region and let
-  // distance sort it out, since only the right city returns anything close.
+  // rid narrows the lookup to one region when the caller is CERTAIN the
+  // point belongs to it; null asks every region and lets distance sort it
+  // out (only the right city returns anything close). Address hits pass
+  // null: geocode viewboxes overlap (nsw spans four states), so "the region
+  // whose lookup found it" proved to be the wrong region for a Varsity
+  // Lakes street that came back via nsw — whose nearest stop is 100 km off.
   async function nearbyStops(lat, lon, label, rid = null) {
     const box = $("results");
     box.innerHTML = "";
@@ -875,7 +878,11 @@
         } catch { return null; }
       }));
       if (lists.every((l) => l === null)) throw new Error();
-      const places = lists.filter(Boolean).flat();
+      // Overlapping geocode viewboxes return the same street from several
+      // regions' lookups — one label, one row.
+      const seen = new Set();
+      const places = lists.filter(Boolean).flat()
+        .filter((p) => !seen.has(p.label) && seen.add(p.label));
       if (clear) box.innerHTML = "";
       if (!places.length) {
         if (clear) resultNote(`Nothing found for “${q}”.`);
@@ -887,7 +894,7 @@
         // glyph on the right already tells it apart from a stop.
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}</span>`,
-          () => nearbyStops(p.lat, p.lon, "that address", p.region),
+          () => nearbyStops(p.lat, p.lon, "that address"),
         );
       });
     } catch {

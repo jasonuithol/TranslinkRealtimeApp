@@ -377,6 +377,17 @@ times and the map shows timetable-estimated ghosts.
   to the old image. NOT yet verified with live realtime keys (the
   realtime-preferred arm of the physical dedupe) — eyeball a keyed tdev or
   the VPS after deploy.
+- **Geocode viewboxes OVERLAP — never trust "the region whose lookup found
+  it" (2026-07-29)**: nsw's viewbox spans four states, so an address search
+  returns the same street from several regions' Nominatim lookups. Clicking
+  the nsw copy of a Varsity Lakes QLD address searched only nsw's stops —
+  nearest TrainLink stop ~100 km away — and reported "no stops near that
+  address" ("that's bullshit" — Jason, correctly). Fixes: address clicks
+  pass rid=null to nearbyStops (ask every region, distance sorts); address
+  rows dedupe by label client-side; and `_geocode_label` takes the state
+  from Nominatim's OWN address details (mapped via _STATE_ABBR), falling
+  back to the region's state — the region stamp had labelled that QLD
+  street "NSW".
 - **Static timetables ROT, fast (found 2026-07-28)**: TfNSW encodes the
   timetable *version* in Sydney train trip ids (`…790.119.…` → `…790.122.…`
   in five days) and week-dates in ferry trip ids, so realtime matching

@@ -897,11 +897,25 @@ _geocode_lock = asyncio.Lock()
 GEOCODE_CACHE_S = 24 * 3600
 
 
+_STATE_ABBR = {
+    "Queensland": "QLD", "New South Wales": "NSW", "Victoria": "VIC",
+    "South Australia": "SA", "Western Australia": "WA",
+    "Northern Territory": "NT", "Tasmania": "TAS",
+    "Australian Capital Territory": "ACT",
+}
+
+
 def _geocode_label(r: dict, state: str) -> str:
     """A short label from Nominatim's structured address: 'lead, suburb STATE'.
     display_name is the full hierarchy ('12 X St, Suburb, Brisbane City,
-    Queensland, 4006, Australia') — far more than a result row needs."""
+    Queensland, 4006, Australia') — far more than a result row needs.
+
+    The state comes from the ADDRESS, not the region: the nsw region's
+    geocode viewbox spans four states (Broken Hill to Brisbane to
+    Melbourne), and stamping the region's state labelled a Varsity Lakes
+    QLD street as NSW. The region state is only the fallback."""
     a = r.get("address") or {}
+    state = _STATE_ABBR.get(a.get("state") or "", state)
     # A named place (a stadium, a school) reads better as its name than as its
     # street address; plain house hits have no name and use number + road.
     lead = r.get("name") or ""

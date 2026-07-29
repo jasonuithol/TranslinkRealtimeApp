@@ -9,9 +9,12 @@
 # verifies the mel feeds are actually flowing.
 set -euo pipefail
 
-VPS="${1:-}"; KEY="${2:-}"
+# Args win; gaps fill from ~/.config/translink/keys.env (VIC_KEY, VPS_HOST).
+source "$(dirname "${BASH_SOURCE[0]}")/load-keys.sh"
+VPS="${1:-${VPS_HOST:-}}"; KEY="${2:-${VIC_KEY:-}}"
 if [[ -z "$VPS" || -z "$KEY" ]]; then
   echo "Usage: $0 root@<vps-host> <VIC-API-KEY>" >&2
+  echo "  (or set VIC_KEY / VPS_HOST in ~/.config/translink/keys.env)" >&2
   exit 1
 fi
 
@@ -23,6 +26,10 @@ set -euo pipefail
 DEPLOY_UID="$(id -u "$DEPLOY_USER")"
 RUNTIME_DIR="/run/user/${DEPLOY_UID}"
 QUADLET="$(getent passwd "$DEPLOY_USER" | cut -d: -f6)/.config/containers/systemd/translink.container"
+# Probe the primary interface, not localhost — pasta stopped forwarding
+# published ports to 127.0.0.1 on the host (2026-07-29).
+PROBE_HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
+PROBE_HOST="${PROBE_HOST:-localhost}"
 
 as_deploy() {
   sudo -u "$DEPLOY_USER" \
@@ -49,17 +56,17 @@ chmod 0600 "$QUADLET"   # it holds the key now
 echo "==> Reload + restart…"
 as_deploy "systemctl --user daemon-reload && systemctl --user restart translink.service"
 
-echo "==> Waiting for the board (up to 120 s)…"
+echo "==> Waiting for the board (up to 600 s — nine cold regions warm at boot)…"
 up=0
-for i in $(seq 1 40); do
-  curl -fsS --max-time 3 "http://localhost:${APP_PORT}/api/config" >/dev/null 2>&1 && { up=1; break; }
+for i in $(seq 1 200); do
+  curl -fsS --max-time 3 "http://${PROBE_HOST}:${APP_PORT}/api/config" >/dev/null 2>&1 && { up=1; break; }
   sleep 3
 done
 [[ $up -eq 1 ]] || { echo "Board did not come up; logs:"; as_deploy "podman logs --tail 30 translink"; exit 1; }
 
 echo "==> Waiting one poll cycle for the Melbourne feeds…"
 sleep 40
-FEEDS=$(curl -fsS "http://localhost:${APP_PORT}/api/feeds")
+FEEDS=$(curl -fsS "http://${PROBE_HOST}:${APP_PORT}/api/feeds")
 echo "$FEEDS" | python3 -m json.tool 2>/dev/null || echo "$FEEDS"
 # Check MELBOURNE'S OWN feed ages, not just any "vehicles" key in the JSON
 # (that grep once matched the SEQ section on the syd variant of this script).
@@ -76,3 +83,7 @@ else
   exit 1
 fi
 REMOTE
+
+# Remote script succeeded (set -e): record it in the deployment state.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${HERE}/mark-deployed.sh" "${TARGET_NAME:-vps}" enable-mel || true

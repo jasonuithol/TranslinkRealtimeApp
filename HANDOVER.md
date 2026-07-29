@@ -63,6 +63,51 @@ the host. `.github/workflows/ci.yml` smoke-tests against `mock_gtfs.zip` and
 publishes to `ghcr.io/jasonuithol/translink-departures`; the server container
 is `AutoUpdate=registry`, so a push to `main` rolls out on its own.
 
+**Deployment is two commands, driven by state files** (2026-07-29, Jason:
+"the deployment logic is a shitshow… I want to run a local deploy, and a
+remote deploy and THATS ALL"): `./deploy/deploy.sh local` and
+`./deploy/deploy.sh vps` (`--dry-run` prints the plan). Each reads
+`deploy/state/<target>.yaml` — one line per component (`image`,
+`quadlet-units`, `basemap-<region>`, `enable-syd-nsw`, `enable-mel`,
+`https`), each `deployed` / `pending` (with a reason) / `blocked` — and
+deploys exactly the pending ones, flipping them back via
+`deploy/mark-deployed.sh`. THE RULE: **whoever changes a deployable asset
+flips its component to pending in every affected target file, in the same
+change** — code → `image`; a bbox or basemap rebuild → `basemap-<region>`;
+unit files → `quadlet-units`; env/key wiring → the `enable-*` component.
+No knobs: deploy.sh derives BASEMAP_REGIONS etc. from the yaml and calls
+the old scripts as machinery. The image is the ONE component that deploys
+via GitHub (push → CI → GHCR → pull), so deploy.sh gates it: uncommitted
+image inputs (app.py, static/, ingest_gtfs.py, requirements.txt,
+Containerfile) abort the run, an unpushed HEAD offers to push, and it
+waits for CI to go green before pulling. deploy.sh also closed the gap
+where quadlet unit changes had NO deploy path (only first-time
+install-vps.sh wrote them): it syncs repo units to the VPS while
+preserving the live units' injected `Environment=` lines (keys, feed
+URLs) and `PublishPort` — merge logic is a python3 heredoc inside
+deploy.sh, tested against fixture files. Keys/host come from
+`~/.config/translink/keys.env` (NSW_KEY, VIC_KEY, VPS_HOST; chmod 600;
+created by Jason 2026-07-29 in a plain terminal so keys stay out of
+session transcripts; every key-taking script sources deploy/load-keys.sh
+as arg fallback, and run-local.sh's old `""` skip-arg became `none` since
+empty now falls back to the store). Component lines are single-line YAML
+maps ON PURPOSE — mark-deployed.sh and deploy.sh rewrite/parse them with
+sed; keep the format, no double-quotes inside reasons. Image subtlety:
+the VPS also pulls daily via podman-auto-update, so a pending image can
+fix itself overnight — pending means "not yet confirmed on the target";
+a deploy run confirms. **Never health-check via localhost on the VPS**
+(2026-07-29): pasta, rootless podman's port forwarder, stopped answering
+published ports on 127.0.0.1 from the host itself while the public
+interface served fine — every deploy's verification tail failed against a
+healthy board, which was the true cause of the "board did not come up"
+serial deploy deaths (NOT slow cache warm-up, though a post-ingest warm
+is genuinely slow too). All remote checks now probe
+`$(hostname -I | awk '{print $1}')` as PROBE_HOST. Also from that
+incident: releases no longer re-ingest existing timetables (INGEST_*
+default `auto` = only-if-missing; the weekly timer owns freshness) and
+release-vps.sh skips copying a basemap the target already has
+(size-compared) so a failed run can't cost the 640 MB nsw upload twice.
+
 > **This host is shared with `~/Projects/Java2026/inventoryquest`.** That
 > project's `scripts/provision-vps.sh` owns host provisioning (the `deploy`
 > user, rootless Podman, subuid ranges, linger, `podman-auto-update.timer`),

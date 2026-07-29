@@ -14,8 +14,9 @@
 # hardcodes them.
 set -euo pipefail
 
-KEY="${1:-}"
-[[ -n "$KEY" ]] || { echo "Usage: $0 <NSW-API-KEY>" >&2; exit 1; }
+source "$(dirname "${BASH_SOURCE[0]}")/load-keys.sh"
+KEY="${1:-${NSW_KEY:-}}"
+[[ -n "$KEY" ]] || { echo "Usage: $0 <NSW-API-KEY>  (or put NSW_KEY in ~/.config/translink/keys.env)" >&2; exit 1; }
 BASE="https://api.transport.nsw.gov.au"
 AUTH="Authorization: apikey $KEY"
 

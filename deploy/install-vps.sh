@@ -106,3 +106,7 @@ echo "  Refresh the timetable by hand:"
 echo "    systemctl --user start translink-ingest.service"
 echo "    journalctl --user -u translink-ingest.service -f"
 echo "════════════════════════════════════════════════════════════════════"
+echo
+echo "  This script runs on the VPS, so it can't update the local deployment"
+echo "  state file — on your workstation, record it with:"
+echo "    ./deploy/mark-deployed.sh vps quadlet-units"

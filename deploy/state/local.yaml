@@ -1,0 +1,22 @@
+# Deployment state: the local "prod-ish" container (podman, port 8000,
+# container `translink`, ghcr image, sharing the translink-data volume).
+# Dev containers (tdev :8002, tpanel :8005) are rebuilt from the tree at
+# will and are NOT tracked here. Same format and workflow as vps.yaml.
+
+target: local
+host: localhost:8000
+updated: 2026-07-29
+
+components:
+  # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
+  # deploy.sh gates on git/CI state before pulling here too.
+  image: { status: deployed, at: 2026-07-29 }
+  # Basemaps live in the shared volume — built in place, nothing to ship.
+  basemap-seq: { status: deployed, at: 2026-07-22 }
+  basemap-mel: { status: deployed, at: 2026-07-26 }
+  basemap-syd: { status: deployed, at: 2026-07-26 }
+  basemap-ade: { status: deployed, at: 2026-07-26 }
+  basemap-per: { status: deployed, at: 2026-07-26 }
+  basemap-dar: { status: deployed, at: 2026-07-26 }
+  basemap-qld: { status: deployed, at: 2026-07-27 }
+  basemap-nsw: { status: deployed, at: 2026-07-28 }

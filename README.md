@@ -125,9 +125,12 @@ podman run --rm -e REGION=nsw -v translink-data:/data -v translink-basemap-cache
 podman run -d -p 8000:8000 -v translink-data:/data translink-departures
 ```
 
-Open http://localhost:8000. Or, for development: `./deploy/run-local.sh
-[VIC-API-KEY]` builds and runs a dev container on :8002 (key optional —
-enables Melbourne realtime).
+Open http://localhost:8000. Or, for development: `./deploy/run-local.sh`
+builds and runs a dev container on :8002 with realtime for any region whose
+key it can find. Keys can be passed as arguments, but the nicer way is a
+one-time `~/.config/translink/keys.env` (`NSW_KEY=…`, `VIC_KEY=…`, optional
+`VPS_HOST=…`, `chmod 600`) — every key-taking script in `deploy/` reads it
+as a fallback, so nothing needs pasting twice. See `deploy/load-keys.sh`.
 
 Bare-metal also works: `pip install -r requirements.txt`, `python
 ingest_gtfs.py`, `uvicorn app:app --reload`. The basemap is optional — without
@@ -164,14 +167,34 @@ region's** timetable (`--region all`) — not a nicety: TfNSW rotates Sydney's
 train trip ids to a new timetable version within days, after which realtime
 predictions silently stop matching a stale static feed.
 
+Day to day there are exactly two deploy commands:
+
+```bash
+./deploy/deploy.sh local    # deploy everything pending to the local container
+./deploy/deploy.sh vps      # deploy everything pending to the VPS
+```
+
+`deploy/state/<target>.yaml` is the single source of truth: one line per
+deployable component (`image`, `quadlet-units`, `basemap-<region>`,
+`enable-*`), each `deployed`, `pending` (changed since the target last got
+it, with a reason), or `blocked` (waiting on a key/decision). Whoever
+changes a deployable asset flips its component to pending in the same
+change; `deploy.sh` deploys exactly what's pending and flips it back. The
+image is the one component that ships via GitHub (push → CI → GHCR →
+pull), so `deploy.sh` gates on git state: uncommitted image inputs abort,
+an unpushed HEAD offers to push, and it waits for CI green before pulling.
+`./deploy/status.sh` shows what's stale where; `--dry-run` prints the plan.
+
+The machinery underneath (all callable standalone for surgical work):
+
 - `deploy/install-vps.sh` — first-time install (run as root on the VPS)
-- `deploy/release-vps.sh root@host` — one local command: ship basemap + run
-  the update remotely
-- `deploy/update-vps.sh` — image pull, Melbourne ingest, basemap install,
-  restart, health checks
-- `deploy/enable-mel-vps.sh root@host KEY` — switch on Melbourne realtime
-- `deploy/enable-syd-vps.sh root@host KEY` — switch on Sydney (ingest + realtime)
-- `deploy/probe-syd.sh KEY` — verify every TfNSW endpoint before enabling
+- `deploy/release-vps.sh` — ship basemaps + run the update remotely
+- `deploy/update-vps.sh` — image pull, ingests, basemap install, restart,
+  health checks
+- `deploy/enable-mel-vps.sh` / `deploy/enable-syd-vps.sh` — switch on a
+  region's realtime (keys from `~/.config/translink/keys.env`)
+- `deploy/probe-syd.sh` — verify every TfNSW endpoint before enabling
+- `deploy/mark-deployed.sh` — flip state components after a manual step
 
 ## Data licensing
 

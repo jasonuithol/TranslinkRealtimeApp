@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 #
 # Run the board locally in a dev container on :8002, against the local data
-# volume — with realtime switched on for any region whose key you pass:
+# volume — with realtime switched on for any region whose key is available.
+# Keys come from args, or from ~/.config/translink/keys.env (VIC_KEY /
+# NSW_KEY — see deploy/load-keys.sh) so you needn't paste them every time:
 #
-#   ./deploy/run-local.sh                       # static-only mel/syd
+#   ./deploy/run-local.sh                       # keys.env keys, else static
 #   ./deploy/run-local.sh <VIC-KEY>             # live Melbourne
 #   ./deploy/run-local.sh <VIC-KEY> <NSW-KEY>   # live Melbourne + Sydney
-#   ./deploy/run-local.sh "" <NSW-KEY>          # live Sydney only
+#   ./deploy/run-local.sh none <NSW-KEY>        # live Sydney only
+#   ./deploy/run-local.sh none none             # force static-only
+#
+# ("none" suppresses a key even when keys.env has it.)
 #
 # First time (or to refresh the TfNSW timetables), ingest Sydney and/or the
 # NSW TrainLink interstate region on the way up (both use the NSW key):
 #
-#   INGEST_SYD=yes ./deploy/run-local.sh "" <NSW-KEY>
-#   INGEST_NSW=yes ./deploy/run-local.sh "" <NSW-KEY>
+#   INGEST_SYD=yes ./deploy/run-local.sh
+#   INGEST_NSW=yes ./deploy/run-local.sh
 #
 # (Runs between build and start, so the freshly built image does the ingest
 # and the app boots onto the new timetable. A few minutes of downloads.)
@@ -24,8 +29,11 @@
 # — sent as `Authorization: apikey <key>`.
 set -euo pipefail
 
-KEY="${1:-}"
-NSW_KEY="${2:-}"
+source "$(dirname "${BASH_SOURCE[0]}")/load-keys.sh"
+KEY="${1:-${VIC_KEY:-}}"
+NSW_KEY="${2:-${NSW_KEY:-}}"
+if [[ "$KEY" == "none" ]]; then KEY=""; fi
+if [[ "$NSW_KEY" == "none" ]]; then NSW_KEY=""; fi
 NAME="${NAME:-tdev}"
 PORT="${PORT:-8002}"
 IMAGE="${IMAGE:-translink-dev}"

@@ -1,0 +1,48 @@
+# Deployment state: the VPS (root@delphi-bogart.bnr.la, port 8000).
+#
+# One line per component. status is one of:
+#   deployed  — target matches the repo (as of `at`)
+#   pending   — changed in the repo since last deployed; reason says what/why
+#   blocked   — can't deploy yet; reason says what it's waiting on
+#
+# WORKFLOW: whoever changes a deployable asset flips its component to
+# pending (Claude does this as part of any such change). Then deploy with:
+#   ./deploy/deploy.sh vps        (--dry-run to see the plan first)
+# which deploys exactly the pending components and flips them back to
+# deployed. `./deploy/status.sh` lists everything pending/blocked.
+#
+# NOTE on image: CI publishes to GHCR on every push, and the VPS ALSO pulls
+# daily via podman-auto-update — so a pending image may fix itself overnight.
+# pending here means "not yet confirmed on the target"; a release run (or a
+# manual `podman auto-update` + mark) confirms it.
+# Bootstrap dates (2026-07-29 file creation) are approximate.
+
+target: vps
+host: root@delphi-bogart.bnr.la
+updated: 2026-07-29
+
+components:
+  # App container image (app.py, static/, ingest_gtfs.py, Containerfile).
+  # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
+  # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
+  # to push, and it waits for CI green before pulling.
+  image: { status: deployed, at: 2026-07-29 }
+  # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
+  # writes these — the live copies carry injected keys, so update-vps.sh must
+  # never overwrite them. Unit changes are applied on the VPS by hand.
+  quadlet-units: { status: deployed, at: 2026-07-29 }
+  # Basemaps, shipped by release-vps.sh (BASEMAP_REGIONS names which).
+  basemap-seq: { status: deployed, at: 2026-07-22 }
+  basemap-mel: { status: deployed, at: 2026-07-26 }
+  basemap-syd: { status: deployed, at: 2026-07-26 }
+  basemap-ade: { status: deployed, at: 2026-07-26 }
+  basemap-per: { status: deployed, at: 2026-07-26 }
+  basemap-dar: { status: deployed, at: 2026-07-26 }
+  basemap-qld: { status: deployed, at: 2026-07-27 }
+  basemap-nsw: { status: deployed, at: 2026-07-29 }
+  # Region enablement (keys + realtime env + first ingest). Timetables
+  # refresh themselves weekly once quadlet-units + keys are in place.
+  enable-syd-nsw: { status: deployed, at: 2026-07-29 }
+  enable-mel: { status: deployed, at: 2026-07-22 }
+  # HTTPS (gates browser geolocation off-localhost).
+  https: { status: blocked, reason: "on ice — waiting on a domain decision" }

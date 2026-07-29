@@ -619,7 +619,7 @@
   <div class="split" id="split">
     <div class="board" id="board">
       <div class="empty placeholder">
-        <div>Search for a stop to see departures.</div>
+        <div>Select a stop to see departures.</div>
         <div class="ph-icon">&#x1F570;&#xFE0E;</div>
       </div>
     </div>
@@ -676,6 +676,13 @@
     const [lon, lat] = pinRaw.split(",").map(Number);
     return [lon, lat].every(Number.isFinite) ? { lon, lat } : null;
   })();
+  // The pin's display label ("397 Christine Avenue, Varsity Lakes QLD" /
+  // "Near me") — shown in the titlebar like a stop name.
+  const pinLabel = new URLSearchParams(location.search).get("pinlabel") || "";
+  // Pinned-browse: the map is anchored to an address rather than a stop.
+  // The chrome behaves like a stop view (titlebar + goose, folded search,
+  // "Change address") until an actual stop is picked.
+  const pinnedBrowse = browsing && Boolean(pinParam);
   // The stops surrounding a dropped pin — fetched once the map is up, drawn
   // as clickable landmarks at ANY zoom (the all-stops layer needs z15+, and
   // a sparse suburb's nearest stops can force the camera further out).
@@ -735,20 +742,27 @@
     .then((regions) => { regionList = regions; })
     .catch(() => { /* search stays single-region, no pan-swap */ });
 
-  // With no stop there is nothing but the search, so it is always open. Once a
-  // stop is chosen the search folds away and "Change stop" brings it back.
-  let searchOpen = !stopId;
+  // With no anchor (stop OR pin) there is nothing but the search, so it is
+  // always open. Anchored, the search folds away and "Change stop" /
+  // "Change address" brings it back.
+  let searchOpen = !stopId && !pinnedBrowse;
 
   function syncChrome() {
     // No stop yet = the landing: just the goose and the search. The class
     // hides the chrome and parks the board/map split off-screen (still sized,
     // so the map keeps warming underneath). Map-browsing mode (?at=, from a
     // pan across regions) keeps the full layout instead.
+    const anchored = Boolean(stopId) || pinnedBrowse;
     document.body.classList.toggle("landing", !stopId && !browsing);
-    $("titlebar").hidden = !stopId;
-    $("search-wrap").hidden = Boolean(stopId) && !searchOpen;
-    $("search-close").hidden = !stopId;   // nothing to return to without one
+    $("titlebar").hidden = !anchored;
+    $("search-wrap").hidden = anchored && !searchOpen;
+    $("search-close").hidden = !anchored;  // nothing to return to without one
+    $("change-stop").textContent = stopId ? "Change stop" : "Change address";
     if (!searchOpen) $("results").hidden = true;
+  }
+  if (pinnedBrowse) {
+    // The address plays the part of the stop name until a stop is picked.
+    $("stop-name").textContent = pinLabel || "Dropped pin";
   }
 
   function openSearch() {
@@ -766,7 +780,7 @@
   $("change-stop").addEventListener("click", openSearch);
   $("search-close").addEventListener("click", closeSearch);
   $("search").addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && stopId) closeSearch();
+    if (e.key === "Escape" && (stopId || pinnedBrowse)) closeSearch();
   });
 
   // --- stop search -------------------------------------------------------
@@ -863,7 +877,7 @@
   // whichever network actually has the NEAREST stop — never the region
   // whose geocoder resolved the address; their viewboxes overlap (see the
   // Varsity-Lakes-NSW incident).
-  async function openPinned(lat, lon, what) {
+  async function openPinned(lat, lon, what, label) {
     const box = $("results");
     box.innerHTML = "";
     resultNote(`Finding stops near ${what}…`);
@@ -881,7 +895,8 @@
     const lonlat = `${lon.toFixed(5)},${lat.toFixed(5)}`;
     localStorage.setItem("region", rid);
     location.href = `?region=${encodeURIComponent(rid)}`
-                  + `&at=${lonlat},16&pin=${lonlat}`;
+                  + `&at=${lonlat},16&pin=${lonlat}`
+                  + `&pinlabel=${encodeURIComponent(label || what)}`;
   }
 
   // On a pinned page: fetch the stops around the pin, hand them to the
@@ -941,7 +956,7 @@
         // glyph on the right already tells it apart from a stop.
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}</span>`,
-          () => openPinned(p.lat, p.lon, "that address"),
+          () => openPinned(p.lat, p.lon, "that address", p.label),
         );
       });
     } catch {
@@ -1029,7 +1044,8 @@
     box.hidden = false;
     fitResults();
     navigator.geolocation.getCurrentPosition(
-      (pos) => openPinned(pos.coords.latitude, pos.coords.longitude, "you"),
+      (pos) => openPinned(pos.coords.latitude, pos.coords.longitude, "you",
+                          "Near me"),
       () => {
         box.innerHTML = "";
         // Browsers only allow geolocation on HTTPS (localhost excepted).

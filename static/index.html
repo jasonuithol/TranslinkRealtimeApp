@@ -1578,6 +1578,23 @@
         map.on("mouseleave", lyr, () => map.getCanvas().style.cursor = "");
       }
 
+      // Hovering a stop names it: one shared tooltip that follows the
+      // cursor from stop to stop and vanishes on leave. setText keeps the
+      // feed-supplied name inert. (No hover on touch devices — tapping
+      // already opens the stop's board.)
+      const stopTip = new maplibregl.Popup({
+        closeButton: false, closeOnClick: false, offset: 12,
+      });
+      for (const lyr of stopLayers) {
+        map.on("mousemove", lyr, (e) => {
+          const f = e.features && e.features[0];
+          const name = f && (f.properties.name || f.properties.stop_name);
+          if (!name) return;
+          stopTip.setLngLat(f.geometry.coordinates).setText(name).addTo(map);
+        });
+        map.on("mouseleave", lyr, () => stopTip.remove());
+      }
+
       // Only a move carrying a DOM event is the user taking control — a drag,
       // a wheel, a pinch. Testing `programmatic` instead looked equivalent but
       // was not: map.resize() below fires movestart with the flag clear, which

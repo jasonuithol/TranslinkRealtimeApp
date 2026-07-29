@@ -766,9 +766,9 @@
   });
 
   // --- stop search -------------------------------------------------------
-  // Three ways into the same dropdown: stop-name search, address search
-  // (geocoded server-side), and "near me" (browser geolocation). The last two
-  // both end at nearbyStops(), which lists the closest stops with distances.
+  // Three ways in: stop-name search (a dropdown of stops), address search
+  // (geocoded server-side) and "near me" (browser geolocation) — the last
+  // two both end at openPinned(): pin on the map, surrounding stops around it.
   const fmtDist = (m) => m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
 
   function resultButton(html, onclick) {
@@ -853,46 +853,28 @@
     return lists.flat().sort((a, b) => a.dist_m - b.dist_m);
   }
 
-  async function nearbyStops(lat, lon, label, rid = null) {
+  // A located point — a clicked address, or "near me" — goes straight to
+  // the map: an amber pin on the spot, the surrounding stops visible and
+  // clickable (the all-stops layer is live at this zoom). The region is
+  // whichever network actually has the NEAREST stop — never the region
+  // whose geocoder resolved the address; their viewboxes overlap (see the
+  // Varsity-Lakes-NSW incident).
+  async function openPinned(lat, lon, what) {
     const box = $("results");
     box.innerHTML = "";
-    resultNote(`Stops near ${label}…`);
-    box.hidden = false;
-    fitResults();
-    try {
-      const stops = (await fetchNearby(lat, lon, rid)).slice(0, 10);
-      box.innerHTML = "";
-      if (!stops.length) { resultNote(`No stops near ${label}.`); return; }
-      stops.forEach(stopEntry);
-    } catch {
-      box.innerHTML = "";
-      resultNote("Could not look up nearby stops.");
-    } finally {
-      fitResults();
-    }
-  }
-
-  // Clicking an address goes straight to the map: an amber pin on the front
-  // door, the surrounding stops visible and clickable (the all-stops layer
-  // is live at this zoom). The region is whichever network actually has the
-  // NEAREST stop — never the region whose geocoder resolved the address;
-  // their viewboxes overlap (see the Varsity-Lakes-NSW incident).
-  async function openAddress(p) {
-    const box = $("results");
-    box.innerHTML = "";
-    resultNote("Finding stops near that address…");
+    resultNote(`Finding stops near ${what}…`);
     box.hidden = false;
     fitResults();
     let stops = [];
-    try { stops = await fetchNearby(p.lat, p.lon); } catch { /* fall through */ }
+    try { stops = await fetchNearby(lat, lon); } catch { /* fall through */ }
     if (!stops.length) {
       box.innerHTML = "";
-      resultNote("No stops near that address.");
+      resultNote(`No stops near ${what}.`);
       fitResults();
       return;
     }
     const rid = stops[0].region;
-    const lonlat = `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`;
+    const lonlat = `${lon.toFixed(5)},${lat.toFixed(5)}`;
     localStorage.setItem("region", rid);
     location.href = `?region=${encodeURIComponent(rid)}`
                   + `&at=${lonlat},16&pin=${lonlat}`;
@@ -937,7 +919,7 @@
         // glyph on the right already tells it apart from a stop.
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}</span>`,
-          () => openAddress(p),
+          () => openPinned(p.lat, p.lon, "that address"),
         );
       });
     } catch {
@@ -1025,7 +1007,7 @@
     box.hidden = false;
     fitResults();
     navigator.geolocation.getCurrentPosition(
-      (pos) => nearbyStops(pos.coords.latitude, pos.coords.longitude, "you"),
+      (pos) => openPinned(pos.coords.latitude, pos.coords.longitude, "you"),
       () => {
         box.innerHTML = "";
         // Browsers only allow geolocation on HTTPS (localhost excepted).

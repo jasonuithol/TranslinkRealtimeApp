@@ -142,7 +142,9 @@
     padding: 2px 6px 10px; margin-bottom: 8px;
     border-bottom: 1px solid var(--line);
   }
-  .board-head .bh-icon { font-size: 18px; }
+  /* Monochrome, bright white — the exact ink of the viewed-stop marker on
+     the map (LANDMARK_SELECTED_INK), so heading and marker read as one. */
+  .board-head .bh-icon { font-size: 18px; color: #ffffff; }
 
   /* --- landing ----------------------------------------------------------- */
   /* First load, before any stop is chosen: nothing but the logo and the

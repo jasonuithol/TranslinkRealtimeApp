@@ -1337,14 +1337,28 @@
               * Math.sin((lo2 - lo1) * rad / 2) ** 2;
       return 2 * 6371 * Math.asin(Math.sqrt(a));
     };
+    // Whether the move in flight is the user's own (drag / wheel / pinch).
+    // Programmatic moves never carry a DOM event; each gesture resets it.
+    let userDrove = false;
+    map.on("movestart", (e) => { userDrove = Boolean(e.originalEvent); });
     map.on("moveend", () => {
-      // Only while browsing (no stop selected). Regions can overlap now —
+      // With a stop on the board, only the user's own pan can hand over, and
+      // only once they've left the stop's area far behind. Regions overlap —
       // several qld towns (Stradbroke, Kilcoy, Maleny, Toowoomba, …) sit
       // within 150 km of Brisbane, so a qld board's own fit-to-stop used to
-      // hand the camera to seq and dump the stop the user had just picked.
-      if (stopId) return;
+      // hand the camera to seq and dump the stop the user had just picked;
+      // an unconditional `if (stopId) return` fixed that but also killed
+      // panning from one city into another whenever a board was open — the
+      // map just ran off the region's basemap into blank void.
       if (map.getZoom() < 7) return;
       const c = map.getCenter();
+      if (stopId) {
+        if (!userDrove) return;
+        const s = lastData?.stop;
+        if (!s || s.stop_lat == null) return;
+        if (haversineKm(c.lat, c.lng, s.stop_lat, s.stop_lon) <= REGION_RADIUS_KM)
+          return;   // still browsing around the viewed stop: never steal it
+      }
       let best = null, bestD = Infinity;
       for (const r of regionList) {
         if (!r.center) continue;

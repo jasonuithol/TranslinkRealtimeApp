@@ -11,6 +11,15 @@
   dedupe arm hasn't been seen live with keys yet — check a keyed board at
   Newcastle Interchange after deploy.
 
+- **Hand-over dead zones render void (noted 2026-07-29)**: the cross-region
+  pan hand-over is centre-based (nearest region centre within 150 km), so
+  places more than 150 km from *every* centre — Coffs Harbour, Albury,
+  Byron Bay — never switch region, and once the camera passes the current
+  region's basemap bbox edge the map is blank. The nsw basemap actually
+  covers most of these. Fix if it ever matters: fall back to
+  viewbox-containment (hand to the region whose geocode viewbox contains
+  the centre, smallest viewbox wins) when no centre is within radius.
+
 ## Interstate coverage — blocked on data that doesn't exist (yet)
 
 Checked 2026-07-28 while building the `nsw` TrainLink region. None of these

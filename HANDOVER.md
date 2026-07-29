@@ -250,9 +250,24 @@ times and the map shows timetable-estimated ghosts.
   qld towns (Stradbroke, Kilcoy, Maleny, Toowoomba, Gympie, Warwick) sit
   within 150 km of Brisbane, which made the map's cross-region pan hand-over
   fire off a qld board's own fit-to-stop and dump the user into seq
-  browsing mode (the "clicked Stradbroke, lost the goose" bug). The
-  moveend hand-over is now gated on `!stopId`: it only runs while
-  browsing, never while a stop's board is anchored.
+  browsing mode (the "clicked Stradbroke, lost the goose" bug). First fix
+  was a blanket `!stopId` gate — hand-over only while browsing — which
+  over-corrected: with a board open (the app's normal state) panning from
+  one city to another never switched region, so the map ran off the
+  basemap into blank void ("map and route issues again", 2026-07-29,
+  aggravated by merged boards offering long-haul XPT/Hunter rows worth
+  tracing). Current rule (2026-07-29): while a stop is anchored, hand over
+  only when (a) the move is the *user's own* — `movestart` carried an
+  `originalEvent`; programmatic fits never do — AND (b) the map centre has
+  left the anchored stop more than REGION_RADIUS_KM behind. Fit-to-stop
+  stays safe (programmatic), browsing near your own stop stays safe
+  (distance guard covers every qld-within-150km-of-Brisbane case), but a
+  deliberate drag to another city hands over, dropping the stop and
+  carrying the camera — Selenium-verified all three ways plus browsing
+  mode. Known remaining gap: dead zones >150 km from every region centre
+  (Coffs, Albury, Byron) never hand over and render void once past the
+  bbox edge; a viewbox-containment fallback would fix it if it ever
+  matters.
 - **NSW TrainLink interstate (`nsw`), added 2026-07-28**: the answer to
   "any interstate travel options?" — TfNSW's `nswtrains` feed is the
   regional trains (XPT Sydney–Melbourne and Sydney–Brisbane, Xplorer to

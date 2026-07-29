@@ -143,8 +143,13 @@
     border-bottom: 1px solid var(--line);
   }
   /* Monochrome, bright white — the exact ink of the viewed-stop marker on
-     the map (LANDMARK_SELECTED_INK), so heading and marker read as one. */
-  .board-head .bh-icon { font-size: 18px; color: #ffffff; }
+     the map (LANDMARK_SELECTED_INK), so heading and marker read as one.
+     The Noto Emoji face is what makes it monochrome: without it, browsers
+     that ignore VS15 (Chrome) substitute the system COLOUR emoji font. */
+  .board-head .bh-icon {
+    font-size: 18px; color: #ffffff;
+    font-family: "Noto Emoji", system-ui, sans-serif;
+  }
 
   /* --- landing ----------------------------------------------------------- */
   /* First load, before any stop is chosen: nothing but the logo and the

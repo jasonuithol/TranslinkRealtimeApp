@@ -5,12 +5,12 @@
 
 target: local
 host: localhost:8000
-updated: 2026-07-29
+updated: 2026-07-30
 
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, since: 2026-07-29, reason: "board heading glyph in viewed-stop white" }
+  image: { status: pending, since: 2026-07-30, reason: "heading glyph pinned to the Noto Emoji face (Chrome fell back to colour emoji)" }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }

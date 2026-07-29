@@ -666,6 +666,17 @@
   })();
   const browsing = Boolean(atParam) && !stopId;
 
+  // ?pin=lon,lat — a dropped pin: the residential address the user searched.
+  // Drawn as an amber marker once the map is up; the cross-region hand-over
+  // treats it like an anchored stop (the pin's region was chosen by
+  // nearest-stop, so browsing around it must not get second-guessed).
+  const pinRaw = new URLSearchParams(location.search).get("pin");
+  const pinParam = (() => {
+    if (!pinRaw) return null;
+    const [lon, lat] = pinRaw.split(",").map(Number);
+    return [lon, lat].every(Number.isFinite) ? { lon, lat } : null;
+  })();
+
   // --- region ------------------------------------------------------------
   // One board, many networks. The region picks the timetable DB, the realtime
   // feeds, the timezone and the basemap — all server-side; the client just
@@ -828,6 +839,20 @@
   // null: geocode viewboxes overlap (nsw spans four states), so "the region
   // whose lookup found it" proved to be the wrong region for a Varsity
   // Lakes street that came back via nsw — whose nearest stop is 100 km off.
+  async function fetchNearby(lat, lon, rid = null) {
+    await regionsReady.catch(() => {});
+    const rids = rid ? [{ id: rid, state: stateOf(rid) }] : regionOrder();
+    const lists = await Promise.all(rids.map(async (r) => {
+      try {
+        const res = await fetch(
+          `/api/r/${r.id}/stops/nearby?lat=${lat}&lon=${lon}`);
+        return (await res.json())
+          .map((s) => ({ ...s, region: r.id, state: r.state }));
+      } catch { return []; }
+    }));
+    return lists.flat().sort((a, b) => a.dist_m - b.dist_m);
+  }
+
   async function nearbyStops(lat, lon, label, rid = null) {
     const box = $("results");
     box.innerHTML = "";
@@ -835,17 +860,7 @@
     box.hidden = false;
     fitResults();
     try {
-      await regionsReady.catch(() => {});
-      const rids = rid ? [{ id: rid, state: stateOf(rid) }] : regionOrder();
-      const lists = await Promise.all(rids.map(async (r) => {
-        try {
-          const res = await fetch(
-            `/api/r/${r.id}/stops/nearby?lat=${lat}&lon=${lon}`);
-          return (await res.json())
-            .map((s) => ({ ...s, region: r.id, state: r.state }));
-        } catch { return []; }
-      }));
-      const stops = lists.flat().sort((a, b) => a.dist_m - b.dist_m).slice(0, 10);
+      const stops = (await fetchNearby(lat, lon, rid)).slice(0, 10);
       box.innerHTML = "";
       if (!stops.length) { resultNote(`No stops near ${label}.`); return; }
       stops.forEach(stopEntry);
@@ -855,6 +870,32 @@
     } finally {
       fitResults();
     }
+  }
+
+  // Clicking an address goes straight to the map: an amber pin on the front
+  // door, the surrounding stops visible and clickable (the all-stops layer
+  // is live at this zoom). The region is whichever network actually has the
+  // NEAREST stop — never the region whose geocoder resolved the address;
+  // their viewboxes overlap (see the Varsity-Lakes-NSW incident).
+  async function openAddress(p) {
+    const box = $("results");
+    box.innerHTML = "";
+    resultNote("Finding stops near that address…");
+    box.hidden = false;
+    fitResults();
+    let stops = [];
+    try { stops = await fetchNearby(p.lat, p.lon); } catch { /* fall through */ }
+    if (!stops.length) {
+      box.innerHTML = "";
+      resultNote("No stops near that address.");
+      fitResults();
+      return;
+    }
+    const rid = stops[0].region;
+    const lonlat = `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`;
+    localStorage.setItem("region", rid);
+    location.href = `?region=${encodeURIComponent(rid)}`
+                  + `&at=${lonlat},16&pin=${lonlat}`;
   }
 
   // Append address candidates to the dropdown (below any stop matches).
@@ -896,7 +937,7 @@
         // glyph on the right already tells it apart from a stop.
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}</span>`,
-          () => nearbyStops(p.lat, p.lon, "that address"),
+          () => openAddress(p),
         );
       });
     } catch {
@@ -1019,7 +1060,8 @@
     forceFit = true;          // ...and reframes even if the user had panned
     closeSearch();            // a stop is chosen: fold the search away
     syncRailStationFilter();  // stop drawing the station we now view in grey
-    history.replaceState(null, "", `?region=${region}&stop=${id}`);
+    history.replaceState(null, "", `?region=${region}&stop=${id}`
+      + (pinParam ? `&pin=${pinRaw}` : ""));   // keep the address pin around
     refresh();
     clearInterval(timer);
     timer = setInterval(refresh, 15000);
@@ -1277,6 +1319,12 @@
         if (!s || s.stop_lat == null) return;
         if (haversineKm(c.lat, c.lng, s.stop_lat, s.stop_lon) <= REGION_RADIUS_KM)
           return;   // still browsing around the viewed stop: never steal it
+      } else if (pinParam
+          && haversineKm(c.lat, c.lng, pinParam.lat, pinParam.lon) <= REGION_RADIUS_KM) {
+        // Browsing around a dropped address pin: its region was chosen by
+        // nearest-stop (a Toowoomba pin is qld even though Brisbane's centre
+        // is nearer) — don't second-guess it until the user leaves the area.
+        return;
       }
       let best = null, bestD = Infinity;
       for (const r of regionList) {
@@ -1291,6 +1339,11 @@
     });
 
     map.on("load", () => {
+      if (pinParam) {
+        // The searched address — amber, like the goose.
+        new maplibregl.Marker({ color: "#f0b429" })
+          .setLngLat([pinParam.lon, pinParam.lat]).addTo(map);
+      }
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
       map.addSource("ghosts", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });

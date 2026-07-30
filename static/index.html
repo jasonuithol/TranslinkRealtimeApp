@@ -169,10 +169,6 @@
   .itin .it-detail {
     display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
   }
-  .itin .it-walk {
-    color: var(--muted); font-size: 12px; padding: 2px 0 2px 6px;
-    font-family: "IBM Plex Mono", monospace;
-  }
 
   /* The stop the arrivals belong to: glyph + name atop the board. */
   .board-head {
@@ -1546,7 +1542,9 @@
         id: "walklines", type: "line", source: "walklines",
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-color": "#8c98a4",
+          // Each walk carries its own pool colour (the 🚶 "vehicle"),
+          // grey only when no colour was assigned.
+          "line-color": ["coalesce", ["get", "color"], "#8c98a4"],
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 3],
           "line-dasharray": [1.2, 1.6],
           "line-opacity": 0.9,
@@ -2837,10 +2835,13 @@
       return;
     }
     // Same colour machinery as the arrivals board: one vehicle colour per
-    // service, shared by the leg's badge, its 🛜/📅 mark and its map trace.
-    const rideLegs = planData.itineraries
-      .flatMap((it) => it.legs.filter((l) => l.kind === "ride"));
-    planData.__colors = assignColors(rideLegs);
+    // service — and a walk IS a service here, performed by a "walk vehicle"
+    // (🚶): it draws a colour from the same pool, shared by badge and trace.
+    const colorItems = [];
+    planData.itineraries.forEach((it, i) => it.legs.forEach((leg, j) =>
+      colorItems.push({ trip_id: leg.kind === "ride" ? leg.trip_id
+                                                     : `walk:${i}:${j}` })));
+    planData.__colors = assignColors(colorItems);
     planData.itineraries.forEach((it, i) => {
       const card = document.createElement("div");
       card.className = "itin" + (i === selItin ? " selected" : "");
@@ -2859,14 +2860,34 @@
         `<span class="it-sub">${it.minutes} min · ${transfers}</span>` +
         (it.at_risk ? `<span class="it-risk">⚠ connection at risk</span>` : "");
       card.appendChild(headRow);
-      for (const leg of it.legs) {
+      it.legs.forEach((leg, j) => {
         if (leg.kind === "walk") {
-          const w = document.createElement("div");
-          w.className = "it-walk";
-          w.textContent = `↳ walk ${Math.max(1, Math.round(leg.secs / 60))} min`
-            + (leg.to_name ? ` to ${leg.to_name}` : "");
-          card.appendChild(w);
-          continue;
+          // A walk is a leg like any other: the 🚶 "vehicle", its own pool
+          // colour, the same badge/detail layout as a ride.
+          const vcolor = planData.__colors[`walk:${i}:${j}`] || "#8c98a4";
+          let end = null;   // walks precede a ride: pin times to its boarding
+          for (let k = j + 1; k < it.legs.length; k++) {
+            if (it.legs[k].kind === "ride") { end = it.legs[k].dep; break; }
+          }
+          const start = end != null ? end - leg.secs : null;
+          const mins = Math.max(1, Math.round(leg.secs / 60));
+          const row = document.createElement("div");
+          row.className = "it-leg";
+          row.style.setProperty("--vcolor", vcolor);
+          row.innerHTML = `
+            <div class="badge" style="color:${vcolor}">
+              <span class="mode">${asText("\u{1F6B6}")}</span>
+              <span class="num wide">${mins} min</span>
+            </div>
+            <div class="it-detail">
+              <span>${escapeHtml(leg.from_name ?? "")}${
+                start != null ? ` <b>${planClock(start)}</b>` : ""}</span>
+              <span>→ ${escapeHtml(leg.to_name ?? "")}${
+                end != null ? ` <b>${planClock(end)}</b>` : ""}</span>
+            </div>
+            <div class="src-col"></div>`;
+          card.appendChild(row);
+          return;
         }
         // A leg is a board row's language: black badge plate with the mode
         // glyph and route in the vehicle colour, 🛜/📅 in the same colour.
@@ -2897,7 +2918,7 @@
                   >${asText(leg.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span>
           </div>`;
         card.appendChild(row);
-      }
+      });
       board.appendChild(card);
     });
   }
@@ -3004,12 +3025,14 @@
     map.getSource("ghosts").setData(emptyFC());
 
     // Walks are the gaps between rides: origin -> first board, alight ->
-    // next board. Drawn dashed, along the walking graph where it answers.
+    // next board. Drawn dashed along the walking graph, in the SAME pool
+    // colour as the walk leg's badge — the walk is a vehicle here.
     const walks = [];
     let cursor = (planData.from && planData.from.stop_lat != null)
       ? [planData.from.stop_lon, planData.from.stop_lat] : null;
-    for (const leg of it.legs) {
-      if (leg.kind !== "ride") continue;
+    let gapWalkIdx = null;
+    it.legs.forEach((leg, j) => {
+      if (leg.kind === "walk") { if (gapWalkIdx === null) gapWalkIdx = j; return; }
       if (cursor && leg.board_lat != null) {
         const b = [leg.board_lon, leg.board_lat];
         const dm = Math.hypot((b[0] - cursor[0]) * 88000,
@@ -3022,12 +3045,17 @@
             type: "Feature",
             geometry: { type: "LineString",
                         coordinates: pts || [cursor, b] },
-            properties: {},
+            properties: {
+              color: gapWalkIdx !== null
+                ? (planData.__colors || {})[`walk:${selItin}:${gapWalkIdx}`]
+                : undefined,
+            },
           });
         }
       }
       if (leg.alight_lat != null) cursor = [leg.alight_lon, leg.alight_lat];
-    }
+      gapWalkIdx = null;
+    });
     map.getSource("walklines").setData(
       { type: "FeatureCollection", features: walks });
     if (!destMarker && planData.to

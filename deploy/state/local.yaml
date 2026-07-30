@@ -10,7 +10,7 @@ updated: 2026-07-30
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, since: 2026-07-30, reason: "walk legs routed along streets: /api/walkroute A* + dashed walk lines" }
+  image: { status: pending, since: 2026-07-30, reason: "walk legs are first-class walk-vehicle legs: 🚶 badge, pool colour, coloured dashes" }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }

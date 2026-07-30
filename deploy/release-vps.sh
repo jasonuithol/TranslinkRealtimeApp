@@ -31,7 +31,7 @@ SKIP_BASEMAP="${SKIP_BASEMAP:-no}"
 BASEMAP_REGIONS="${BASEMAP_REGIONS:-seq mel syd ade per dar qld nsw}"
 
 # One cleanup for every tmp artifact this script can create.
-trap 'rm -f /tmp/*.pmtiles.?????? /tmp/gnaf.sqlite3.?????? /tmp/walkgraph.sqlite3.??????' EXIT
+trap 'rm -f /tmp/*.pmtiles.?????? /tmp/gnaf.sqlite3.?????? /tmp/walkgraph.sqlite3.?????? /tmp/places.sqlite3.??????' EXIT
 
 SHIPPED_BASEMAPS=()
 if [[ "$SKIP_BASEMAP" != "yes" ]]; then
@@ -73,6 +73,7 @@ fi
 # don't-reship-identical size guard as the basemaps.
 SHIP_GNAF="${SHIP_GNAF:-no}"
 SHIP_WALKGRAPH="${SHIP_WALKGRAPH:-no}"
+SHIP_PLACES="${SHIP_PLACES:-no}"
 ship_data_db() {   # $1 = filename, $2 = build hint; 0 = present on target
   local name="$1" hint="$2" lsize rsize tmp
   if ! podman run --rm -v translink-data:/data alpine test -f "/data/${name}" 2>/dev/null; then
@@ -97,11 +98,15 @@ ship_data_db() {   # $1 = filename, $2 = build hint; 0 = present on target
 }
 SHIPPED_GNAF=no
 SHIPPED_WALKGRAPH=no
+SHIPPED_PLACES=no
 if [[ "$SHIP_GNAF" == "yes" ]] && ship_data_db gnaf.sqlite3 ingest_gnaf.py; then
   SHIPPED_GNAF=yes
 fi
 if [[ "$SHIP_WALKGRAPH" == "yes" ]] && ship_data_db walkgraph.sqlite3 ingest_walkgraph.py; then
   SHIPPED_WALKGRAPH=yes
+fi
+if [[ "$SHIP_PLACES" == "yes" ]] && ship_data_db places.sqlite3 ingest_places.py; then
+  SHIPPED_PLACES=yes
 fi
 
 echo "==> Copying update-vps.sh and running it on ${VPS}…"
@@ -118,4 +123,5 @@ for region in ${SHIPPED_BASEMAPS[@]+"${SHIPPED_BASEMAPS[@]}"}; do
 done
 if [[ "$SHIPPED_GNAF" == "yes" ]]; then MARK+=(gnaf-db); fi
 if [[ "$SHIPPED_WALKGRAPH" == "yes" ]]; then MARK+=(walkgraph-db); fi
+if [[ "$SHIPPED_PLACES" == "yes" ]]; then MARK+=(places-db); fi
 "${HERE}/mark-deployed.sh" "${TARGET_NAME:-vps}" "${MARK[@]}" || true

@@ -195,6 +195,8 @@ install_data_db "${GNAF_SRC:-/tmp/gnaf.sqlite3}" gnaf.sqlite3 \
   "the G-NAF address database"
 install_data_db "${WALKGRAPH_SRC:-/tmp/walkgraph.sqlite3}" walkgraph.sqlite3 \
   "the walking graph"
+install_data_db "${PLACES_SRC:-/tmp/places.sqlite3}" places.sqlite3 \
+  "the places index"
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"

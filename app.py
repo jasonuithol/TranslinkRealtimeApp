@@ -929,6 +929,59 @@ _STREET_ABBR = {
 }
 
 
+# Local business/POI index (ingest_places.py — named OSM places near
+# stops). Answers "bunnings burleigh" instantly; Nominatim remains the
+# fallback for anything the OSM community hasn't mapped.
+PLACES_DB = Path(os.environ.get("PLACES_DB") or DB_PATH.parent / "places.sqlite3")
+
+
+def places_geocode(q: str, viewbox: str, limit: int = 8) -> list | None:
+    """Named-place lookup. None = no DB or nothing matched — fall through.
+    Results inside the current region's viewbox rank first (like the
+    Nominatim viewbox bias); category and suburb ride along in the label."""
+    if not PLACES_DB.exists():
+        return None
+    tokens = [t for t in re.findall(r"[A-Za-z0-9']+", q.lower()) if t]
+    if len(tokens) < 1 or len(q.strip()) < 3:
+        return None
+    # Every token must match somewhere (name/category/suburb); the last one
+    # as a prefix, so mid-word queries behave like search-as-you-type.
+    fts = " ".join(f'"{t}"' for t in tokens[:-1])
+    fts = (fts + " " if fts else "") + f'"{tokens[-1]}"*'
+    lon1, lat1, lon2, lat2 = (float(x) for x in viewbox.split(","))
+    con = sqlite3.connect(PLACES_DB)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            "SELECT p.name, p.category, p.suburb, p.state, p.lat, p.lon "
+            "FROM places_fts f JOIN places p ON p.id = f.rowid "
+            "WHERE places_fts MATCH ? ORDER BY bm25(places_fts) LIMIT 40",
+            (fts,)).fetchall()
+    except sqlite3.OperationalError:
+        return None   # pathological FTS query string
+    finally:
+        con.close()
+    if not rows:
+        return None
+    def in_box(r):
+        return (min(lat1, lat2) <= r["lat"] <= max(lat1, lat2)
+                and min(lon1, lon2) <= r["lon"] <= max(lon1, lon2))
+    rows.sort(key=lambda r: not in_box(r))
+    out, seen = [], set()
+    for r in rows:
+        bits = [r["category"]]
+        if r["suburb"]:
+            bits.append(f"{r['suburb']} {r['state']}".strip())
+        label = f"{r['name']} — {', '.join(bits)}"
+        if label in seen:
+            continue
+        seen.add(label)
+        out.append({"label": label, "lat": r["lat"], "lon": r["lon"]})
+        if len(out) >= limit:
+            break
+    return out or None
+
+
 def gnaf_geocode(q: str, state_bias: str, limit: int = 8) -> list | None:
     """House-number lookup. None means 'not applicable' (no DB, or the query
     doesn't lead with a house number) — the caller falls back to Nominatim.
@@ -1029,6 +1082,10 @@ async def geocode(q: str, region: str = "seq"):
     local = gnaf_geocode(q, cfg["state"])
     if local:
         return local
+    # Then named places (businesses, POIs) from the local OSM index.
+    placed = places_geocode(q, cfg["geocode_viewbox"])
+    if placed:
+        return placed
     hit = _geocode_cache.get((region, q.lower()))
     if hit and time.time() - hit[0] < GEOCODE_CACHE_S:
         return hit[1]

@@ -420,6 +420,18 @@ times and the map shows timetable-estimated ghosts.
   node chains into edge geometry. If graph quality ever disappoints,
   Jason's fallback plan is decommissioning InventoryQuest to make room
   for a real Valhalla — don't suggest it first.
+- **Local OSM places index (2026-07-30)**: business/POI search, local.
+  `ingest_places.py` (same throwaway-osmium recipe as the walking graph)
+  keeps every NAMED shop/amenity/tourism/leisure/office/healthcare/craft
+  feature within ~2 km of any stop, with a NOISE blocklist for named
+  street furniture (parking, benches, ATMs…). places.sqlite3 carries an
+  FTS5 index; `places_geocode()` in app.py sits between G-NAF and
+  Nominatim in the geocode chain — all tokens must match across
+  name/category/suburb, last token as a prefix (search-as-you-type),
+  results inside the current region's viewbox rank first. Labels read
+  "Name — category, suburb". Ships as `places-db` via the generic
+  ship_data_db/install_data_db paths. Nominatim remains the fallback for
+  anything OSM hasn't mapped.
 - **Local G-NAF geocoder (2026-07-29)**: OSM's residential house-number
   coverage is patchy — "397 Christine Avenue, Varsity Lakes" has no house
   number in OSM, so Nominatim pinned an arbitrary point along a 3 km road

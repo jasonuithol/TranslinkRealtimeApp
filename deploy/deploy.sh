@@ -228,23 +228,26 @@ else  # ------------------------------------------------------------- vps ---
   if has gnaf-db; then GNAF=yes; fi
   WALKG=no
   if has walkgraph-db; then WALKG=yes; fi
+  PLACES=no
+  if has places-db; then PLACES=yes; fi
   if has image || [[ -n "$REGIONS" ]] || [[ "$GNAF" == "yes" ]] \
-      || [[ "$WALKG" == "yes" ]]; then
+      || [[ "$WALKG" == "yes" ]] || [[ "$PLACES" == "yes" ]]; then
     # The update pulls :latest even on a basemap-only run, so gate whenever
     # the image is what's being deployed here.
     if has image; then image_gate || exit 1; fi
     if [[ "$DRY" == "yes" ]]; then
-      echo "  PLAN release: image pull + update on ${HOST}${REGIONS:+, shipping basemaps: ${REGIONS}}$([[ "$GNAF" == yes ]] && echo ", shipping G-NAF DB")$([[ "$WALKG" == yes ]] && echo ", shipping walking graph")"
+      echo "  PLAN release: image pull + update on ${HOST}${REGIONS:+, shipping basemaps: ${REGIONS}}$([[ "$GNAF" == yes ]] && echo ", shipping G-NAF DB")$([[ "$WALKG" == yes ]] && echo ", shipping walking graph")$([[ "$PLACES" == yes ]] && echo ", shipping places index")"
     else
       SKIP_BASEMAP=$([[ -n "$REGIONS" ]] && echo no || echo yes) \
       BASEMAP_REGIONS="${REGIONS:-}" SHIP_GNAF="$GNAF" \
-      SHIP_WALKGRAPH="$WALKG" TARGET_NAME="$TARGET" \
+      SHIP_WALKGRAPH="$WALKG" SHIP_PLACES="$PLACES" TARGET_NAME="$TARGET" \
         "${HERE}/release-vps.sh" "$HOST"   # marks image + basemaps + data DBs
     fi
     if has image; then DONE+=(image); fi
     for r in $REGIONS; do DONE+=("basemap-${r}"); done
     if [[ "$GNAF" == "yes" ]]; then DONE+=(gnaf-db); fi
     if [[ "$WALKG" == "yes" ]]; then DONE+=(walkgraph-db); fi
+    if [[ "$PLACES" == "yes" ]]; then DONE+=(places-db); fi
   fi
 
   # 2. Unit files — after the image (a restart rides on new units anyway),

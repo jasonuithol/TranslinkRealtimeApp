@@ -169,6 +169,16 @@
   .itin .it-detail {
     display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
   }
+  .itin.started { border-color: #2ecc71; }
+  .itin .it-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .itin .it-start {
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font: inherit; font-size: 12px;
+    padding: 3px 16px; cursor: pointer;
+  }
+  .itin .it-start:hover { color: var(--text); border-color: var(--amber-dim); }
+  .itin .it-start.remove { color: #e5484d; border-color: #7a2a2d; }
+  .itin .it-start.remove:hover { border-color: #e5484d; }
 
   /* The stop the arrivals belong to: glyph + name atop the board. */
   .board-head {
@@ -858,6 +868,26 @@
   let pickingDest = false;
   let planData = null, selItin = 0, planFitted = false;
 
+  // A STARTED journey is a commitment: it stays on the board after its
+  // departure time passes (a fresh plan would no longer return it). It is
+  // re-costed each poll by re-planning anchored at its original departure
+  // (`at=` — the schedule is deterministic, so the same legs come back
+  // with current realtime), and it survives reloads via localStorage.
+  let startedPlan = null;
+  try {
+    const s = JSON.parse(localStorage.getItem("startedJourney") || "null");
+    if (s && s.region === region && s.toId === toId && toId) startedPlan = s;
+  } catch { /* corrupted store: ignore */ }
+  const itinKey = (it) => it.legs.filter((l) => l.kind === "ride")
+    .map((l) => `${l.trip_id}@${l.board}`).join(">");
+  function saveStarted() {
+    if (startedPlan) {
+      localStorage.setItem("startedJourney", JSON.stringify(startedPlan));
+    } else {
+      localStorage.removeItem("startedJourney");
+    }
+  }
+
   function syncPlanUrl() {
     const p = new URLSearchParams();
     p.set("region", region);
@@ -885,6 +915,7 @@
 
   function cancelPlan() {
     toId = null; toName = ""; planData = null;
+    startedPlan = null; saveStarted();
     clearPlanLayers();
     syncPlanUrl();
     syncChrome();
@@ -2805,6 +2836,21 @@
         `/plan?${origin}&to=${encodeURIComponent(toId)}`));
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
       planData = await res.json();
+      // Re-cost the started journey: same anchor time -> same legs, with
+      // whatever realtime says about them NOW. No match (timetable swapped
+      // under us): its last known copy stays frozen rather than vanishing.
+      if (startedPlan) {
+        try {
+          const res2 = await fetch(api(
+            `/plan?${origin}&to=${encodeURIComponent(toId)}`
+            + `&at=${startedPlan.at}`));
+          if (res2.ok) {
+            const d2 = await res2.json();
+            const m = d2.itineraries.find((x) => itinKey(x) === startedPlan.key);
+            if (m) { startedPlan.itin = m; saveStarted(); }
+          }
+        } catch { /* keep the frozen copy */ }
+      }
       if (planData.to && (!toName || toName === toId)) {
         toName = planData.to.stop_name;
         syncPlanUrl();
@@ -2832,7 +2878,15 @@
       `${planData.from.stop_name} → ${toName || planData.to.stop_name}`;
     head.append(bhName);
     board.appendChild(head);
-    if (!planData.itineraries.length) {
+    // The started journey (if any) is pinned first — a fresh plan may no
+    // longer contain it once its departure has passed.
+    const fresh = planData.itineraries.filter(
+      (it) => !startedPlan || itinKey(it) !== startedPlan.key);
+    const shown = startedPlan ? [startedPlan.itin, ...fresh]
+                              : planData.itineraries;
+    planData.__shown = shown;
+    if (selItin >= shown.length) selItin = 0;
+    if (!shown.length) {
       board.insertAdjacentHTML("beforeend",
         `<div class="empty">No journeys found from here today.</div>`);
       return;
@@ -2841,11 +2895,11 @@
     // service — and a walk IS a service here, performed by a "walk vehicle"
     // (🚶): it draws a colour from the same pool, shared by badge and trace.
     const colorItems = [];
-    planData.itineraries.forEach((it, i) => it.legs.forEach((leg, j) =>
+    shown.forEach((it, i) => it.legs.forEach((leg, j) =>
       colorItems.push({ trip_id: leg.kind === "ride" ? leg.trip_id
                                                      : `walk:${i}:${j}` })));
     planData.__colors = assignColors(colorItems);
-    planData.itineraries.forEach((it, i) => {
+    shown.forEach((it, i) => {
       const card = document.createElement("div");
       card.className = "itin" + (i === selItin ? " selected" : "");
       card.tabIndex = 0;
@@ -2932,6 +2986,32 @@
           </div>`;
         card.appendChild(row);
       });
+      // Start = commit to this journey (it stops disappearing once its
+      // departure passes); the same button on a started journey removes it.
+      const isStarted = startedPlan && itinKey(it) === startedPlan.key;
+      if (isStarted) card.classList.add("started");
+      const act = document.createElement("div");
+      act.className = "it-actions";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "it-start" + (isStarted ? " remove" : "");
+      btn.textContent = isStarted ? "Remove" : "Start";
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (isStarted) {
+          startedPlan = null;
+        } else {
+          startedPlan = { region, toId, key: itinKey(it),
+                          at: it.depart - 60, itin: it };
+        }
+        saveStarted();
+        selItin = 0;
+        planFitted = false;
+        renderPlan();
+        drawPlan();
+      });
+      act.appendChild(btn);
+      card.appendChild(act);
       board.appendChild(card);
     });
   }
@@ -2993,7 +3073,7 @@
   // transfer points as landmarks, the destination as a green marker.
   function drawPlan() {
     if (!mapReady || !planData || !toId) return;
-    const it = planData.itineraries[selItin];
+    const it = (planData.__shown || planData.itineraries)[selItin];
     if (!it) { clearPlanLayers(); return; }
     const lines = [], marks = [];
     let waiting = false;

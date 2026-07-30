@@ -141,6 +141,40 @@
     color: var(--muted); font-size: 12px; margin-left: 6px;
   }
 
+  /* Journey-planner itinerary cards. */
+  .itin {
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin: 0 0 10px;
+    cursor: pointer;
+  }
+  .itin:hover { border-color: var(--amber-dim); }
+  .itin.selected { border-color: var(--amber); background: var(--panel); }
+  .itin .it-head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .itin .it-times { font-weight: 700; font-size: 16px; }
+  .itin .it-sub { color: var(--muted); font-size: 12px; }
+  .itin .it-risk {
+    color: #e5484d; font-size: 12px;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .itin .it-leg {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 4px 0; font-size: 13px;
+  }
+  .itin .it-badge {
+    flex: none; border: 1.5px solid; border-radius: 6px;
+    padding: 1px 8px; font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 700; max-width: 130px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .itin .it-detail { display: flex; flex-direction: column; gap: 2px; }
+  .itin .it-walk {
+    color: var(--muted); font-size: 12px; padding: 2px 0 2px 6px;
+    font-family: "IBM Plex Mono", monospace;
+  }
+
   /* The stop the arrivals belong to: glyph + name atop the board. */
   .board-head {
     display: flex; align-items: center; gap: 10px;
@@ -615,6 +649,7 @@
          aria-label="Home page"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></a>
       <h1 id="stop-name"></h1>
       <button class="change" id="change-stop" type="button">Change stop</button>
+      <button class="change" id="plan-to" type="button" hidden></button>
       <span class="tzbadge" id="tz-badge" hidden><span class="tz-icon"
         aria-hidden="true">&#x1F310;&#xFE0E;</span><span id="tz-abbr"></span></span>
     </div>
@@ -701,6 +736,11 @@
     const [lon, lat] = pinRaw.split(",").map(Number);
     return [lon, lat].every(Number.isFinite) ? { lon, lat } : null;
   })();
+  // ?to=stop_id — journey-planner mode (PLANNER.md phase 1): the board
+  // becomes itineraries from the viewed stop to this one. Same region only.
+  let toId = new URLSearchParams(location.search).get("to");
+  let toName = new URLSearchParams(location.search).get("toname") || "";
+
   // The pin's display label ("397 Christine Avenue, Varsity Lakes QLD" /
   // "Near me") — shown in the titlebar like a stop name.
   const pinLabel = new URLSearchParams(location.search).get("pinlabel") || "";
@@ -787,6 +827,11 @@
     // The button only serves a pinned browse, to search a different address.
     $("change-stop").hidden = Boolean(stopId) || !pinnedBrowse;
     $("change-stop").textContent = "Change address";
+    // Planner entry/exit: with a stop viewed, offer a destination; with a
+    // destination set, the same button cancels back to the plain board.
+    $("plan-to").hidden = !stopId;
+    $("plan-to").textContent = toId ? `✕ to ${toName || "destination"}`
+                                    : "Plan a trip";
     if (!searchOpen) $("results").hidden = true;
   }
   if (pinnedBrowse) {
@@ -802,12 +847,71 @@
 
   function closeSearch() {
     searchOpen = false;
+    pickingDest = false;
     $("search").value = "";
+    $("search").placeholder = "Search for a stop or an address";
     syncChrome();
   }
 
   $("change-stop").addEventListener("click", openSearch);
   $("search-close").addEventListener("click", closeSearch);
+
+  // --- journey planner mode ------------------------------------------------
+  let pickingDest = false;
+  let planData = null, selItin = 0, planFitted = false;
+
+  function syncPlanUrl() {
+    const p = new URLSearchParams();
+    p.set("region", region);
+    if (stopId) p.set("stop", stopId);
+    if (toId) { p.set("to", toId); if (toName) p.set("toname", toName); }
+    if (pinParam) { p.set("pin", pinRaw); if (pinLabel) p.set("pinlabel", pinLabel); }
+    history.replaceState(null, "", "?" + p.toString());
+  }
+
+  function setDest(sid, name) {
+    toId = sid;
+    toName = name || sid;
+    pickingDest = false;
+    planData = null; selItin = 0; planFitted = false;
+    $("search").placeholder = "Search for a stop or an address";
+    closeSearch();
+    syncPlanUrl();
+    syncChrome();
+    $("board").innerHTML = `<div class="empty">Planning…</div>`;
+    refresh();
+  }
+
+  function cancelPlan() {
+    toId = null; toName = ""; planData = null;
+    clearPlanLayers();
+    syncPlanUrl();
+    syncChrome();
+    refresh();
+  }
+
+  $("plan-to").addEventListener("click", () => {
+    if (toId) { cancelPlan(); return; }
+    pickingDest = true;
+    $("search").placeholder = "Where to?";
+    openSearch();
+  });
+
+  // An address as a destination means "the nearest stop to that address" —
+  // same network only (cross-region journeys are phase 3).
+  async function destFromAddress(p) {
+    const box = $("results");
+    box.innerHTML = "";
+    resultNote("Finding the nearest stop to that address…");
+    let stops = [];
+    try { stops = await fetchNearby(p.lat, p.lon, region); } catch { /* below */ }
+    if (!stops.length) {
+      box.innerHTML = "";
+      resultNote("No stops near that address in this network.");
+      return;
+    }
+    setDest(stops[0].stop_id, stops[0].stop_name);
+  }
   $("search").addEventListener("keydown", (e) => {
     if (e.key === "Escape" && (stopId || pinnedBrowse)) closeSearch();
   });
@@ -871,8 +975,19 @@
         `<span class="sid">${bits.join(" · ")}</span></span>` +
         `<span class="ricon" aria-hidden="true">` +
         `${asText(landmarkGlyph(s.route_type))}</span>`,
-      () => (rid === region ? selectStop(s.stop_id)
-                            : openInRegion(rid, s.stop_id)),
+      () => {
+        if (pickingDest) {
+          // Destination pick: same network only (cross-region is phase 3).
+          if (rid !== region) {
+            resultNote("Cross-region journeys aren't supported yet — "
+                       + "pick a destination in this network.");
+            return;
+          }
+          setDest(s.stop_id, s.stop_name);
+          return;
+        }
+        rid === region ? selectStop(s.stop_id) : openInRegion(rid, s.stop_id);
+      },
     );
   }
 
@@ -985,7 +1100,8 @@
         // glyph on the right already tells it apart from a stop.
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}</span>`,
-          () => openPinned(p.lat, p.lon, "that address", p.label),
+          () => pickingDest ? destFromAddress(p)
+                            : openPinned(p.lat, p.lon, "that address", p.label),
         );
       });
     } catch {
@@ -1109,9 +1225,8 @@
     forceFit = true;          // ...and reframes even if the user had panned
     closeSearch();            // a stop is chosen: fold the search away
     syncRailStationFilter();  // stop drawing the station we now view in grey
-    history.replaceState(null, "", `?region=${region}&stop=${id}`
-      + (pinParam ? `&pin=${pinRaw}` : "")     // keep the address pin around
-      + (pinParam && pinLabel ? `&pinlabel=${encodeURIComponent(pinLabel)}` : ""));
+    planFitted = false;   // a new origin reframes the journey, if one is set
+    syncPlanUrl();        // keeps the address pin AND any planner destination
     refresh();
     clearInterval(timer);
     timer = setInterval(refresh, 15000);
@@ -1715,6 +1830,7 @@
       tripStopsCache.set(tripId, res.ok ? (await res.json()).stops : null);
       drawLandmarks();
       renderTripPanel();
+      if (planData) drawPlan();   // a planner leg was waiting on this trip
     } catch {
       /* leave unset so a later selection retries */
     } finally {
@@ -2626,6 +2742,7 @@
 
   async function refresh() {
     if (!stopId) return;
+    if (toId) return refreshPlan();
     try {
       const res = await fetch(api(`/departures/${stopId}`));
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
@@ -2636,6 +2753,158 @@
       if (selectedTrip) refreshTripTimes(selectedTrip);
     } catch (err) {
       $("board").innerHTML = `<div class="error">${err.message}</div>`;
+    }
+  }
+
+  // --- planner rendering ---------------------------------------------------
+  const planClock = (epoch) => {
+    try {
+      return new Intl.DateTimeFormat("en-AU", {
+        hour: "2-digit", minute: "2-digit", hour12: false,
+        timeZone: regionTz || undefined,
+      }).format(epoch * 1000);
+    } catch { return new Date(epoch * 1000).toTimeString().slice(0, 5); }
+  };
+
+  async function refreshPlan() {
+    try {
+      const res = await fetch(api(
+        `/plan?from=${encodeURIComponent(stopId)}&to=${encodeURIComponent(toId)}`));
+      if (!res.ok) throw new Error((await res.json()).detail || res.status);
+      planData = await res.json();
+      if (planData.to && (!toName || toName === toId)) {
+        toName = planData.to.stop_name;
+        syncPlanUrl();
+        syncChrome();
+      }
+      // Planner mode owns the map: no departures poll, so no vehicles.
+      if (lastData) { lastData.__vehicles = []; lastData.__ghosts = []; }
+      renderPlan();
+      drawPlan();
+      const risky = planData.itineraries.filter((i) => i.at_risk).length;
+      $("status").textContent = "journey plan · refreshed just now"
+        + (risky ? ` · ⚠ ${risky} connection${risky > 1 ? "s" : ""} at risk` : "");
+    } catch (err) {
+      $("board").innerHTML = `<div class="error">${err.message}</div>`;
+    }
+  }
+
+  function renderPlan() {
+    const board = $("board");
+    board.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "board-head";
+    const bhName = document.createElement("span");
+    bhName.textContent =
+      `${planData.from.stop_name} → ${toName || planData.to.stop_name}`;
+    head.append(bhName);
+    board.appendChild(head);
+    if (!planData.itineraries.length) {
+      board.insertAdjacentHTML("beforeend",
+        `<div class="empty">No journeys found from here today.</div>`);
+      return;
+    }
+    planData.itineraries.forEach((it, i) => {
+      const card = document.createElement("div");
+      card.className = "itin" + (i === selItin ? " selected" : "");
+      card.tabIndex = 0;
+      const pick = () => { selItin = i; planFitted = false; renderPlan(); drawPlan(); };
+      card.addEventListener("click", pick);
+      card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); }
+      });
+      const transfers = it.transfers === 0 ? "direct"
+        : it.transfers === 1 ? "1 transfer" : `${it.transfers} transfers`;
+      const headRow = document.createElement("div");
+      headRow.className = "it-head";
+      headRow.innerHTML =
+        `<span class="it-times">${planClock(it.depart)} → ${planClock(it.arrive)}</span>` +
+        `<span class="it-sub">${it.minutes} min · ${transfers}</span>` +
+        (it.at_risk ? `<span class="it-risk">⚠ connection at risk</span>` : "");
+      card.appendChild(headRow);
+      for (const leg of it.legs) {
+        if (leg.kind === "walk") {
+          const w = document.createElement("div");
+          w.className = "it-walk";
+          w.textContent = `↳ walk ${Math.max(1, Math.round(leg.secs / 60))} min`;
+          card.appendChild(w);
+          continue;
+        }
+        const row = document.createElement("div");
+        row.className = "it-leg";
+        const color = leg.route_color ? `#${leg.route_color}` : "var(--amber)";
+        const plat = leg.board_platform ? ` · ${leg.board_platform}` : "";
+        row.innerHTML =
+          `<span class="it-badge" style="border-color:${color}">` +
+          `${escapeHtml(leg.route ?? "")}</span>` +
+          `<span class="it-detail"><span>${escapeHtml(leg.board_name)}${plat}` +
+          ` <b>${planClock(leg.dep)}</b></span>` +
+          `<span>→ ${escapeHtml(leg.alight_name)} <b>${planClock(leg.arr)}</b>` +
+          ` ${asText(leg.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span></span>`;
+        card.appendChild(row);
+      }
+      board.appendChild(card);
+    });
+  }
+
+  let destMarker = null;
+  function clearPlanLayers() {
+    if (!mapReady) return;
+    for (const src of ["routes", "vehicles", "ghosts", "landmarks"]) {
+      const s = map.getSource(src);
+      if (s) s.setData(emptyFC());
+    }
+    if (destMarker) { destMarker.remove(); destMarker = null; }
+  }
+
+  // The selected itinerary on the map: each ride leg drawn stop-to-stop from
+  // its trip's ordered stops (good-enough geometry, one cached fetch per
+  // trip), transfer points as landmarks, the destination as a green marker.
+  function drawPlan() {
+    if (!mapReady || !planData || !toId) return;
+    const it = planData.itineraries[selItin];
+    if (!it) { clearPlanLayers(); return; }
+    const lines = [], marks = [];
+    let waiting = false;
+    for (const leg of it.legs) {
+      if (leg.kind !== "ride") continue;
+      const stops = tripStopsCache.get(leg.trip_id);
+      if (!stops) { ensureTripStops(leg.trip_id); waiting = true; continue; }
+      const bi = stops.findIndex((s) => s.stop_id === leg.board);
+      const ai = stops.findIndex((s) => s.stop_id === leg.alight);
+      if (bi < 0 || ai < 0) continue;
+      const seg = stops.slice(Math.min(bi, ai), Math.max(bi, ai) + 1);
+      lines.push({
+        type: "Feature",
+        geometry: { type: "LineString",
+                    coordinates: seg.map((s) => [s.lon, s.lat]) },
+        properties: { color: leg.route_color ? `#${leg.route_color}` : "#3fb950" },
+      });
+      for (const end of [seg[0], seg[seg.length - 1]]) {
+        marks.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [end.lon, end.lat] },
+          properties: {
+            stop_id: end.stop_id, name: end.stop_name,
+            icon: ensureVehicleIcon(landmarkGlyph(end.route_type), LANDMARK_INK),
+          },
+        });
+      }
+    }
+    map.getSource("routes").setData({ type: "FeatureCollection", features: lines });
+    map.getSource("landmarks").setData({ type: "FeatureCollection", features: marks });
+    map.getSource("vehicles").setData(emptyFC());
+    map.getSource("ghosts").setData(emptyFC());
+    if (!destMarker && planData.to
+        && planData.to.stop_lat != null && planData.to.stop_lon != null) {
+      destMarker = new maplibregl.Marker({ color: "#2ecc71" })
+        .setLngLat([planData.to.stop_lon, planData.to.stop_lat]).addTo(map);
+    }
+    if (!planFitted && lines.length && !waiting) {
+      const b = new maplibregl.LngLatBounds();
+      for (const l of lines) for (const c of l.geometry.coordinates) b.extend(c);
+      cameraMove(() => map.fitBounds(b, { padding: 70, maxZoom: 15.5 }));
+      planFitted = true;
     }
   }
 

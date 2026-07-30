@@ -46,6 +46,10 @@ light.
 
 ## Big features
 
+- **Journey planner — PHASE 1 SHIPPED 2026-07-30** (single-region
+  schedule-based RAPTOR with realtime re-cost; see PLANNER.md for what
+  remains: realtime-aware search, cross-region, timeline integration).
+  Original brief follows.
 - **Journey planner (added 2026-07-28, design fleshed out 2026-07-29)**:
   bare minimum — the board optionally takes a *destination* and enters
   "journey planner mode" instead of just listing departures. **The full

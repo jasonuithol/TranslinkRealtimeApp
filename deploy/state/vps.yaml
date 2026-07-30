@@ -26,7 +26,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, since: 2026-07-30, reason: "tz badge: right-justified, 50% bigger, monochrome globe icon" }
+  image: { status: pending, since: 2026-07-30, reason: "journey planner phase 1: RAPTOR core, /plan endpoint, planner-mode UI" }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.

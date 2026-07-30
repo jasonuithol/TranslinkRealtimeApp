@@ -23,10 +23,12 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from google.transit import gtfs_realtime_pb2
+
+import planner as journey
 
 BASE = Path(__file__).parent
 # Overridable so the DBs can live on a mounted volume (see Containerfile).
@@ -1443,6 +1445,163 @@ def departures(stop_id: str, region: str = "seq"):
         "alerts": used_alerts,
         "paired": paired,
     }
+
+
+# ---------------------------------------------------------------------------
+# Journey planner (PLANNER.md phase 1): single-region, schedule-based RAPTOR
+# with realtime re-costing. planner.py owns the routing; this endpoint owns
+# service-date arithmetic, leg enrichment and the TripUpdate overlay.
+
+
+def _rt_time_for(st_rt: dict, trip_id: str, stop_id: str, seq: int | None,
+                 scheduled: int) -> tuple[int, bool]:
+    """One stop-time re-costed from the realtime cache: (epoch, is_live).
+    Mirrors the board's rules — exact stop entry first, else the latest
+    delay at-or-before this stop's sequence propagates forward."""
+    rt_trip = st_rt.get(trip_id) or {}
+    rt = rt_trip.get("stops", {}).get(stop_id)
+    if rt:
+        if rt.get("arrival"):
+            return rt["arrival"], True
+        if rt.get("delay") is not None:
+            return scheduled + rt["delay"], True
+    if rt_trip.get("seq") and seq is not None:
+        prop = None
+        for s, delay in rt_trip["seq"]:
+            if int(s) <= int(seq):
+                prop = delay
+            else:
+                break
+        if prop is not None:
+            return scheduled + prop, True
+    return scheduled, False
+
+
+@app.get("/api/r/{region}/plan")
+@app.get("/api/plan")
+def plan_endpoint(to: str, from_stop: str = Query(alias="from"),
+                  at: int | None = None, region: str = "seq"):
+    cfg, st = region_cfg(region), STATE[region]
+    con = db(region)
+    try:
+        names = {}
+        for sid in (from_stop, to):
+            row = con.execute(
+                "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
+                "WHERE stop_id=?", (sid,)).fetchone()
+            if row is None:
+                raise HTTPException(404, f"Unknown stop_id {sid}")
+            names[sid] = dict(row)
+        if from_stop == to:
+            raise HTTPException(400, "Origin and destination are the same stop")
+
+        tz = cfg["tz"]
+        now = (datetime.now(tz) if at is None
+               else datetime.fromtimestamp(at, tz))
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday = midnight - timedelta(days=1)
+        dates = ((midnight.strftime("%Y%m%d"), midnight.weekday(), 0),
+                 (yesterday.strftime("%Y%m%d"), yesterday.weekday(), -86400))
+        tt = journey.get_timetable(region, cfg["db"], dates,
+                                   tsn_family=(region in TSN_REGIONS))
+        dep_sec = int((now - midnight).total_seconds())
+        raw = journey.plan(tt, from_stop, to, dep_sec)
+
+        mid_epoch = int(midnight.timestamp())
+        itineraries = []
+        for it in raw:
+            legs = []
+            prev_arr_epoch = None      # rt-aware arrival of the previous ride
+            pending_walk = 0
+            at_risk = False
+            for leg in it["legs"]:
+                if leg["kind"] == "walk":
+                    pending_walk += leg["secs"]
+                    legs.append({
+                        "kind": "walk", "secs": leg["secs"],
+                        "from_name": _stop_name(con, leg["from"]),
+                        "to_name": _stop_name(con, leg["to"]),
+                    })
+                    continue
+                tmeta = con.execute(
+                    "SELECT t.trip_headsign, t.shape_id, r.route_id, "
+                    "r.route_short_name, r.route_long_name, r.route_type, "
+                    "r.route_color "
+                    "FROM trips t JOIN routes r ON r.route_id = t.route_id "
+                    "WHERE t.trip_id=?", (leg["trip_id"],)).fetchone()
+                seqs = {r["stop_id"]: r["stop_sequence"] for r in con.execute(
+                    "SELECT stop_id, stop_sequence FROM stop_times "
+                    "WHERE trip_id=? AND stop_id IN (?,?)",
+                    (leg["trip_id"], leg["board"], leg["alight"]))}
+                dep_epoch = mid_epoch + leg["dep_sec"]
+                arr_epoch = mid_epoch + leg["arr_sec"]
+                rt_dep, dep_live = _rt_time_for(
+                    st["rt"], leg["trip_id"], leg["board"],
+                    seqs.get(leg["board"]), dep_epoch)
+                rt_arr, arr_live = _rt_time_for(
+                    st["rt"], leg["trip_id"], leg["alight"],
+                    seqs.get(leg["alight"]), arr_epoch)
+                # A delay on the previous ride can break this connection.
+                risk = (prev_arr_epoch is not None
+                        and prev_arr_epoch + pending_walk > rt_dep - 30)
+                at_risk = at_risk or risk
+                board = con.execute(
+                    "SELECT stop_name, platform_code FROM stops WHERE stop_id=?",
+                    (leg["board"],)).fetchone()
+                alight = con.execute(
+                    "SELECT stop_name, platform_code FROM stops WHERE stop_id=?",
+                    (leg["alight"],)).fetchone()
+                legs.append({
+                    "kind": "ride",
+                    "trip_id": leg["trip_id"],
+                    "region": region,
+                    "route": (tmeta["route_short_name"]
+                              or tmeta["route_long_name"]) if tmeta else "",
+                    "route_type": tmeta["route_type"] if tmeta else None,
+                    "route_color": tmeta["route_color"] if tmeta else None,
+                    "headsign": tmeta["trip_headsign"] if tmeta else "",
+                    "shape_id": tmeta["shape_id"] if tmeta else None,
+                    "board": leg["board"],
+                    "board_name": board["stop_name"] if board else leg["board"],
+                    "board_platform": platform_label(
+                        board["platform_code"] if board else None,
+                        board["stop_name"] if board else None),
+                    "alight": leg["alight"],
+                    "alight_name": alight["stop_name"] if alight else leg["alight"],
+                    "dep": rt_dep, "arr": rt_arr,
+                    "sched_dep": dep_epoch, "sched_arr": arr_epoch,
+                    "realtime": dep_live or arr_live,
+                    "at_risk": risk,
+                })
+                prev_arr_epoch = rt_arr
+                pending_walk = 0
+            arrive = next((l["arr"] for l in reversed(legs)
+                           if l["kind"] == "ride"), None)
+            depart = next((l["dep"] for l in legs if l["kind"] == "ride"), None)
+            if depart is None:
+                continue
+            itineraries.append({
+                "depart": depart, "arrive": arrive,
+                "minutes": max(1, round((arrive - depart) / 60)),
+                "transfers": it["rides"] - 1,
+                "at_risk": at_risk,
+                "legs": legs,
+            })
+    finally:
+        con.close()
+
+    return {
+        "from": names[from_stop], "to": names[to],
+        "generated_at": int(time.time()),
+        "realtime_configured": bool(cfg["trip_updates"]),
+        "itineraries": itineraries,
+    }
+
+
+def _stop_name(con, stop_id: str) -> str:
+    r = con.execute("SELECT stop_name FROM stops WHERE stop_id=?",
+                    (stop_id,)).fetchone()
+    return r["stop_name"] if r else stop_id
 
 
 @app.get("/api/r/{region}/trip-stops/{trip_id}")

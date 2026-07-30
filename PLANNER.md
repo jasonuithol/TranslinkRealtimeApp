@@ -170,9 +170,12 @@ data already in RAM (+ the lazily built timetable arrays).
 - **Phase 0 — prerequisite: region-silo merge.** DONE 2026-07-29.
 - **Phase 1 — single-region, schedule-based**: timetable arrays + RAPTOR +
   generated footpaths + `plan` endpoint + itinerary UI + realtime re-cost
-  badges. This is the shippable minimum that matches Jason's "bare
-  minimum" ask. Smallest useful region first for bring-up (dar or qld),
-  then the lot.
+  badges. **DONE 2026-07-30** — `planner.py` (routing core) +
+  `/api/r/{region}/plan` (enrichment + TripUpdate re-cost + at-risk
+  flags) + planner mode in the UI ("Plan a trip" → destination via
+  search or address, itinerary cards, legs traced stop-to-stop on the
+  map, `?to=` in the URL). Build cost measured: seq ~4 s, mel ~13 s,
+  once per region-day, cached against DB mtime.
 - **Phase 2 — realtime-aware search**: delays inside the scan, skipped
   stops, connection-at-risk replan, arrive-by queries.
 - **Phase 3 — cross-region**: TSN siblings + STATION_LINKS as border

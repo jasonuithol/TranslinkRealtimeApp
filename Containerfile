@@ -16,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --chmod so the image does not inherit restrictive host file modes.
-COPY --chmod=0644 app.py ingest_gtfs.py ingest_gnaf.py ./
+COPY --chmod=0644 app.py planner.py ingest_gtfs.py ingest_gnaf.py ./
 # NOT --chmod=0644 here: that applies to directories as well, and a directory
 # without its execute bit cannot be traversed. Starlette turns the resulting
 # PermissionError into a 401, so every file under static/vendor and static/fonts

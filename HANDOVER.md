@@ -377,6 +377,30 @@ times and the map shows timetable-estimated ghosts.
   to the old image. NOT yet verified with live realtime keys (the
   realtime-preferred arm of the physical dedupe) — eyeball a keyed tdev or
   the VPS after deploy.
+- **Journey planner phase 1 (2026-07-30)**: PLANNER.md's design, built.
+  `planner.py` is the pure routing core: a day-filtered in-memory
+  timetable per region (today's services + yesterday's after-midnight
+  tail shifted -24 h), RAPTOR routes grouped by identical stop sequence,
+  generated footpaths (≤200 m, ×1.3 detour at 80 m/min, min 2 min),
+  station groups (parent+children, and TSN siblings in the TfNSW family)
+  as 3-min transfers, 4 rounds max, sparse-dict tau with pareto
+  reconstruction. Cached per region keyed on DB mtime + service date —
+  trip-id rot makes a stale plan unmatchable by realtime. Costs: seq
+  ~4 s / mel ~13 s to build, sub-50 ms per query after. app.py's
+  `/api/r/{region}/plan` enriches legs (route meta, platforms, shape_id)
+  and re-costs each board/alight with the SAME TripUpdate rules the
+  board uses (exact stop entry, else sequence propagation); a delayed
+  arrival that eats the transfer walk flags the itinerary "connection at
+  risk". Client: "Plan a trip" in the titlebar → search doubles as the
+  destination picker (`pickingDest`; an address destination = its
+  nearest stop, same region; cross-region picks are refused politely
+  per phase 1) → `?to=`/`&toname=` in the URL, itinerary cards instead
+  of departure rows, ride legs drawn STOP-TO-STOP from the cached
+  trip-stops response (good-enough geometry — a full shape would draw
+  the whole route, not the ridden slice), transfer-point landmarks, a
+  green destination Marker, camera fitted once per plan. Known phase-1
+  limits: no vehicles on planner maps, planning is schedule-based
+  (realtime only re-costs), single region.
 - **Local G-NAF geocoder (2026-07-29)**: OSM's residential house-number
   coverage is patchy — "397 Christine Avenue, Varsity Lakes" has no house
   number in OSM, so Nominatim pinned an arbitrary point along a 3 km road

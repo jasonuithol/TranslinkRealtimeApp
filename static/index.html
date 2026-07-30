@@ -46,14 +46,20 @@
   .change:hover { color: var(--text); border-color: var(--amber-dim); }
   .change:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   /* Every time on the page is the network's wall clock, and six networks now
-     span three Australian timezones — say which one, right beside the stop
-     name that all those times belong to. */
+     span three Australian timezones — say which one, pinned to the right
+     edge of the titlebar with a monochrome globe for "timezone". */
   .tzbadge {
+    margin-left: auto;               /* right-justified in the flex titlebar */
+    display: flex; align-items: center; gap: 7px;
     border: 1px solid var(--line); border-radius: 999px;
-    color: var(--muted); font-size: 11px; letter-spacing: 0.06em;
-    padding: 2px 9px; white-space: nowrap;
+    color: var(--muted); font-size: 16px; letter-spacing: 0.06em;
+    padding: 3px 14px; white-space: nowrap;
   }
-  .tzbadge:empty { display: none; }
+  .tzbadge[hidden] { display: none; }
+  .tzbadge .tz-icon {
+    font-family: "Noto Emoji", system-ui, sans-serif;   /* monochrome face */
+    font-size: 18px;
+  }
   h1 { font-size: 22px; font-weight: 700; line-height: 1.25; }
   /* The little goose flies you home — back to the landing and its search.
      Same amber ink as the hero bird. */
@@ -608,8 +614,9 @@
       <a class="home-goose" href="/" title="Home page"
          aria-label="Home page"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></a>
       <h1 id="stop-name"></h1>
-      <span class="tzbadge" id="tz-badge"></span>
       <button class="change" id="change-stop" type="button">Change stop</button>
+      <span class="tzbadge" id="tz-badge" hidden><span class="tz-icon"
+        aria-hidden="true">&#x1F310;&#xFE0E;</span><span id="tz-abbr"></span></span>
     </div>
   </header>
 
@@ -742,7 +749,8 @@
           .formatToParts(new Date())
           .find((p) => p.type === "timeZoneName").value;
         const badge = $("tz-badge");
-        badge.textContent = abbr;
+        $("tz-abbr").textContent = abbr;
+        badge.hidden = false;
         badge.title = `All times are ${regionTz} (${abbr})`;
       } catch { /* unknown zone: badge stays empty and hidden */ }
     }).catch(() => {});

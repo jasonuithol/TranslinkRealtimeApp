@@ -741,8 +741,10 @@
   const pinLabel = new URLSearchParams(location.search).get("pinlabel") || "";
   // Pinned-browse: the map is anchored to an address rather than a stop.
   // The chrome behaves like a stop view (titlebar + goose, folded search,
-  // "Change address") until an actual stop is picked.
-  const pinnedBrowse = browsing && Boolean(pinParam);
+  // "Change address") until an actual stop is picked. A pin WITHOUT a stop
+  // is a pinned browse even with no ?at= — shared planner URLs carry only
+  // pin/to, and the camera falls back to the pin.
+  const pinnedBrowse = Boolean(pinParam) && !stopId;
   // The stops surrounding a dropped pin — fetched once the map is up, drawn
   // as clickable landmarks at ANY zoom (the all-stops layer needs z15+, and
   // a sparse suburb's nearest stops can force the camera further out).
@@ -814,7 +816,7 @@
     // so the map keeps warming underneath). Map-browsing mode (?at=, from a
     // pan across regions) keeps the full layout instead.
     const anchored = Boolean(stopId) || pinnedBrowse;
-    document.body.classList.toggle("landing", !stopId && !browsing);
+    document.body.classList.toggle("landing", !stopId && !browsing && !pinnedBrowse);
     $("titlebar").hidden = !anchored;
     $("search-wrap").hidden = anchored && !searchOpen;
     $("search-close").hidden = !anchored;  // nothing to return to without one
@@ -1412,9 +1414,9 @@
     // Only go two-column once there is actually a map to put in the second one.
     $("split").classList.add("side-by-side");
     document.querySelector("main").classList.add("wide");
-    // Browsing (arrived via a cross-region pan): open the map fully — no
-    // stop to wait for, the camera lands where the user was already looking.
-    if (browsing) {
+    // Browsing (arrived via a cross-region pan) or a pinned browse
+    // (shared planner URLs carry pin/to but no ?at=): open the map fully.
+    if (browsing || pinnedBrowse) {
       $("map-empty").hidden = true;
       $("map-caption").hidden = false;
       $("map-wrap").classList.remove("awaiting");
@@ -1438,8 +1440,9 @@
       style,
       // The handed-over camera when arriving from a pan swap; otherwise the
       // region's city until a stop is chosen.
-      center: atParam ? [atParam.lon, atParam.lat] : cfg.center,
-      zoom: atParam ? atParam.zoom : 11,
+      center: atParam ? [atParam.lon, atParam.lat]
+            : pinParam ? [pinParam.lon, pinParam.lat] : cfg.center,
+      zoom: atParam ? atParam.zoom : pinParam ? 15 : 11,
       attributionControl: { compact: true },
     });
     window.__map = map;   // debug/UI-test handle (see also ?mapdebug=1)
@@ -2865,11 +2868,21 @@
           // A walk is a leg like any other: the 🚶 "vehicle", its own pool
           // colour, the same badge/detail layout as a ride.
           const vcolor = planData.__colors[`walk:${i}:${j}`] || "#8c98a4";
-          let end = null;   // walks precede a ride: pin times to its boarding
+          // Times: a walk before a ride is pinned back from that boarding;
+          // a TRAILING walk (to the destination) runs on from the last
+          // arrival.
+          let end = null, start = null;
           for (let k = j + 1; k < it.legs.length; k++) {
             if (it.legs[k].kind === "ride") { end = it.legs[k].dep; break; }
           }
-          const start = end != null ? end - leg.secs : null;
+          if (end != null) {
+            start = end - leg.secs;
+          } else {
+            for (let k = j - 1; k >= 0; k--) {
+              if (it.legs[k].kind === "ride") { start = it.legs[k].arr; break; }
+            }
+            if (start != null) end = start + leg.secs;
+          }
           const mins = Math.max(1, Math.round(leg.secs / 60));
           const row = document.createElement("div");
           row.className = "it-leg";
@@ -3056,6 +3069,25 @@
       if (leg.alight_lat != null) cursor = [leg.alight_lon, leg.alight_lat];
       gapWalkIdx = null;
     });
+    // A TRAILING walk (last leg, no ride after it) ends at the destination.
+    if (gapWalkIdx !== null && cursor && planData.to
+        && planData.to.stop_lat != null) {
+      const b = [planData.to.stop_lon, planData.to.stop_lat];
+      const dm = Math.hypot((b[0] - cursor[0]) * 88000,
+                            (b[1] - cursor[1]) * 111000);
+      if (dm > 25) {
+        const key = walkKey(cursor, b);
+        let pts = walkRouteCache.get(key);
+        if (pts === undefined) { ensureWalkRoute(cursor, b); pts = null; }
+        walks.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: pts || [cursor, b] },
+          properties: {
+            color: (planData.__colors || {})[`walk:${selItin}:${gapWalkIdx}`],
+          },
+        });
+      }
+    }
     map.getSource("walklines").setData(
       { type: "FeatureCollection", features: walks });
     if (!destMarker && planData.to

@@ -159,17 +159,16 @@
     color: #e5484d; font-size: 12px;
     font-family: "IBM Plex Mono", monospace;
   }
+  /* Legs reuse the arrivals row's parts (.badge/.mode/.num/.src-col) so the
+     two boards speak one visual language — only the layout shell differs. */
   .itin .it-leg {
-    display: flex; gap: 10px; align-items: flex-start;
-    padding: 4px 0; font-size: 13px;
+    display: flex; gap: 12px; align-items: center;
+    padding: 5px 0; font-size: 13px;
+    border-left: 3px solid var(--vcolor); padding-left: 10px;
   }
-  .itin .it-badge {
-    flex: none; border: 1.5px solid; border-radius: 6px;
-    padding: 1px 8px; font-family: "IBM Plex Mono", monospace;
-    font-size: 12px; font-weight: 700; max-width: 130px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .itin .it-detail {
+    display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
   }
-  .itin .it-detail { display: flex; flex-direction: column; gap: 2px; }
   .itin .it-walk {
     color: var(--muted); font-size: 12px; padding: 2px 0 2px 6px;
     font-family: "IBM Plex Mono", monospace;
@@ -2804,6 +2803,11 @@
         `<div class="empty">No journeys found from here today.</div>`);
       return;
     }
+    // Same colour machinery as the arrivals board: one vehicle colour per
+    // service, shared by the leg's badge, its 🛜/📅 mark and its map trace.
+    const rideLegs = planData.itineraries
+      .flatMap((it) => it.legs.filter((l) => l.kind === "ride"));
+    planData.__colors = assignColors(rideLegs);
     planData.itineraries.forEach((it, i) => {
       const card = document.createElement("div");
       card.className = "itin" + (i === selItin ? " selected" : "");
@@ -2830,17 +2834,34 @@
           card.appendChild(w);
           continue;
         }
+        // A leg is a board row's language: black badge plate with the mode
+        // glyph and route in the vehicle colour, 🛜/📅 in the same colour.
+        const vcolor = planData.__colors[leg.trip_id] || "#3fb950";
         const row = document.createElement("div");
         row.className = "it-leg";
-        const color = leg.route_color ? `#${leg.route_color}` : "var(--amber)";
-        const plat = leg.board_platform ? ` · ${leg.board_platform}` : "";
-        row.innerHTML =
-          `<span class="it-badge" style="border-color:${color}">` +
-          `${escapeHtml(leg.route ?? "")}</span>` +
-          `<span class="it-detail"><span>${escapeHtml(leg.board_name)}${plat}` +
-          ` <b>${planClock(leg.dep)}</b></span>` +
-          `<span>→ ${escapeHtml(leg.alight_name)} <b>${planClock(leg.arr)}</b>` +
-          ` ${asText(leg.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span></span>`;
+        row.style.setProperty("--vcolor", vcolor);
+        const routeLabel = leg.route ?? "";
+        const numClass = routeLabel.length > 8 ? "num xwide"
+                       : routeLabel.length > 4 ? "num wide" : "num";
+        const glyph = MODE_EMOJI[leg.route_type] ?? DEFAULT_EMOJI;
+        // Many feeds bake the platform into the stop name already.
+        const plat = (leg.board_platform
+                      && !/platform|stop [a-z0-9]/i.test(leg.board_name))
+          ? ` · Platform ${leg.board_platform}` : "";
+        row.innerHTML = `
+          <div class="badge" style="color:${vcolor}">
+            <span class="mode">${asText(glyph)}</span>
+            <span class="${numClass}">${escapeHtml(routeLabel)}</span>
+          </div>
+          <div class="it-detail">
+            <span>${escapeHtml(leg.board_name)}${plat}
+              <b>${planClock(leg.dep)}</b></span>
+            <span>→ ${escapeHtml(leg.alight_name)} <b>${planClock(leg.arr)}</b></span>
+          </div>
+          <div class="src-col">
+            <span title="${leg.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
+                  >${asText(leg.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span>
+          </div>`;
         card.appendChild(row);
       }
       board.appendChild(card);
@@ -2878,7 +2899,8 @@
         type: "Feature",
         geometry: { type: "LineString",
                     coordinates: seg.map((s) => [s.lon, s.lat]) },
-        properties: { color: leg.route_color ? `#${leg.route_color}` : "#3fb950" },
+        // Same vehicle colour as the leg's badge — board and map agree.
+        properties: { color: (planData.__colors || {})[leg.trip_id] || "#3fb950" },
       });
       for (const end of [seg[0], seg[seg.length - 1]]) {
         marks.push({

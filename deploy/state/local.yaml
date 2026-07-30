@@ -10,7 +10,7 @@ updated: 2026-07-30
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, since: 2026-07-30, reason: "journey planner phase 1: RAPTOR core, /plan endpoint, planner-mode UI" }
+  image: { status: pending, since: 2026-07-30, reason: "planner legs reuse the arrivals visual language (badge plate, vehicle colours, source marks)" }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }

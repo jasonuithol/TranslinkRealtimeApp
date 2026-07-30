@@ -26,7 +26,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, since: 2026-07-30, reason: "planner legs traced along real shapes, sliced board-to-alight" }
+  image: { status: pending, since: 2026-07-30, reason: "walk legs routed along streets: /api/walkroute A* + dashed walk lines" }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.
@@ -44,6 +44,8 @@ components:
   # ingest_gnaf.py (quarterly-ish — G-NAF releases quarterly, addresses
   # churn slowly), shipped by release-vps.sh when pending (SHIP_GNAF).
   gnaf-db: { status: deployed, at: 2026-07-29 }
+  # Walking street graph (planner walk-leg routing along roads).
+  walkgraph-db: { status: pending, since: 2026-07-30, reason: "never shipped - walk legs draw straight dashes until it lands" }
   # Region enablement (keys + realtime env + first ingest). Timetables
   # refresh themselves weekly once quadlet-units + keys are in place.
   enable-syd-nsw: { status: deployed, at: 2026-07-29 }

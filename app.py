@@ -1448,6 +1448,116 @@ def departures(stop_id: str, region: str = "seq"):
 
 
 # ---------------------------------------------------------------------------
+# Walking routes: A* over the local street graph (ingest_walkgraph.py — OSM
+# ways near stops). Powers the planner's dashed walk legs; absent graph or
+# uncovered area returns 404 and the client draws a straight line instead.
+WALKGRAPH_DB = Path(os.environ.get("WALKGRAPH_DB")
+                    or DB_PATH.parent / "walkgraph.sqlite3")
+_WG_CELL = 0.01
+
+def _wg_cell(lat: float, lon: float) -> int:
+    return int((lat + 90) / _WG_CELL) * 40000 + int((lon + 180) / _WG_CELL)
+
+
+def _wg_nearest(con, lat: float, lon: float):
+    """Nearest graph node, searching outward ring by ring (3 rings ≈ 3 km)."""
+    base = _wg_cell(lat, lon)
+    for ring in range(0, 3):
+        cells = [base + dy * 40000 + dx
+                 for dy in range(-ring, ring + 1)
+                 for dx in range(-ring, ring + 1)]
+        marks = ",".join("?" for _ in cells)
+        rows = con.execute(
+            f"SELECT id, lat, lon FROM nodes WHERE cell IN ({marks})",
+            cells).fetchall()
+        if rows:
+            coslat = math.cos(math.radians(lat)) ** 2
+            return min(rows, key=lambda r: (r["lon"] - lon) ** 2 * coslat
+                                           + (r["lat"] - lat) ** 2)
+    return None
+
+
+_walkroute_cache: dict = {}
+
+
+@app.get("/api/walkroute")
+def walkroute(from_lat: float, from_lon: float, to_lat: float, to_lon: float):
+    if not WALKGRAPH_DB.exists():
+        raise HTTPException(404, "No walking graph on this deployment")
+    import heapq
+
+    def hav(la1, lo1, la2, lo2):
+        p1, p2 = math.radians(la1), math.radians(la2)
+        a = (math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2)
+             * math.sin(math.radians(lo2 - lo1) / 2) ** 2)
+        return 2 * 6371000 * math.asin(math.sqrt(a))
+
+    straight = hav(from_lat, from_lon, to_lat, to_lon)
+    if straight > 2500:
+        raise HTTPException(400, "Walk too long to route")
+    key = (round(from_lat, 5), round(from_lon, 5),
+           round(to_lat, 5), round(to_lon, 5))
+    hit = _walkroute_cache.get(key)
+    if hit is not None:
+        if hit == "none":
+            raise HTTPException(404, "No walking route found")
+        return hit
+
+    con = sqlite3.connect(WALKGRAPH_DB)
+    con.row_factory = sqlite3.Row
+    try:
+        src = _wg_nearest(con, from_lat, from_lon)
+        dst = _wg_nearest(con, to_lat, to_lon)
+        if src is None or dst is None:
+            _walkroute_cache[key] = "none"
+            raise HTTPException(404, "Area not covered by the walking graph")
+        # A*, adjacency read straight off the edges index per expansion.
+        goal = (dst["lat"], dst["lon"])
+        open_q = [(0, src["id"])]
+        g = {src["id"]: 0}
+        came: dict = {}
+        pos = {src["id"]: (src["lat"], src["lon"]),
+               dst["id"]: (dst["lat"], dst["lon"])}
+        found = False
+        expansions = 0
+        while open_q and expansions < 30000:
+            _, cur = heapq.heappop(open_q)
+            if cur == dst["id"]:
+                found = True
+                break
+            expansions += 1
+            for e in con.execute("SELECT b, d FROM edges WHERE a=?", (cur,)):
+                ng = g[cur] + e["d"]
+                if ng >= g.get(e["b"], 1 << 30):
+                    continue
+                g[e["b"]] = ng
+                came[e["b"]] = cur
+                if e["b"] not in pos:
+                    r = con.execute("SELECT lat, lon FROM nodes WHERE id=?",
+                                    (e["b"],)).fetchone()
+                    pos[e["b"]] = (r["lat"], r["lon"])
+                heapq.heappush(open_q, (
+                    ng + hav(*pos[e["b"]], *goal), e["b"]))
+        if not found:
+            _walkroute_cache[key] = "none"
+            raise HTTPException(404, "No walking route found")
+        path = [dst["id"]]
+        while path[-1] in came:
+            path.append(came[path[-1]])
+        path.reverse()
+        points = ([[from_lon, from_lat]]
+                  + [[pos[n][1], pos[n][0]] for n in path]
+                  + [[to_lon, to_lat]])
+        out = {"points": points, "dist_m": g[dst["id"]]}
+    finally:
+        con.close()
+    if len(_walkroute_cache) > 512:
+        _walkroute_cache.pop(next(iter(_walkroute_cache)))
+    _walkroute_cache[key] = out
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Journey planner (PLANNER.md phase 1): single-region, schedule-based RAPTOR
 # with realtime re-costing. planner.py owns the routing; this endpoint owns
 # service-date arithmetic, leg enrichment and the TripUpdate overlay.
@@ -1590,11 +1700,11 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
                         and prev_arr_epoch + pending_walk > rt_dep - 30)
                 at_risk = at_risk or risk
                 board = con.execute(
-                    "SELECT stop_name, platform_code FROM stops WHERE stop_id=?",
-                    (leg["board"],)).fetchone()
+                    "SELECT stop_name, platform_code, stop_lat, stop_lon "
+                    "FROM stops WHERE stop_id=?", (leg["board"],)).fetchone()
                 alight = con.execute(
-                    "SELECT stop_name, platform_code FROM stops WHERE stop_id=?",
-                    (leg["alight"],)).fetchone()
+                    "SELECT stop_name, platform_code, stop_lat, stop_lon "
+                    "FROM stops WHERE stop_id=?", (leg["alight"],)).fetchone()
                 legs.append({
                     "kind": "ride",
                     "trip_id": leg["trip_id"],
@@ -1610,8 +1720,12 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
                     "board_platform": platform_label(
                         board["platform_code"] if board else None,
                         board["stop_name"] if board else None),
+                    "board_lat": board["stop_lat"] if board else None,
+                    "board_lon": board["stop_lon"] if board else None,
                     "alight": leg["alight"],
                     "alight_name": alight["stop_name"] if alight else leg["alight"],
+                    "alight_lat": alight["stop_lat"] if alight else None,
+                    "alight_lon": alight["stop_lon"] if alight else None,
                     "dep": rt_dep, "arr": rt_arr,
                     "sched_dep": dep_epoch, "sched_arr": arr_epoch,
                     "realtime": dep_live or arr_live,

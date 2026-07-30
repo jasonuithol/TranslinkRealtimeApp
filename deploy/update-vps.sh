@@ -173,21 +173,28 @@ install_basemap "${DAR_BASEMAP_SRC}" dar
 install_basemap "${QLD_BASEMAP_SRC}" qld
 install_basemap "${NSW_BASEMAP_SRC}" nsw
 
-# The G-NAF address database (house-number geocoding) ships like a basemap:
-# built locally by ingest_gnaf.py (quarterly-ish), copied up, installed
-# atomically. Absent is fine — the geocoder falls back to Nominatim.
-GNAF_SRC="${GNAF_SRC:-/tmp/gnaf.sqlite3}"
-if [[ -f "$GNAF_SRC" ]]; then
-  echo "==> Installing the G-NAF address database…"
-  chmod 0644 "$GNAF_SRC"
-  as_deploy "podman run --rm -v translink-data:/data -v /tmp:/in:ro alpine \
-    sh -c 'cp /in/gnaf.sqlite3 /data/gnaf.sqlite3.new \
-           && mv /data/gnaf.sqlite3.new /data/gnaf.sqlite3 \
-           && chown 1000:1000 /data/gnaf.sqlite3'"
-  rm -f "$GNAF_SRC"
-else
-  echo "==> No ${GNAF_SRC} — G-NAF geocoder unchanged."
-fi
+# The G-NAF address database (house-number geocoding) and the walking
+# graph (planner walk-leg routing) ship like basemaps: built locally,
+# copied up, installed atomically. Absent is fine — geocoding falls back
+# to Nominatim; walk legs fall back to straight dashed lines.
+install_data_db() {
+  local src="$1" name="$2" label="$3"
+  if [[ -f "$src" ]]; then
+    echo "==> Installing ${label}…"
+    chmod 0644 "$src"
+    as_deploy "podman run --rm -v translink-data:/data -v /tmp:/in:ro alpine \
+      sh -c 'cp /in/${name} /data/${name}.new \
+             && mv /data/${name}.new /data/${name} \
+             && chown 1000:1000 /data/${name}'"
+    rm -f "$src"
+  else
+    echo "==> No ${src} — ${label} unchanged."
+  fi
+}
+install_data_db "${GNAF_SRC:-/tmp/gnaf.sqlite3}" gnaf.sqlite3 \
+  "the G-NAF address database"
+install_data_db "${WALKGRAPH_SRC:-/tmp/walkgraph.sqlite3}" walkgraph.sqlite3 \
+  "the walking graph"
 
 echo "==> Restarting the board (warms the per-region caches)…"
 as_deploy "systemctl --user restart translink.service"

@@ -30,6 +30,9 @@ fi
 SKIP_BASEMAP="${SKIP_BASEMAP:-no}"
 BASEMAP_REGIONS="${BASEMAP_REGIONS:-seq mel syd ade per dar qld nsw}"
 
+# One cleanup for every tmp artifact this script can create.
+trap 'rm -f /tmp/*.pmtiles.?????? /tmp/gnaf.sqlite3.?????? /tmp/walkgraph.sqlite3.??????' EXIT
+
 SHIPPED_BASEMAPS=()
 if [[ "$SKIP_BASEMAP" != "yes" ]]; then
   # The basemaps live inside the local rootless volume; cat each out via a
@@ -52,7 +55,6 @@ if [[ "$SKIP_BASEMAP" != "yes" ]]; then
         continue
       fi
       TMP_MAP="$(mktemp "/tmp/${region}.pmtiles.XXXXXX")"
-      trap 'rm -f /tmp/seq.pmtiles.?????? /tmp/mel.pmtiles.?????? /tmp/syd.pmtiles.?????? /tmp/ade.pmtiles.?????? /tmp/per.pmtiles.?????? /tmp/dar.pmtiles.?????? /tmp/qld.pmtiles.?????? /tmp/nsw.pmtiles.??????' EXIT
       echo "==> Exporting ${region} basemap from the local volume…"
       podman run --rm -v translink-data:/data alpine cat "/data/basemap/${region}.pmtiles" > "$TMP_MAP"
       echo "==> Copying basemap to ${VPS}:/tmp/${region}.pmtiles ($(du -h "$TMP_MAP" | cut -f1))…"
@@ -66,35 +68,40 @@ if [[ "$SKIP_BASEMAP" != "yes" ]]; then
   done
 fi
 
-# The G-NAF address DB ships on request (SHIP_GNAF=yes — deploy.sh sets it
-# from the gnaf-db state component), with the same don't-reship-identical
-# size guard as the basemaps.
+# Data DBs (G-NAF, walking graph) ship on request (deploy.sh sets the
+# SHIP_* flags from their state components), with the same
+# don't-reship-identical size guard as the basemaps.
 SHIP_GNAF="${SHIP_GNAF:-no}"
-SHIPPED_GNAF=no
-if [[ "$SHIP_GNAF" == "yes" ]]; then
-  if podman run --rm -v translink-data:/data alpine test -f /data/gnaf.sqlite3 2>/dev/null; then
-    LOCAL_SIZE="$(podman run --rm -v translink-data:/data alpine stat -c %s /data/gnaf.sqlite3 2>/dev/null || echo local-unknown)"
-    REMOTE_SIZE="$(ssh "$VPS" "stat -c %s /tmp/gnaf.sqlite3 2>/dev/null \
-      || { DU=\${DEPLOY_USER:-deploy}; sudo -u \"\$DU\" XDG_RUNTIME_DIR=/run/user/\$(id -u \"\$DU\") \
-           podman run --rm -v translink-data:/data alpine stat -c %s /data/gnaf.sqlite3 2>/dev/null; } \
-      || echo 0" 2>/dev/null || echo remote-unknown)"
-    if [[ "$LOCAL_SIZE" == "$REMOTE_SIZE" ]]; then
-      echo "==> G-NAF DB already on ${VPS} (${LOCAL_SIZE} bytes) — skipping the copy."
-      SHIPPED_GNAF=yes
-    else
-      TMP_GNAF="$(mktemp /tmp/gnaf.sqlite3.XXXXXX)"
-      # traps replace, they don't stack — re-cover the basemap tmps too
-      trap 'rm -f /tmp/seq.pmtiles.?????? /tmp/mel.pmtiles.?????? /tmp/syd.pmtiles.?????? /tmp/ade.pmtiles.?????? /tmp/per.pmtiles.?????? /tmp/dar.pmtiles.?????? /tmp/qld.pmtiles.?????? /tmp/nsw.pmtiles.?????? /tmp/gnaf.sqlite3.??????' EXIT
-      echo "==> Exporting the G-NAF address DB from the local volume…"
-      podman run --rm -v translink-data:/data alpine cat /data/gnaf.sqlite3 > "$TMP_GNAF"
-      echo "==> Copying G-NAF DB to ${VPS}:/tmp/gnaf.sqlite3 ($(du -h "$TMP_GNAF" | cut -f1))…"
-      scp -q "$TMP_GNAF" "${VPS}:/tmp/gnaf.sqlite3"
-      SHIPPED_GNAF=yes
-    fi
-  else
-    echo "==> SHIP_GNAF=yes but no gnaf.sqlite3 in the local volume — run"
-    echo "    ingest_gnaf.py first. Skipping."
+SHIP_WALKGRAPH="${SHIP_WALKGRAPH:-no}"
+ship_data_db() {   # $1 = filename, $2 = build hint; 0 = present on target
+  local name="$1" hint="$2" lsize rsize tmp
+  if ! podman run --rm -v translink-data:/data alpine test -f "/data/${name}" 2>/dev/null; then
+    echo "==> No ${name} in the local volume — run ${hint} first. Skipping."
+    return 1
   fi
+  lsize="$(podman run --rm -v translink-data:/data alpine stat -c %s "/data/${name}" 2>/dev/null || echo local-unknown)"
+  rsize="$(ssh "$VPS" "stat -c %s /tmp/${name} 2>/dev/null \
+    || { DU=\${DEPLOY_USER:-deploy}; sudo -u \"\$DU\" XDG_RUNTIME_DIR=/run/user/\$(id -u \"\$DU\") \
+         podman run --rm -v translink-data:/data alpine stat -c %s /data/${name} 2>/dev/null; } \
+    || echo 0" 2>/dev/null || echo remote-unknown)"
+  if [[ "$lsize" == "$rsize" ]]; then
+    echo "==> ${name} already on ${VPS} (${lsize} bytes) — skipping the copy."
+    return 0
+  fi
+  tmp="$(mktemp "/tmp/${name}.XXXXXX")"
+  echo "==> Exporting ${name} from the local volume…"
+  podman run --rm -v translink-data:/data alpine cat "/data/${name}" > "$tmp"
+  echo "==> Copying ${name} to ${VPS}:/tmp/${name} ($(du -h "$tmp" | cut -f1))…"
+  scp -q "$tmp" "${VPS}:/tmp/${name}"
+  return 0
+}
+SHIPPED_GNAF=no
+SHIPPED_WALKGRAPH=no
+if [[ "$SHIP_GNAF" == "yes" ]] && ship_data_db gnaf.sqlite3 ingest_gnaf.py; then
+  SHIPPED_GNAF=yes
+fi
+if [[ "$SHIP_WALKGRAPH" == "yes" ]] && ship_data_db walkgraph.sqlite3 ingest_walkgraph.py; then
+  SHIPPED_WALKGRAPH=yes
 fi
 
 echo "==> Copying update-vps.sh and running it on ${VPS}…"
@@ -110,4 +117,5 @@ for region in ${SHIPPED_BASEMAPS[@]+"${SHIPPED_BASEMAPS[@]}"}; do
   MARK+=("basemap-${region}")
 done
 if [[ "$SHIPPED_GNAF" == "yes" ]]; then MARK+=(gnaf-db); fi
+if [[ "$SHIPPED_WALKGRAPH" == "yes" ]]; then MARK+=(walkgraph-db); fi
 "${HERE}/mark-deployed.sh" "${TARGET_NAME:-vps}" "${MARK[@]}" || true

@@ -401,6 +401,25 @@ times and the map shows timetable-estimated ghosts.
   green destination Marker, camera fitted once per plan. Known phase-1
   limits: no vehicles on planner maps, planning is schedule-based
   (realtime only re-costs), single region.
+- **Walking graph for planner walk legs (2026-07-30)**: Jason asked for
+  walks drawn "along the sides of roads" — there is no separate footpath
+  dataset; OSM's ways ARE it. `ingest_walkgraph.py` (osmium, run in a
+  throwaway container — see its header; osmium + libexpat deliberately
+  not in the app image) streams the SAME australia.osm.pbf the basemap
+  builder caches, keeps walkable highway types within ~2 km of any stop
+  in any region DB (the outback drops out), and writes
+  walkgraph.sqlite3: 14.4 M nodes / 31.7 M directed edges / 1.98 GB.
+  `/api/walkroute` runs A* straight off the edges index (~18 ms for a
+  500 m walk, in-memory LRU for the 15 s polls); the client draws walk
+  legs as dashed grey lines along the returned geometry, with a
+  straight dash as fallback while loading / where the graph has no
+  answer / on deployments without the DB. Ships as `walkgraph-db`
+  through ship_data_db() in release-vps.sh (size-guarded — never
+  re-copy 2 GB) and install_data_db() in update-vps.sh. Slimming
+  headroom if 2 GB ever hurts: BUFFER_CELLS 2→1, or contract degree-2
+  node chains into edge geometry. If graph quality ever disappoints,
+  Jason's fallback plan is decommissioning InventoryQuest to make room
+  for a real Valhalla — don't suggest it first.
 - **Local G-NAF geocoder (2026-07-29)**: OSM's residential house-number
   coverage is patchy — "397 Christine Avenue, Varsity Lakes" has no house
   number in OSM, so Nominatim pinned an arbitrary point along a 3 km road

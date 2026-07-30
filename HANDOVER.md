@@ -431,7 +431,20 @@ times and the map shows timetable-estimated ghosts.
   results inside the current region's viewbox rank first. Labels read
   "Name — category, suburb". Ships as `places-db` via the generic
   ship_data_db/install_data_db paths. Nominatim remains the fallback for
-  anything OSM hasn't mapped.
+  anything neither source has. Suburbs/states come from a G-NAF-derived
+  locality grid when the source has none (that's most OSM POIs, and
+  "bunnings burleigh" is how people search); an apostrophe-stripped
+  `alt` FTS column makes "dan murphys" find "Dan Murphy's".
+  **Overture Maps merge (2026-07-30)**: `ingest_overture.py` (run AFTER
+  ingest_places.py — an OSM rebuild resets to OSM-only) DuckDB-pulls the
+  AU slice of Overture's places theme off S3 (release tag rotates
+  monthly; header says how to list), confidence >= 0.5 (Overture's own
+  score — dead chains rank low), stop-buffer clipped, name+proximity
+  deduped against existing rows (~150 m), `source` column distinguishes
+  osm/overture. Overture is Meta-business-page derived, so it has the
+  sole-trader shops OSM lacks — the "Pizza 1, Miami QLD" test (Jason's)
+  went from unfindable to confidence 0.99. CDLA-Permissive 2.0,
+  attributed in README.
 - **Local G-NAF geocoder (2026-07-29)**: OSM's residential house-number
   coverage is patchy — "397 Christine Avenue, Varsity Lakes" has no house
   number in OSM, so Nominatim pinned an arbitrary point along a 3 km road

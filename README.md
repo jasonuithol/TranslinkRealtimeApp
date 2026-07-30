@@ -219,6 +219,9 @@ The machinery underneath (all callable standalone for surgical work):
   (G-NAF) © Geoscape Australia, licensed by the Commonwealth of Australia
   under the Open G-NAF EULA (data.gov.au). G-NAF must not be used for the
   sending of unsolicited mail.
+- Place and business data includes data from Overture Maps Foundation
+  (overturemaps.org), licensed under CDLA-Permissive 2.0, and from
+  OpenStreetMap contributors.
 
 Check each portal for current licensing and attribution requirements.
 

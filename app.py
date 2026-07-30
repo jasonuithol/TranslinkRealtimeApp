@@ -966,7 +966,12 @@ def places_geocode(q: str, viewbox: str, limit: int = 8) -> list | None:
     def in_box(r):
         return (min(lat1, lat2) <= r["lat"] <= max(lat1, lat2)
                 and min(lon1, lon2) <= r["lon"] <= max(lon1, lon2))
-    rows.sort(key=lambda r: not in_box(r))
+    # An exact name match beats places that merely CONTAIN the query
+    # ("Pacific Fair" the mall above "Roll'd Pacific Fair" the tenant).
+    qnorm = "".join(tokens)
+    def exact(r):
+        return re.sub(r"[^a-z0-9]", "", r["name"].lower()) == qnorm
+    rows.sort(key=lambda r: (not in_box(r), not exact(r)))
     out, seen = [], set()
     for r in rows:
         bits = [r["category"]]

@@ -3,7 +3,9 @@ Build a local business/POI index from the OpenStreetMap Australia extract:
 every NAMED shop, cafe, supermarket, medical centre, pub, gym, servo,
 shopping centre &c., so "bunnings burleigh" resolves instantly and locally —
 Nominatim (rate-limited, remote) stays the fallback for anything OSM's
-community hasn't mapped.
+community hasn't mapped. Run ingest_overture.py AFTERWARDS to merge in
+Overture Maps' places (small businesses OSM lacks) — rebuilding here
+resets to OSM-only, so re-run the Overture merge each time.
 
     python ingest_places.py /cache/data/sources/australia.osm.pbf
 
@@ -171,7 +173,8 @@ def build(pbf: Path) -> None:
         PRAGMA journal_mode=OFF;  PRAGMA synchronous=OFF;
         CREATE TABLE places (id INTEGER PRIMARY KEY, name TEXT,
                              category TEXT, suburb TEXT, state TEXT,
-                             alt TEXT, lat REAL, lon REAL);
+                             alt TEXT, lat REAL, lon REAL,
+                             source TEXT DEFAULT 'osm');
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     """)
     grid = locality_grid()

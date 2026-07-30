@@ -445,6 +445,17 @@ times and the map shows timetable-estimated ghosts.
   sole-trader shops OSM lacks — the "Pizza 1, Miami QLD" test (Jason's)
   went from unfindable to confidence 0.99. CDLA-Permissive 2.0,
   attributed in README.
+- **Point DESTINATIONS (2026-07-30)**: picking a business/address as the
+  planner destination used to collapse it to its nearest stop ("the
+  destination BECAME a bus stop!" — Jason, correctly appalled). Now
+  destinations mirror point origins: planner.plan takes `targets` (each
+  candidate alighting stop pre-charged its walk-to-the-door, so arrival
+  is AT THE DOOR and the door-weighting even picks better alighting
+  stops), /plan takes to_lat/to_lon/to_label, the trailing walk is a
+  visible leg named for the place, consecutive walk legs merge into one
+  (group hops + footpath chains read as one walk), and the client keeps
+  ?tolat/?tolon in the URL. Stop destinations (?to=) still work — a stop
+  picked as a destination is legitimately a stop.
 - **Local G-NAF geocoder (2026-07-29)**: OSM's residential house-number
   coverage is patchy — "397 Christine Avenue, Varsity Lakes" has no house
   number in OSM, so Nominatim pinned an arbitrary point along a 3 km road

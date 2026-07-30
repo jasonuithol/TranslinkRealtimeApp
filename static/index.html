@@ -743,8 +743,20 @@
   })();
   // ?to=stop_id — journey-planner mode (PLANNER.md phase 1): the board
   // becomes itineraries from the viewed stop to this one. Same region only.
+  // A POINT destination (?tolat/?tolon — a business, an address) keeps its
+  // identity: the journey ends at the door, via a trailing walk from the
+  // last stop, never silently "translated" into the nearest stop.
   let toId = new URLSearchParams(location.search).get("to");
   let toName = new URLSearchParams(location.search).get("toname") || "";
+  let toPoint = (() => {
+    const p = new URLSearchParams(location.search);
+    const lat = Number(p.get("tolat")), lon = Number(p.get("tolon"));
+    return (p.get("tolat") && Number.isFinite(lat) && Number.isFinite(lon))
+      ? { lat, lon } : null;
+  })();
+  const hasDest = () => Boolean(toId || toPoint);
+  const destKey = () => toId
+    || (toPoint ? `pt:${toPoint.lat.toFixed(5)},${toPoint.lon.toFixed(5)}` : null);
 
   // The pin's display label ("397 Christine Avenue, Varsity Lakes QLD" /
   // "Near me") — shown in the titlebar like a stop name.
@@ -838,7 +850,7 @@
     // trip then STARTS at the address — first leg is the walk to a stop).
     // With a destination set, the same button cancels back.
     $("plan-to").hidden = !stopId && !pinnedBrowse;
-    $("plan-to").textContent = toId ? `✕ to ${toName || "destination"}`
+    $("plan-to").textContent = hasDest() ? `✕ to ${toName || "destination"}`
                                     : "Plan a trip";
     if (!searchOpen) $("results").hidden = true;
   }
@@ -876,7 +888,9 @@
   let startedPlan = null;
   try {
     const s = JSON.parse(localStorage.getItem("startedJourney") || "null");
-    if (s && s.region === region && s.toId === toId && toId) startedPlan = s;
+    if (s && s.region === region && hasDest() && s.toId === destKey()) {
+      startedPlan = s;
+    }
   } catch { /* corrupted store: ignore */ }
   const itinKey = (it) => it.legs.filter((l) => l.kind === "ride")
     .map((l) => `${l.trip_id}@${l.board}`).join(">");
@@ -892,14 +906,32 @@
     const p = new URLSearchParams();
     p.set("region", region);
     if (stopId) p.set("stop", stopId);
-    if (toId) { p.set("to", toId); if (toName) p.set("toname", toName); }
+    if (toId) { p.set("to", toId); }
+    else if (toPoint) {
+      p.set("tolat", toPoint.lat.toFixed(5));
+      p.set("tolon", toPoint.lon.toFixed(5));
+    }
+    if (hasDest() && toName) p.set("toname", toName);
     if (pinParam) { p.set("pin", pinRaw); if (pinLabel) p.set("pinlabel", pinLabel); }
     history.replaceState(null, "", "?" + p.toString());
   }
 
   function setDest(sid, name) {
     toId = sid;
-    toName = name || sid;
+    toPoint = null;
+    _destChosen(name || sid);
+  }
+
+  // A place or address as destination stays a POINT — the pizza joint IS
+  // the destination; the planner walks the last leg to its door.
+  function setDestPoint(lat, lon, label) {
+    toId = null;
+    toPoint = { lat, lon };
+    _destChosen(label || "destination");
+  }
+
+  function _destChosen(name) {
+    toName = name;
     pickingDest = false;
     planData = null; selItin = 0; planFitted = false;
     $("search").placeholder = "Search for a stop or an address";
@@ -914,7 +946,7 @@
   }
 
   function cancelPlan() {
-    toId = null; toName = ""; planData = null;
+    toId = null; toPoint = null; toName = ""; planData = null;
     startedPlan = null; saveStarted();
     clearPlanLayers();
     syncPlanUrl();
@@ -932,27 +964,12 @@
   }
 
   $("plan-to").addEventListener("click", () => {
-    if (toId) { cancelPlan(); return; }
+    if (hasDest()) { cancelPlan(); return; }
     pickingDest = true;
     $("search").placeholder = "Where to?";
     openSearch();
   });
 
-  // An address as a destination means "the nearest stop to that address" —
-  // same network only (cross-region journeys are phase 3).
-  async function destFromAddress(p) {
-    const box = $("results");
-    box.innerHTML = "";
-    resultNote("Finding the nearest stop to that address…");
-    let stops = [];
-    try { stops = await fetchNearby(p.lat, p.lon, region); } catch { /* below */ }
-    if (!stops.length) {
-      box.innerHTML = "";
-      resultNote("No stops near that address in this network.");
-      return;
-    }
-    setDest(stops[0].stop_id, stops[0].stop_name);
-  }
   $("search").addEventListener("keydown", (e) => {
     if (e.key === "Escape" && (stopId || pinnedBrowse)) closeSearch();
   });
@@ -1141,8 +1158,9 @@
         // glyph on the right already tells it apart from a stop.
         resultButton(
           `<span class="rmain">${escapeHtml(p.label)}</span>`,
-          () => pickingDest ? destFromAddress(p)
-                            : openPinned(p.lat, p.lon, "that address", p.label),
+          () => pickingDest
+            ? setDestPoint(p.lat, p.lon, p.label)   // the PLACE is the dest
+            : openPinned(p.lat, p.lon, "that address", p.label),
         );
       });
     } catch {
@@ -2799,7 +2817,7 @@
   }
 
   async function refresh() {
-    if (toId && (stopId || pinnedBrowse)) return refreshPlan();
+    if (hasDest() && (stopId || pinnedBrowse)) return refreshPlan();
     if (!stopId) return;
     try {
       const res = await fetch(api(`/departures/${stopId}`));
@@ -2832,8 +2850,10 @@
         ? `from=${encodeURIComponent(stopId)}`
         : `from_lat=${pinParam.lat}&from_lon=${pinParam.lon}`
           + `&from_label=${encodeURIComponent(pinLabel || "Your address")}`;
-      const res = await fetch(api(
-        `/plan?${origin}&to=${encodeURIComponent(toId)}`));
+      const dest = toId ? `to=${encodeURIComponent(toId)}`
+        : `to_lat=${toPoint.lat}&to_lon=${toPoint.lon}`
+          + `&to_label=${encodeURIComponent(toName || "Your destination")}`;
+      const res = await fetch(api(`/plan?${origin}&${dest}`));
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
       planData = await res.json();
       // Re-cost the started journey: same anchor time -> same legs, with
@@ -2842,8 +2862,7 @@
       if (startedPlan) {
         try {
           const res2 = await fetch(api(
-            `/plan?${origin}&to=${encodeURIComponent(toId)}`
-            + `&at=${startedPlan.at}`));
+            `/plan?${origin}&${dest}&at=${startedPlan.at}`));
           if (res2.ok) {
             const d2 = await res2.json();
             const m = d2.itineraries.find((x) => itinKey(x) === startedPlan.key);
@@ -3001,7 +3020,7 @@
         if (isStarted) {
           startedPlan = null;
         } else {
-          startedPlan = { region, toId, key: itinKey(it),
+          startedPlan = { region, toId: destKey(), key: itinKey(it),
                           at: it.depart - 60, itin: it };
         }
         saveStarted();
@@ -3072,7 +3091,7 @@
   // stop-to-stop lines while the shape loads, or if the trip has none);
   // transfer points as landmarks, the destination as a green marker.
   function drawPlan() {
-    if (!mapReady || !planData || !toId) return;
+    if (!mapReady || !planData || !hasDest()) return;
     const it = (planData.__shown || planData.itineraries)[selItin];
     if (!it) { clearPlanLayers(); return; }
     const lines = [], marks = [];
@@ -3200,7 +3219,7 @@
   syncChrome();
   initMap();
   if (stopId) selectStop(stopId);
-  else if (toId && pinnedBrowse) {
+  else if (hasDest() && pinnedBrowse) {
     // A reloaded/shared address-origin plan: start polling it directly.
     refresh();
     timer = setInterval(refresh, 15000);

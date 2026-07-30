@@ -1651,21 +1651,28 @@ def _rt_time_for(st_rt: dict, trip_id: str, stop_id: str, seq: int | None,
 
 @app.get("/api/r/{region}/plan")
 @app.get("/api/plan")
-def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
+def plan_endpoint(to: str | None = None,
+                  from_stop: str | None = Query(None, alias="from"),
                   from_lat: float | None = None, from_lon: float | None = None,
                   from_label: str | None = None,
+                  to_lat: float | None = None, to_lon: float | None = None,
+                  to_label: str | None = None,
                   at: int | None = None, region: str = "seq"):
-    """Origin is either a stop (?from=) or a POINT (?from_lat/from_lon —
-    a searched address / geolocation): every stop within walking range
-    seeds the search pre-charged with its walking time, and the winning
-    itinerary's first leg is that walk."""
+    """Origin AND destination are each either a stop (?from= / ?to=) or a
+    POINT (?from_lat…/?to_lat… — a searched address, a business, a
+    geolocation). Point ends walk to/from every stop in range, pre-charged
+    with walking time, and the itinerary's first/last leg is that walk —
+    the journey starts at the front door and ends at the pizza joint, not
+    at whatever stop happens to be nearest."""
     cfg, st = region_cfg(region), STATE[region]
     if from_stop is None and (from_lat is None or from_lon is None):
         raise HTTPException(400, "Give either from= or from_lat=&from_lon=")
+    if to is None and (to_lat is None or to_lon is None):
+        raise HTTPException(400, "Give either to= or to_lat=&to_lon=")
     con = db(region)
     try:
         names = {}
-        check_ids = [to] if from_stop is None else [from_stop, to]
+        check_ids = [s for s in (from_stop, to) if s is not None]
         for sid in check_ids:
             row = con.execute(
                 "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
@@ -1673,7 +1680,7 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
             if row is None:
                 raise HTTPException(404, f"Unknown stop_id {sid}")
             names[sid] = dict(row)
-        if from_stop == to:
+        if from_stop is not None and from_stop == to:
             raise HTTPException(400, "Origin and destination are the same stop")
 
         tz = cfg["tz"]
@@ -1708,18 +1715,60 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
                 "stop_id": None, "stop_name": from_label or "Your address",
                 "stop_lat": from_lat, "stop_lon": from_lon,
             }
-        raw = journey.plan(tt, from_stop, to, dep_sec, sources=sources)
-        # An address origin owes its walk to the first stop as a visible leg.
-        if sources is not None:
-            for it in raw:
-                if not it["legs"]:
-                    continue
+        targets = None
+        t_pen: dict = {}
+        if to is None:
+            near = nearby_stops(to_lat, to_lon, limit=10, region=region)
+            near = [s for s in near if s["dist_m"] <= 1000]
+            if not near:
+                raise HTTPException(404, "No stops within walking range "
+                                         "of the destination")
+            targets = []
+            for s in near:
+                pen = max(60, int(s["dist_m"] * journey.WALK_DETOUR
+                                  / journey.WALK_SPEED_MPS))
+                targets.append((s["stop_id"], pen))
+                for member in tt.group_of.get(s["stop_id"], {s["stop_id"]}):
+                    if pen < t_pen.get(member, 1 << 30):
+                        t_pen[member] = pen
+            names["__dest__"] = {
+                "stop_id": None, "stop_name": to_label or "Your destination",
+                "stop_lat": to_lat, "stop_lon": to_lon,
+            }
+
+        raw = journey.plan(tt, from_stop, to, dep_sec,
+                           sources=sources, targets=targets)
+        # Point ends owe their walks as visible legs: address -> first stop,
+        # and last stop -> the destination's door.
+        for it in raw:
+            if not it["legs"]:
+                continue
+            if sources is not None:
                 first = it["legs"][0]
                 seed = first["board"] if first["kind"] == "ride" else first["from"]
                 pen = seed_pen.get(seed)
                 if pen:
                     it["legs"].insert(0, {"kind": "walk", "from": None,
                                           "to": seed, "secs": pen})
+            if targets is not None:
+                last = it["legs"][-1]
+                end = last["alight"] if last["kind"] == "ride" else last["to"]
+                pen = t_pen.get(end)
+                if pen:
+                    it["legs"].append({"kind": "walk", "from": end,
+                                       "to": None, "secs": pen})
+            # Chained walks (origin walk + a station-group hop, footpath
+            # sequences) read as one walk to a rider — merge them.
+            merged = []
+            for leg in it["legs"]:
+                if (leg["kind"] == "walk" and merged
+                        and merged[-1]["kind"] == "walk"):
+                    merged[-1] = {"kind": "walk", "from": merged[-1]["from"],
+                                  "to": leg["to"],
+                                  "secs": merged[-1]["secs"] + leg["secs"]}
+                else:
+                    merged.append(dict(leg))
+            it["legs"] = merged
 
         mid_epoch = int(midnight.timestamp())
         itineraries = []
@@ -1736,7 +1785,9 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
                         "from_name": (names["__origin__"]["stop_name"]
                                       if leg["from"] is None
                                       else _stop_name(con, leg["from"])),
-                        "to_name": _stop_name(con, leg["to"]),
+                        "to_name": (names["__dest__"]["stop_name"]
+                                    if leg["to"] is None
+                                    else _stop_name(con, leg["to"])),
                     })
                     continue
                 tmeta = con.execute(
@@ -1798,6 +1849,13 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
             arrive = next((l["arr"] for l in reversed(legs)
                            if l["kind"] == "ride"), None)
             depart = next((l["dep"] for l in legs if l["kind"] == "ride"), None)
+            # A trailing walk to the destination's door counts: "arrive"
+            # means at the pizza joint, not at the last bus stop.
+            if arrive is not None:
+                for l in reversed(legs):
+                    if l["kind"] == "ride":
+                        break
+                    arrive += l["secs"]
             if depart is None:
                 continue
             itineraries.append({
@@ -1812,7 +1870,7 @@ def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
 
     return {
         "from": names["__origin__"] if from_stop is None else names[from_stop],
-        "to": names[to],
+        "to": names["__dest__"] if to is None else names[to],
         "generated_at": int(time.time()),
         "realtime_configured": bool(cfg["trip_updates"]),
         "itineraries": itineraries,

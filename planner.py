@@ -249,8 +249,8 @@ def _expand(tt: Timetable, stop_id: str) -> list:
     return [tt.stop_index[s] for s in ids if s in tt.stop_index]
 
 
-def plan(tt: Timetable, from_stop, to_stop: str, dep_sec: int,
-         max_itineraries: int = 4, sources=None) -> list:
+def plan(tt: Timetable, from_stop, to_stop, dep_sec: int,
+         max_itineraries: int = 4, sources=None, targets=None) -> list:
     """RAPTOR: earliest arrival per transfer count. Returns up to
     max_itineraries pareto itineraries (more rides only if strictly faster),
     each a list of legs:
@@ -262,6 +262,9 @@ def plan(tt: Timetable, from_stop, to_stop: str, dep_sec: int,
     `sources` = [(stop_id, penalty_secs), ...] — an ADDRESS origin, seeded
     with each walkable stop pre-charged its walking time, so a closer stop
     with a later service competes fairly with a further one leaving sooner.
+    Destination: symmetrically, to_stop or `targets` — a place/address
+    destination, where each candidate alighting stop carries the walk time
+    from it to the door, and arrival means arrival AT THE DOOR.
     """
     if sources is not None:
         src_pens = {}
@@ -271,10 +274,17 @@ def plan(tt: Timetable, from_stop, to_stop: str, dep_sec: int,
                     src_pens[i] = pen
     else:
         src_pens = {i: 0 for i in _expand(tt, from_stop)}
-    dst = _expand(tt, to_stop)
-    if not src_pens or not dst:
+    if targets is not None:
+        dst_pen = {}
+        for sid, pen in targets:
+            for i in _expand(tt, sid):
+                if pen < dst_pen.get(i, INF):
+                    dst_pen[i] = pen
+    else:
+        dst_pen = {i: 0 for i in _expand(tt, to_stop)}
+    if not src_pens or not dst_pen:
         return []
-    dst_set = set(dst)
+    dst_set = set(dst_pen)
 
     # tau[k][stop] = earliest arrival using k rides; parent for rebuild
     tau = [dict() for _ in range(MAX_ROUNDS + 1)]
@@ -353,7 +363,9 @@ def plan(tt: Timetable, from_stop, to_stop: str, dep_sec: int,
     out = []
     seen_arr = INF
     for k in range(1, MAX_ROUNDS + 1):
-        arr, at = min(((tau[k].get(d, INF), d) for d in dst_set),
+        # Arrival means arrival at the DOOR: the walk from each candidate
+        # alighting stop weighs into which one wins.
+        arr, at = min(((tau[k].get(d, INF) + dst_pen[d], d) for d in dst_set),
                       key=lambda x: x[0])
         if arr >= seen_arr or arr == INF:
             continue

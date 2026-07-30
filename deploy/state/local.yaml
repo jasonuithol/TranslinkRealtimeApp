@@ -10,7 +10,7 @@ updated: 2026-07-30
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, since: 2026-07-30, reason: "Overture merge: exact-name ranking in places_geocode" }
+  image: { status: pending, since: 2026-07-30, reason: "point destinations: journeys end at the place, not its nearest stop" }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }

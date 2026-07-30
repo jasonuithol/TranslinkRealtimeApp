@@ -161,6 +161,45 @@ one the map hides and the board works unchanged.
 - `/api/feeds` exposes per-region feed health (counts, drops, staleness) for
   quick QC. `?mapdebug=1` logs per-layer rendered-feature counts.
 
+## Code layout
+
+Server side:
+
+- `app.py` — the FastAPI app: every endpoint, the realtime pollers, geocoding
+  (G-NAF → places → Nominatim) and walk routing.
+- `planner.py` — the RAPTOR journey-planner core (pure timetable maths;
+  `app.py` wraps it with realtime and walk legs).
+- `ingest_gtfs.py` / `ingest_gnaf.py` / `ingest_places.py` /
+  `ingest_overture.py` / `ingest_walkgraph.py` — offline builders for the
+  SQLite databases in the data volume (timetables, addresses, businesses/POIs,
+  the walking street graph). Run recipes are in each file's header.
+
+The client is `static/index.html` — now just the markup — plus
+`static/app.css` and thirteen scripts in `static/js/`, split at the original
+single file's section seams. They load **in order** as classic scripts
+sharing one global scope, so a file may only reference earlier files at load
+time; `boot.js` must stay last:
+
+| File | What it holds |
+| --- | --- |
+| `state.js` | URL params, shared page state, region config |
+| `planner-mode.js` | journey-planner mode: destination state and chips |
+| `search.js` | stop / address / place search |
+| `map-core.js` | map shared state, colour pools, mode glyphs, colour assignment |
+| `map-init.js` | `initMap`: basemap, sources, layers, handlers |
+| `map-stops.js` | shape / trip-stop fetchers, stop landmark layers |
+| `map-trip.js` | route drawing, trip selection, the trip stops panel |
+| `map-fx.js` | emoji font + icon rasterising; board↔map linking (vehicle ping, row flash) |
+| `map-vehicles.js` | vehicles on the map: camera moves, view fitting, markers, edge markers |
+| `alerts.js` | the disruption-alert modal |
+| `board.js` | departures board rendering |
+| `planner.js` | journey planner: fetch, itinerary cards, route drawing |
+| `boot.js` | resize handling and page boot |
+
+`static/fonts/` is the self-hosted font subset (including the Noto Emoji
+glyph subset — see the comment in `fonts.css` before adding glyphs) and
+`static/vendor/` the vendored MapLibre/pmtiles and map glyphs.
+
 ## Deployment
 
 CI (GitHub Actions) smoke-tests every push against a mock feed and publishes

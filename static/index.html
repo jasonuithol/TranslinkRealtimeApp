@@ -170,15 +170,15 @@
     display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
   }
   .itin.started { border-color: #2ecc71; }
-  .itin .it-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .itin .it-actions { display: flex; justify-content: center; margin-top: 8px; }
   .itin .it-start {
-    background: none; border: 1px solid var(--line); border-radius: 999px;
-    color: var(--muted); font: inherit; font-size: 12px;
-    padding: 3px 16px; cursor: pointer;
+    background: none; border: 2px solid var(--amber); border-radius: 999px;
+    color: var(--text); font: inherit; font-size: 18px; font-weight: 700;
+    padding: 5px 34px; cursor: pointer;
   }
-  .itin .it-start:hover { color: var(--text); border-color: var(--amber-dim); }
-  .itin .it-start.remove { color: #e5484d; border-color: #7a2a2d; }
-  .itin .it-start.remove:hover { border-color: #e5484d; }
+  .itin .it-start:hover { background: var(--amber); color: #000; }
+  .itin .it-start.remove { color: #e5484d; border-color: #e5484d; }
+  .itin .it-start.remove:hover { background: #e5484d; color: #000; }
 
   /* The stop the arrivals belong to: glyph + name atop the board. */
   .board-head {

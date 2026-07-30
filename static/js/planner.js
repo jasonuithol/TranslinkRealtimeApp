@@ -1,0 +1,404 @@
+// journey planner: fetch, cards, route drawing
+// Split from index.html; these files load in order as classic
+// scripts and share one global scope — boot.js must stay last.
+  // --- planner rendering ---------------------------------------------------
+  const planClock = (epoch) => {
+    try {
+      return new Intl.DateTimeFormat("en-AU", {
+        hour: "2-digit", minute: "2-digit", hour12: false,
+        timeZone: regionTz || undefined,
+      }).format(epoch * 1000);
+    } catch { return new Date(epoch * 1000).toTimeString().slice(0, 5); }
+  };
+
+  async function refreshPlan() {
+    try {
+      // Origin: the viewed stop — or, browsing a pinned address, the
+      // ADDRESS itself (the server walks it to every stop in range).
+      const origin = stopId
+        ? `from=${encodeURIComponent(stopId)}`
+        : `from_lat=${pinParam.lat}&from_lon=${pinParam.lon}`
+          + `&from_label=${encodeURIComponent(pinLabel || "Your address")}`;
+      const dest = toId ? `to=${encodeURIComponent(toId)}`
+        : `to_lat=${toPoint.lat}&to_lon=${toPoint.lon}`
+          + `&to_label=${encodeURIComponent(toName || "Your destination")}`;
+      const res = await fetch(api(`/plan?${origin}&${dest}`));
+      if (!res.ok) throw new Error((await res.json()).detail || res.status);
+      planData = await res.json();
+      // Re-cost the started journey: same anchor time -> same legs, with
+      // whatever realtime says about them NOW. No match (timetable swapped
+      // under us): its last known copy stays frozen rather than vanishing.
+      if (startedPlan) {
+        try {
+          const res2 = await fetch(api(
+            `/plan?${origin}&${dest}&at=${startedPlan.at}`));
+          if (res2.ok) {
+            const d2 = await res2.json();
+            const m = d2.itineraries.find((x) => itinKey(x) === startedPlan.key);
+            if (m) { startedPlan.itin = m; saveStarted(); }
+          }
+        } catch { /* keep the frozen copy */ }
+      }
+      if (planData.to && (!toName || toName === toId)) {
+        toName = planData.to.stop_name;
+        syncPlanUrl();
+        syncChrome();
+      }
+      // Planner mode owns the map: no departures poll, so no vehicles.
+      if (lastData) { lastData.__vehicles = []; lastData.__ghosts = []; }
+      renderPlan();
+      drawPlan();
+      const risky = planData.itineraries.filter((i) => i.at_risk).length;
+      $("status").textContent = "journey plan · refreshed just now"
+        + (risky ? ` · ⚠ ${risky} connection${risky > 1 ? "s" : ""} at risk` : "");
+    } catch (err) {
+      $("board").innerHTML = `<div class="error">${err.message}</div>`;
+    }
+  }
+
+  function renderPlan() {
+    const board = $("board");
+    board.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "board-head";
+    const bhName = document.createElement("span");
+    bhName.textContent =
+      `${planData.from.stop_name} → ${toName || planData.to.stop_name}`;
+    head.append(bhName);
+    board.appendChild(head);
+    // The started journey (if any) is pinned first — a fresh plan may no
+    // longer contain it once its departure has passed.
+    const fresh = planData.itineraries.filter(
+      (it) => !startedPlan || itinKey(it) !== startedPlan.key);
+    const shown = startedPlan ? [startedPlan.itin, ...fresh]
+                              : planData.itineraries;
+    planData.__shown = shown;
+    if (selItin >= shown.length) selItin = 0;
+    if (!shown.length) {
+      board.insertAdjacentHTML("beforeend",
+        `<div class="empty">No journeys found from here today.</div>`);
+      return;
+    }
+    // Same colour machinery as the arrivals board: one vehicle colour per
+    // service — and a walk IS a service here, performed by a "walk vehicle"
+    // (🚶): it draws a colour from the same pool, shared by badge and trace.
+    const colorItems = [];
+    shown.forEach((it, i) => it.legs.forEach((leg, j) =>
+      colorItems.push({ trip_id: leg.kind === "ride" ? leg.trip_id
+                                                     : `walk:${i}:${j}` })));
+    planData.__colors = assignColors(colorItems);
+    shown.forEach((it, i) => {
+      const card = document.createElement("div");
+      card.className = "itin" + (i === selItin ? " selected" : "");
+      card.tabIndex = 0;
+      const pick = () => { selItin = i; planFitted = false; renderPlan(); drawPlan(); };
+      card.addEventListener("click", pick);
+      card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); }
+      });
+      // Countdown to set-off (departure minus any leading walk), top right —
+      // the same object as an arrivals row's countdown, in the colour of
+      // the first thing you must catch (or start walking for).
+      let setOff = it.depart;
+      for (const l of it.legs) {
+        if (l.kind === "ride") break;
+        setOff -= l.secs;
+      }
+      const etaMins = Math.round((setOff - Date.now() / 1000) / 60);
+      const firstLeg = it.legs[0];
+      const firstColor = planData.__colors[
+        firstLeg.kind === "ride" ? firstLeg.trip_id : `walk:${i}:0`] || "#ffb400";
+      const eta = document.createElement("div");
+      eta.className = "eta it-eta";
+      eta.style.setProperty("--vcolor", firstColor);
+      eta.innerHTML = etaMins <= 0
+        ? `<div class="due">DUE</div>`
+        : `<div class="num">${etaMins}</div><div class="unit">MIN</div>`;
+
+      const transfers = it.transfers === 0 ? "direct"
+        : it.transfers === 1 ? "1 transfer" : `${it.transfers} transfers`;
+      const headRow = document.createElement("div");
+      headRow.className = "it-head";
+      headRow.innerHTML =
+        `<span class="it-times">${planClock(it.depart)} → ${planClock(it.arrive)}</span>` +
+        `<span class="it-sub">${it.minutes} min · ${transfers}</span>` +
+        (it.at_risk ? `<span class="it-risk">⚠ connection at risk</span>` : "");
+      headRow.appendChild(eta);
+      card.appendChild(headRow);
+      it.legs.forEach((leg, j) => {
+        if (leg.kind === "walk") {
+          // A walk is a leg like any other: the 🚶 "vehicle", its own pool
+          // colour, the same badge/detail layout as a ride.
+          const vcolor = planData.__colors[`walk:${i}:${j}`] || "#8c98a4";
+          // Times: a walk before a ride is pinned back from that boarding;
+          // a TRAILING walk (to the destination) runs on from the last
+          // arrival.
+          let end = null, start = null;
+          for (let k = j + 1; k < it.legs.length; k++) {
+            if (it.legs[k].kind === "ride") { end = it.legs[k].dep; break; }
+          }
+          if (end != null) {
+            start = end - leg.secs;
+          } else {
+            for (let k = j - 1; k >= 0; k--) {
+              if (it.legs[k].kind === "ride") { start = it.legs[k].arr; break; }
+            }
+            if (start != null) end = start + leg.secs;
+          }
+          const mins = Math.max(1, Math.round(leg.secs / 60));
+          const row = document.createElement("div");
+          row.className = "it-leg";
+          row.style.setProperty("--vcolor", vcolor);
+          row.innerHTML = `
+            <div class="badge" style="color:${vcolor}">
+              <span class="mode">${asText("\u{1F6B6}")}</span>
+              <span class="num wide">${mins} min</span>
+            </div>
+            <div class="it-detail">
+              <span>${escapeHtml(leg.from_name ?? "")}</span>
+            </div>
+            <div class="src-col"></div>
+            <div class="it-times2">
+              <b>${start != null ? planClock(start) : ""}</b>
+            </div>`;
+          card.appendChild(row);
+          return;
+        }
+        // A leg is a board row's language: black badge plate with the mode
+        // glyph and route in the vehicle colour, 🛜/📅 in the same colour.
+        const vcolor = planData.__colors[leg.trip_id] || "#3fb950";
+        const row = document.createElement("div");
+        row.className = "it-leg";
+        row.style.setProperty("--vcolor", vcolor);
+        const routeLabel = leg.route ?? "";
+        const numClass = routeLabel.length > 8 ? "num xwide"
+                       : routeLabel.length > 4 ? "num wide" : "num";
+        const glyph = MODE_EMOJI[leg.route_type] ?? DEFAULT_EMOJI;
+        // Many feeds bake the platform into the stop name already.
+        const plat = (leg.board_platform
+                      && !/platform|stop [a-z0-9]/i.test(leg.board_name))
+          ? ` · Platform ${leg.board_platform}` : "";
+        row.innerHTML = `
+          <div class="badge" style="color:${vcolor}">
+            <span class="mode">${asText(glyph)}</span>
+            <span class="${numClass}">${escapeHtml(routeLabel)}</span>
+          </div>
+          <div class="it-detail">
+            <span>${escapeHtml(leg.board_name)}${plat}</span>
+          </div>
+          <div class="src-col">
+            <span title="${leg.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
+                  >${asText(leg.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span>
+          </div>
+          <div class="it-times2">
+            <b>${planClock(leg.dep)}</b>
+          </div>`;
+        card.appendChild(row);
+      });
+      // The journey's arrival — location AND time — is one dedicated row:
+      // leg rows describe only departures (a leg's arrival always doubled
+      // the next leg's departure).
+      const arriveRow = document.createElement("div");
+      arriveRow.className = "it-arrive";
+      arriveRow.innerHTML =
+        `<span>arrive ${escapeHtml(toName || planData.to.stop_name || "")}</span>`
+        + `<b>${planClock(it.arrive)}</b>`;
+      card.appendChild(arriveRow);
+
+      // Start = commit to this journey (it stops disappearing once its
+      // departure passes); the same button on a started journey removes it.
+      const isStarted = startedPlan && itinKey(it) === startedPlan.key;
+      if (isStarted) card.classList.add("started");
+      const act = document.createElement("div");
+      act.className = "it-actions";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "it-start" + (isStarted ? " remove" : "");
+      btn.textContent = isStarted ? "Remove" : "Start";
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (isStarted) {
+          startedPlan = null;
+        } else {
+          startedPlan = { region, toId: destKey(), key: itinKey(it),
+                          at: it.depart - 60, itin: it };
+        }
+        saveStarted();
+        selItin = 0;
+        planFitted = false;
+        renderPlan();
+        drawPlan();
+      });
+      act.appendChild(btn);
+      card.appendChild(act);
+      board.appendChild(card);
+    });
+  }
+
+  let destMarker = null;
+  function clearPlanLayers() {
+    if (!mapReady) return;
+    for (const src of ["routes", "vehicles", "ghosts", "landmarks", "walklines"]) {
+      const s = map.getSource(src);
+      if (s) s.setData(emptyFC());
+    }
+    if (destMarker) { destMarker.remove(); destMarker = null; }
+  }
+
+  // Walk geometry cache: rounded endpoints -> route points from the local
+  // walking graph, or null (no graph / no coverage) = draw a straight dash.
+  const walkRouteCache = new Map(), walkRoutePending = new Set();
+  const walkKey = (a, b) =>
+    [a, b].map((p) => p.map((x) => x.toFixed(5)).join(",")).join("|");
+  async function ensureWalkRoute(a, b) {
+    const key = walkKey(a, b);
+    if (walkRouteCache.has(key) || walkRoutePending.has(key)) return;
+    walkRoutePending.add(key);
+    try {
+      const res = await fetch(
+        `/api/walkroute?from_lat=${a[1]}&from_lon=${a[0]}`
+        + `&to_lat=${b[1]}&to_lon=${b[0]}`);
+      walkRouteCache.set(key, res.ok ? (await res.json()).points : null);
+      if (planData) drawPlan();
+    } catch {
+      walkRouteCache.set(key, null);
+    } finally {
+      walkRoutePending.delete(key);
+    }
+  }
+
+  // Cut a trip's full shape down to the ridden slice: nearest shape vertex
+  // to the boarding stop, then nearest vertex to the alighting stop AFTER it
+  // (shapes follow travel direction — searching forward keeps loops honest).
+  function sliceShapeBetween(pts, a, b) {
+    const coslat = Math.cos((a[1] * Math.PI) / 180) ** 2;
+    const nearest = (p, from) => {
+      let bi = from, bd = Infinity;
+      for (let i = from; i < pts.length; i++) {
+        const dx = pts[i][0] - p[0], dy = pts[i][1] - p[1];
+        const d = dx * dx * coslat + dy * dy;
+        if (d < bd) { bd = d; bi = i; }
+      }
+      return bi;
+    };
+    const i = nearest(a, 0);
+    const j = nearest(b, i);
+    return j > i ? pts.slice(i, j + 1) : null;
+  }
+
+  // The selected itinerary on the map: each ride leg drawn along its trip's
+  // REAL shape, sliced between board and alight (falling back to
+  // stop-to-stop lines while the shape loads, or if the trip has none);
+  // transfer points as landmarks, the destination as a green marker.
+  function drawPlan() {
+    if (!mapReady || !planData || !hasDest()) return;
+    const it = (planData.__shown || planData.itineraries)[selItin];
+    if (!it) { clearPlanLayers(); return; }
+    const lines = [], marks = [];
+    let waiting = false;
+    for (const leg of it.legs) {
+      if (leg.kind !== "ride") continue;
+      const stops = tripStopsCache.get(leg.trip_id);
+      if (!stops) { ensureTripStops(leg.trip_id); waiting = true; continue; }
+      const bi = stops.findIndex((s) => s.stop_id === leg.board);
+      const ai = stops.findIndex((s) => s.stop_id === leg.alight);
+      if (bi < 0 || ai < 0) continue;
+      const seg = stops.slice(Math.min(bi, ai), Math.max(bi, ai) + 1);
+      let coords = seg.map((s) => [s.lon, s.lat]);
+      if (leg.shape_id) {
+        const pts = shapeCache.get(leg.shape_id);
+        if (pts === undefined) { ensureShape(leg.shape_id, region); waiting = true; }
+        else if (pts && pts.length > 1) {
+          const sliced = sliceShapeBetween(
+            pts, coords[0], coords[coords.length - 1]);
+          if (sliced && sliced.length > 1) coords = sliced;
+        }
+      }
+      lines.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: coords },
+        // Same vehicle colour as the leg's badge — board and map agree.
+        properties: { color: (planData.__colors || {})[leg.trip_id] || "#3fb950" },
+      });
+      for (const end of [seg[0], seg[seg.length - 1]]) {
+        marks.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [end.lon, end.lat] },
+          properties: {
+            stop_id: end.stop_id, name: end.stop_name,
+            icon: ensureVehicleIcon(landmarkGlyph(end.route_type), LANDMARK_INK),
+          },
+        });
+      }
+    }
+    map.getSource("routes").setData({ type: "FeatureCollection", features: lines });
+    map.getSource("landmarks").setData({ type: "FeatureCollection", features: marks });
+    map.getSource("vehicles").setData(emptyFC());
+    map.getSource("ghosts").setData(emptyFC());
+
+    // Walks are the gaps between rides: origin -> first board, alight ->
+    // next board. Drawn dashed along the walking graph, in the SAME pool
+    // colour as the walk leg's badge — the walk is a vehicle here.
+    const walks = [];
+    let cursor = (planData.from && planData.from.stop_lat != null)
+      ? [planData.from.stop_lon, planData.from.stop_lat] : null;
+    let gapWalkIdx = null;
+    it.legs.forEach((leg, j) => {
+      if (leg.kind === "walk") { if (gapWalkIdx === null) gapWalkIdx = j; return; }
+      if (cursor && leg.board_lat != null) {
+        const b = [leg.board_lon, leg.board_lat];
+        const dm = Math.hypot((b[0] - cursor[0]) * 88000,
+                              (b[1] - cursor[1]) * 111000);
+        if (dm > 25) {   // sub-25 m "walks" are platform hops, not journeys
+          const key = walkKey(cursor, b);
+          let pts = walkRouteCache.get(key);
+          if (pts === undefined) { ensureWalkRoute(cursor, b); pts = null; }
+          walks.push({
+            type: "Feature",
+            geometry: { type: "LineString",
+                        coordinates: pts || [cursor, b] },
+            properties: {
+              color: gapWalkIdx !== null
+                ? (planData.__colors || {})[`walk:${selItin}:${gapWalkIdx}`]
+                : undefined,
+            },
+          });
+        }
+      }
+      if (leg.alight_lat != null) cursor = [leg.alight_lon, leg.alight_lat];
+      gapWalkIdx = null;
+    });
+    // A TRAILING walk (last leg, no ride after it) ends at the destination.
+    if (gapWalkIdx !== null && cursor && planData.to
+        && planData.to.stop_lat != null) {
+      const b = [planData.to.stop_lon, planData.to.stop_lat];
+      const dm = Math.hypot((b[0] - cursor[0]) * 88000,
+                            (b[1] - cursor[1]) * 111000);
+      if (dm > 25) {
+        const key = walkKey(cursor, b);
+        let pts = walkRouteCache.get(key);
+        if (pts === undefined) { ensureWalkRoute(cursor, b); pts = null; }
+        walks.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: pts || [cursor, b] },
+          properties: {
+            color: (planData.__colors || {})[`walk:${selItin}:${gapWalkIdx}`],
+          },
+        });
+      }
+    }
+    map.getSource("walklines").setData(
+      { type: "FeatureCollection", features: walks });
+    if (!destMarker && planData.to
+        && planData.to.stop_lat != null && planData.to.stop_lon != null) {
+      destMarker = new maplibregl.Marker({ color: "#2ecc71" })
+        .setLngLat([planData.to.stop_lon, planData.to.stop_lat]).addTo(map);
+    }
+    if (!planFitted && lines.length && !waiting) {
+      const b = new maplibregl.LngLatBounds();
+      for (const l of lines) for (const c of l.geometry.coordinates) b.extend(c);
+      if (pinParam) b.extend([pinParam.lon, pinParam.lat]);  // the front door
+      cameraMove(() => map.fitBounds(b, { padding: 70, maxZoom: 15.5 }));
+      planFitted = true;
+    }
+  }

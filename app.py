@@ -585,11 +585,14 @@ async def revalidate_unhashed_assets(request, call_next):
     heuristically and miss an update — most sharply a font subset change, which
     silently drops a newly-added glyph back to the colour-emoji font. `no-cache`
     forces a conditional request each load (a cheap 304 while unchanged), so the
-    whole chain — index.html -> fonts.css -> the woff2 — is picked up on the next
-    reload. The basemap and vendored JS are left cacheable: large and stable."""
+    whole chain — index.html -> app.css/js -> fonts.css -> the woff2 — is picked
+    up on the next reload. The app's own scripts under /static/js are part of
+    that chain (they were index.html until they were split out). The basemap
+    and vendored JS are left cacheable: large and stable."""
     response = await call_next(request)
     path = request.url.path
-    if path == "/" or path.endswith((".css", ".woff2", ".json")):
+    if (path == "/" or path.endswith((".css", ".woff2", ".json"))
+            or path.startswith("/static/js/")):
         response.headers["Cache-Control"] = "no-cache"
     return response
 

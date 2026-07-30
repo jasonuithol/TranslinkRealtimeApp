@@ -1813,6 +1813,7 @@
       if (res.ok) {
         shapeCache.set(shapeId, (await res.json()).points);
         if (lastData) drawRoutes(lastData);   // redraw once it lands
+        if (planData) drawPlan();             // planner legs wait on shapes too
       } else {
         shapeCache.set(shapeId, null);        // no geometry; stop asking
       }
@@ -2898,9 +2899,29 @@
     if (destMarker) { destMarker.remove(); destMarker = null; }
   }
 
-  // The selected itinerary on the map: each ride leg drawn stop-to-stop from
-  // its trip's ordered stops (good-enough geometry, one cached fetch per
-  // trip), transfer points as landmarks, the destination as a green marker.
+  // Cut a trip's full shape down to the ridden slice: nearest shape vertex
+  // to the boarding stop, then nearest vertex to the alighting stop AFTER it
+  // (shapes follow travel direction — searching forward keeps loops honest).
+  function sliceShapeBetween(pts, a, b) {
+    const coslat = Math.cos((a[1] * Math.PI) / 180) ** 2;
+    const nearest = (p, from) => {
+      let bi = from, bd = Infinity;
+      for (let i = from; i < pts.length; i++) {
+        const dx = pts[i][0] - p[0], dy = pts[i][1] - p[1];
+        const d = dx * dx * coslat + dy * dy;
+        if (d < bd) { bd = d; bi = i; }
+      }
+      return bi;
+    };
+    const i = nearest(a, 0);
+    const j = nearest(b, i);
+    return j > i ? pts.slice(i, j + 1) : null;
+  }
+
+  // The selected itinerary on the map: each ride leg drawn along its trip's
+  // REAL shape, sliced between board and alight (falling back to
+  // stop-to-stop lines while the shape loads, or if the trip has none);
+  // transfer points as landmarks, the destination as a green marker.
   function drawPlan() {
     if (!mapReady || !planData || !toId) return;
     const it = planData.itineraries[selItin];
@@ -2915,10 +2936,19 @@
       const ai = stops.findIndex((s) => s.stop_id === leg.alight);
       if (bi < 0 || ai < 0) continue;
       const seg = stops.slice(Math.min(bi, ai), Math.max(bi, ai) + 1);
+      let coords = seg.map((s) => [s.lon, s.lat]);
+      if (leg.shape_id) {
+        const pts = shapeCache.get(leg.shape_id);
+        if (pts === undefined) { ensureShape(leg.shape_id, region); waiting = true; }
+        else if (pts && pts.length > 1) {
+          const sliced = sliceShapeBetween(
+            pts, coords[0], coords[coords.length - 1]);
+          if (sliced && sliced.length > 1) coords = sliced;
+        }
+      }
       lines.push({
         type: "Feature",
-        geometry: { type: "LineString",
-                    coordinates: seg.map((s) => [s.lon, s.lat]) },
+        geometry: { type: "LineString", coordinates: coords },
         // Same vehicle colour as the leg's badge — board and map agree.
         properties: { color: (planData.__colors || {})[leg.trip_id] || "#3fb950" },
       });

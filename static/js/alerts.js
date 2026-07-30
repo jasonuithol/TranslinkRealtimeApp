@@ -48,16 +48,3 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("alert-modal").hidden) closeAlerts();
   });
-
-  // Map -> board row. Flash the matching row and bring it into view.
-  let flashTimer = null;
-  function flashRow(tripId) {
-    const row = document.querySelector(`.row[data-trip="${CSS.escape(tripId)}"]`);
-    if (!row) return;
-    clearTimeout(flashTimer);
-    document.querySelectorAll(".row.flash").forEach((r) => r.classList.remove("flash"));
-    void row.offsetWidth;             // restart the animation if it is re-clicked
-    row.classList.add("flash");
-    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    flashTimer = setTimeout(() => row.classList.remove("flash"), 2200);
-  }

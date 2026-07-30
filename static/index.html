@@ -1829,6 +1829,7 @@
       map.on("zoomend", maybeLoadAllStops);
       maybeLoadAllStops();  // in case the map starts past the threshold
       loadPinSurrounds();   // pin present: draw + fit its surrounding stops
+      if (planData) drawPlan();   // a plan booted before the map was ready
       if (lastData) updateMap(lastData);
     });
 

@@ -26,7 +26,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, since: 2026-07-31, reason: "titlebar chips (Change address / cancel journey / Plan a trip) 50% bigger, amber-bright" }
+  image: { status: pending, since: 2026-07-31, reason: "journey card: leg-coloured descriptions, right-aligned time column, arrivals-style countdown" }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.

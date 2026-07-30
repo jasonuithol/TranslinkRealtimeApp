@@ -161,6 +161,7 @@
   }
   /* Legs reuse the arrivals row's parts (.badge/.mode/.num/.src-col) so the
      two boards speak one visual language — only the layout shell differs. */
+  .itin { position: relative; }
   .itin .it-leg {
     display: flex; gap: 12px; align-items: center;
     padding: 5px 0; font-size: 13px;
@@ -168,7 +169,18 @@
   }
   .itin .it-detail {
     display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
+    color: var(--vcolor);   /* the route description speaks its leg colour */
   }
+  /* Times in their own right-aligned column, clear of the names. */
+  .itin .it-times2 {
+    display: flex; flex-direction: column; gap: 2px; flex: none;
+    align-items: flex-end; min-width: 46px;
+    font-family: "IBM Plex Mono", monospace; font-size: 13px;
+  }
+  /* Countdown to set-off, top right — same object as an arrivals row's.
+     In the header row's flow (margin-left:auto), so it can never collide
+     with the leg time columns below. */
+  .itin .it-eta { margin-left: auto; align-self: flex-start; }
   .itin.started { border-color: #2ecc71; }
   .itin .it-actions { display: flex; justify-content: center; margin-top: 8px; }
   .itin .it-start {
@@ -2928,6 +2940,25 @@
       card.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); }
       });
+      // Countdown to set-off (departure minus any leading walk), top right —
+      // the same object as an arrivals row's countdown, in the colour of
+      // the first thing you must catch (or start walking for).
+      let setOff = it.depart;
+      for (const l of it.legs) {
+        if (l.kind === "ride") break;
+        setOff -= l.secs;
+      }
+      const etaMins = Math.round((setOff - Date.now() / 1000) / 60);
+      const firstLeg = it.legs[0];
+      const firstColor = planData.__colors[
+        firstLeg.kind === "ride" ? firstLeg.trip_id : `walk:${i}:0`] || "#ffb400";
+      const eta = document.createElement("div");
+      eta.className = "eta it-eta";
+      eta.style.setProperty("--vcolor", firstColor);
+      eta.innerHTML = etaMins <= 0
+        ? `<div class="due">DUE</div>`
+        : `<div class="num">${etaMins}</div><div class="unit">MIN</div>`;
+
       const transfers = it.transfers === 0 ? "direct"
         : it.transfers === 1 ? "1 transfer" : `${it.transfers} transfers`;
       const headRow = document.createElement("div");
@@ -2936,6 +2967,7 @@
         `<span class="it-times">${planClock(it.depart)} → ${planClock(it.arrive)}</span>` +
         `<span class="it-sub">${it.minutes} min · ${transfers}</span>` +
         (it.at_risk ? `<span class="it-risk">⚠ connection at risk</span>` : "");
+      headRow.appendChild(eta);
       card.appendChild(headRow);
       it.legs.forEach((leg, j) => {
         if (leg.kind === "walk") {
@@ -2967,12 +2999,14 @@
               <span class="num wide">${mins} min</span>
             </div>
             <div class="it-detail">
-              <span>${escapeHtml(leg.from_name ?? "")}${
-                start != null ? ` <b>${planClock(start)}</b>` : ""}</span>
-              <span>→ ${escapeHtml(leg.to_name ?? "")}${
-                end != null ? ` <b>${planClock(end)}</b>` : ""}</span>
+              <span>${escapeHtml(leg.from_name ?? "")}</span>
+              <span>→ ${escapeHtml(leg.to_name ?? "")}</span>
             </div>
-            <div class="src-col"></div>`;
+            <div class="src-col"></div>
+            <div class="it-times2">
+              <b>${start != null ? planClock(start) : ""}</b>
+              <b>${end != null ? planClock(end) : ""}</b>
+            </div>`;
           card.appendChild(row);
           return;
         }
@@ -2996,13 +3030,16 @@
             <span class="${numClass}">${escapeHtml(routeLabel)}</span>
           </div>
           <div class="it-detail">
-            <span>${escapeHtml(leg.board_name)}${plat}
-              <b>${planClock(leg.dep)}</b></span>
-            <span>→ ${escapeHtml(leg.alight_name)} <b>${planClock(leg.arr)}</b></span>
+            <span>${escapeHtml(leg.board_name)}${plat}</span>
+            <span>→ ${escapeHtml(leg.alight_name)}</span>
           </div>
           <div class="src-col">
             <span title="${leg.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
                   >${asText(leg.realtime ? MARK_LIVE : MARK_SCHEDULED)}</span>
+          </div>
+          <div class="it-times2">
+            <b>${planClock(leg.dep)}</b>
+            <b>${planClock(leg.arr)}</b>
           </div>`;
         card.appendChild(row);
       });

@@ -171,11 +171,22 @@
     display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
     color: var(--vcolor);   /* the route description speaks its leg colour */
   }
-  /* Times in their own right-aligned column, clear of the names. */
+  /* Departure time in its own right-aligned column, leg-coloured. */
   .itin .it-times2 {
     display: flex; flex-direction: column; gap: 2px; flex: none;
     align-items: flex-end; min-width: 46px;
     font-family: "IBM Plex Mono", monospace; font-size: 13px;
+    color: var(--vcolor);
+  }
+  /* The journey's arrival: one dedicated row under the legs, plain ink. */
+  .itin .it-arrive {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 6px 0 0 10px; margin-top: 2px;
+    border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+  .itin .it-arrive b {
+    font-family: "IBM Plex Mono", monospace; color: var(--text);
   }
   /* Countdown to set-off, top right — same object as an arrivals row's.
      In the header row's flow (margin-left:auto), so it can never collide
@@ -3000,12 +3011,10 @@
             </div>
             <div class="it-detail">
               <span>${escapeHtml(leg.from_name ?? "")}</span>
-              <span>→ ${escapeHtml(leg.to_name ?? "")}</span>
             </div>
             <div class="src-col"></div>
             <div class="it-times2">
               <b>${start != null ? planClock(start) : ""}</b>
-              <b>${end != null ? planClock(end) : ""}</b>
             </div>`;
           card.appendChild(row);
           return;
@@ -3031,7 +3040,6 @@
           </div>
           <div class="it-detail">
             <span>${escapeHtml(leg.board_name)}${plat}</span>
-            <span>→ ${escapeHtml(leg.alight_name)}</span>
           </div>
           <div class="src-col">
             <span title="${leg.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"
@@ -3039,10 +3047,19 @@
           </div>
           <div class="it-times2">
             <b>${planClock(leg.dep)}</b>
-            <b>${planClock(leg.arr)}</b>
           </div>`;
         card.appendChild(row);
       });
+      // The journey's arrival — location AND time — is one dedicated row:
+      // leg rows describe only departures (a leg's arrival always doubled
+      // the next leg's departure).
+      const arriveRow = document.createElement("div");
+      arriveRow.className = "it-arrive";
+      arriveRow.innerHTML =
+        `<span>arrive ${escapeHtml(toName || planData.to.stop_name || "")}</span>`
+        + `<b>${planClock(it.arrive)}</b>`;
+      card.appendChild(arriveRow);
+
       // Start = commit to this journey (it stops disappearing once its
       // departure passes); the same button on a started journey removes it.
       const isStarted = startedPlan && itinKey(it) === startedPlan.key;

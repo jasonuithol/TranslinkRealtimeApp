@@ -826,9 +826,10 @@
     // The button only serves a pinned browse, to search a different address.
     $("change-stop").hidden = Boolean(stopId) || !pinnedBrowse;
     $("change-stop").textContent = "Change address";
-    // Planner entry/exit: with a stop viewed, offer a destination; with a
-    // destination set, the same button cancels back to the plain board.
-    $("plan-to").hidden = !stopId;
+    // Planner entry/exit: available from a stop OR a pinned address (the
+    // trip then STARTS at the address — first leg is the walk to a stop).
+    // With a destination set, the same button cancels back.
+    $("plan-to").hidden = !stopId && !pinnedBrowse;
     $("plan-to").textContent = toId ? `✕ to ${toName || "destination"}`
                                     : "Plan a trip";
     if (!searchOpen) $("results").hidden = true;
@@ -879,6 +880,9 @@
     syncChrome();
     $("board").innerHTML = `<div class="empty">Planning…</div>`;
     refresh();
+    // A pinned-address plan has no stop selected, so no poll is running yet.
+    clearInterval(timer);
+    timer = setInterval(refresh, 15000);
   }
 
   function cancelPlan() {
@@ -886,6 +890,15 @@
     clearPlanLayers();
     syncPlanUrl();
     syncChrome();
+    if (!stopId) {
+      // back to the pinned browse: stops on the map, empty board
+      clearInterval(timer);
+      $("board").innerHTML = `<div class="empty placeholder">
+        <div>Select a stop to see departures.</div>
+        <div class="ph-icon">&#x1F570;&#xFE0E;</div></div>`;
+      drawLandmarks();   // restore the pin's surrounding stops
+      return;
+    }
     refresh();
   }
 
@@ -2740,8 +2753,8 @@
   }
 
   async function refresh() {
+    if (toId && (stopId || pinnedBrowse)) return refreshPlan();
     if (!stopId) return;
-    if (toId) return refreshPlan();
     try {
       const res = await fetch(api(`/departures/${stopId}`));
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
@@ -2767,8 +2780,14 @@
 
   async function refreshPlan() {
     try {
+      // Origin: the viewed stop — or, browsing a pinned address, the
+      // ADDRESS itself (the server walks it to every stop in range).
+      const origin = stopId
+        ? `from=${encodeURIComponent(stopId)}`
+        : `from_lat=${pinParam.lat}&from_lon=${pinParam.lon}`
+          + `&from_label=${encodeURIComponent(pinLabel || "Your address")}`;
       const res = await fetch(api(
-        `/plan?from=${encodeURIComponent(stopId)}&to=${encodeURIComponent(toId)}`));
+        `/plan?${origin}&to=${encodeURIComponent(toId)}`));
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
       planData = await res.json();
       if (planData.to && (!toName || toName === toId)) {
@@ -2830,7 +2849,8 @@
         if (leg.kind === "walk") {
           const w = document.createElement("div");
           w.className = "it-walk";
-          w.textContent = `↳ walk ${Math.max(1, Math.round(leg.secs / 60))} min`;
+          w.textContent = `↳ walk ${Math.max(1, Math.round(leg.secs / 60))} min`
+            + (leg.to_name ? ` to ${leg.to_name}` : "");
           card.appendChild(w);
           continue;
         }
@@ -2925,6 +2945,7 @@
     if (!planFitted && lines.length && !waiting) {
       const b = new maplibregl.LngLatBounds();
       for (const l of lines) for (const c of l.geometry.coordinates) b.extend(c);
+      if (pinParam) b.extend([pinParam.lon, pinParam.lat]);  // the front door
       cameraMove(() => map.fitBounds(b, { padding: 70, maxZoom: 15.5 }));
       planFitted = true;
     }
@@ -2946,6 +2967,11 @@
   syncChrome();
   initMap();
   if (stopId) selectStop(stopId);
+  else if (toId && pinnedBrowse) {
+    // A reloaded/shared address-origin plan: start polling it directly.
+    refresh();
+    timer = setInterval(refresh, 15000);
+  }
   // ?q= deep-links a search: prefill the box and run it as if typed.
   const preQ = new URLSearchParams(location.search).get("q");
   if (preQ && !stopId) {

@@ -1479,13 +1479,22 @@ def _rt_time_for(st_rt: dict, trip_id: str, stop_id: str, seq: int | None,
 
 @app.get("/api/r/{region}/plan")
 @app.get("/api/plan")
-def plan_endpoint(to: str, from_stop: str = Query(alias="from"),
+def plan_endpoint(to: str, from_stop: str | None = Query(None, alias="from"),
+                  from_lat: float | None = None, from_lon: float | None = None,
+                  from_label: str | None = None,
                   at: int | None = None, region: str = "seq"):
+    """Origin is either a stop (?from=) or a POINT (?from_lat/from_lon —
+    a searched address / geolocation): every stop within walking range
+    seeds the search pre-charged with its walking time, and the winning
+    itinerary's first leg is that walk."""
     cfg, st = region_cfg(region), STATE[region]
+    if from_stop is None and (from_lat is None or from_lon is None):
+        raise HTTPException(400, "Give either from= or from_lat=&from_lon=")
     con = db(region)
     try:
         names = {}
-        for sid in (from_stop, to):
+        check_ids = [to] if from_stop is None else [from_stop, to]
+        for sid in check_ids:
             row = con.execute(
                 "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops "
                 "WHERE stop_id=?", (sid,)).fetchone()
@@ -1505,7 +1514,40 @@ def plan_endpoint(to: str, from_stop: str = Query(alias="from"),
         tt = journey.get_timetable(region, cfg["db"], dates,
                                    tsn_family=(region in TSN_REGIONS))
         dep_sec = int((now - midnight).total_seconds())
-        raw = journey.plan(tt, from_stop, to, dep_sec)
+
+        sources = None
+        seed_pen: dict = {}
+        if from_stop is None:
+            near = nearby_stops(from_lat, from_lon, limit=10, region=region)
+            near = [s for s in near if s["dist_m"] <= 1000]
+            if not near:
+                raise HTTPException(404, "No stops within walking range "
+                                         "of the origin")
+            sources = []
+            for s in near:
+                pen = max(60, int(s["dist_m"] * journey.WALK_DETOUR
+                                  / journey.WALK_SPEED_MPS))
+                sources.append((s["stop_id"], pen))
+                # reconstruction may end on any member of the seed's group
+                for member in tt.group_of.get(s["stop_id"], {s["stop_id"]}):
+                    if pen < seed_pen.get(member, 1 << 30):
+                        seed_pen[member] = pen
+            names["__origin__"] = {
+                "stop_id": None, "stop_name": from_label or "Your address",
+                "stop_lat": from_lat, "stop_lon": from_lon,
+            }
+        raw = journey.plan(tt, from_stop, to, dep_sec, sources=sources)
+        # An address origin owes its walk to the first stop as a visible leg.
+        if sources is not None:
+            for it in raw:
+                if not it["legs"]:
+                    continue
+                first = it["legs"][0]
+                seed = first["board"] if first["kind"] == "ride" else first["from"]
+                pen = seed_pen.get(seed)
+                if pen:
+                    it["legs"].insert(0, {"kind": "walk", "from": None,
+                                          "to": seed, "secs": pen})
 
         mid_epoch = int(midnight.timestamp())
         itineraries = []
@@ -1519,7 +1561,9 @@ def plan_endpoint(to: str, from_stop: str = Query(alias="from"),
                     pending_walk += leg["secs"]
                     legs.append({
                         "kind": "walk", "secs": leg["secs"],
-                        "from_name": _stop_name(con, leg["from"]),
+                        "from_name": (names["__origin__"]["stop_name"]
+                                      if leg["from"] is None
+                                      else _stop_name(con, leg["from"])),
                         "to_name": _stop_name(con, leg["to"]),
                     })
                     continue
@@ -1591,7 +1635,8 @@ def plan_endpoint(to: str, from_stop: str = Query(alias="from"),
         con.close()
 
     return {
-        "from": names[from_stop], "to": names[to],
+        "from": names["__origin__"] if from_stop is None else names[from_stop],
+        "to": names[to],
         "generated_at": int(time.time()),
         "realtime_configured": bool(cfg["trip_updates"]),
         "itineraries": itineraries,

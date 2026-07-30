@@ -249,18 +249,30 @@ def _expand(tt: Timetable, stop_id: str) -> list:
     return [tt.stop_index[s] for s in ids if s in tt.stop_index]
 
 
-def plan(tt: Timetable, from_stop: str, to_stop: str, dep_sec: int,
-         max_itineraries: int = 4) -> list:
+def plan(tt: Timetable, from_stop, to_stop: str, dep_sec: int,
+         max_itineraries: int = 4, sources=None) -> list:
     """RAPTOR: earliest arrival per transfer count. Returns up to
     max_itineraries pareto itineraries (more rides only if strictly faster),
     each a list of legs:
       {"kind": "ride", "trip_id", "board": stop_id, "alight": stop_id,
        "dep_sec", "arr_sec"}
       {"kind": "walk", "from": stop_id, "to": stop_id, "secs"}
+
+    Origin: either from_stop (a stop id, expanded to its station group) or
+    `sources` = [(stop_id, penalty_secs), ...] — an ADDRESS origin, seeded
+    with each walkable stop pre-charged its walking time, so a closer stop
+    with a later service competes fairly with a further one leaving sooner.
     """
-    src = _expand(tt, from_stop)
+    if sources is not None:
+        src_pens = {}
+        for sid, pen in sources:
+            for i in _expand(tt, sid):
+                if pen < src_pens.get(i, INF):
+                    src_pens[i] = pen
+    else:
+        src_pens = {i: 0 for i in _expand(tt, from_stop)}
     dst = _expand(tt, to_stop)
-    if not src or not dst:
+    if not src_pens or not dst:
         return []
     dst_set = set(dst)
 
@@ -278,14 +290,16 @@ def plan(tt: Timetable, from_stop: str, to_stop: str, dep_sec: int,
         return False
 
     marked = set()
-    for s in src:
-        tau[0][s] = dep_sec
-        best[s] = dep_sec
-        marked.add(s)
+    for s, pen in src_pens.items():
+        t0 = dep_sec + pen
+        if t0 < tau[0].get(s, INF):
+            tau[0][s] = t0
+            best[s] = t0
+            marked.add(s)
     # walking straight from the origin counts as round 0
     for s in list(marked):
         for v, w in tt.foot.get(s, ()):
-            if settle(0, v, dep_sec + w, ("walk", s, 0, w)):
+            if settle(0, v, tau[0][s] + w, ("walk", s, 0, w)):
                 marked.add(v)
 
     for k in range(1, MAX_ROUNDS + 1):

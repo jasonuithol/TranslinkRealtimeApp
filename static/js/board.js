@@ -42,7 +42,7 @@
       close.type = "button";
       close.className = "bh-close";
       close.title = "Close this stop";
-      close.textContent = "✕";
+      close.textContent = "×";   // ×, as the search box's close uses
       close.addEventListener("click", () => {
         location.href = `?region=${encodeURIComponent(region)}`
           + `&at=${pinRaw},16&pin=${pinRaw}`

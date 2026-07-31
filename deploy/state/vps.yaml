@@ -6,7 +6,11 @@
 #   blocked   — can't deploy yet; reason says what it's waiting on
 #
 # WORKFLOW: whoever changes a deployable asset flips its component to
-# pending (Claude does this as part of any such change). Then deploy with:
+# pending (Claude does this as part of any such change) — but only when the
+# change can alter behaviour: code, markup, styles, dependencies, the
+# Containerfile. Comment/doc-only edits inside shipped files don't warrant a
+# flip; the nightly auto-update or the next real change carries them along.
+# Then deploy with:
 #   ./deploy/deploy.sh vps        (--dry-run to see the plan first)
 # which deploys exactly the pending components and flips them back to
 # deployed. `./deploy/status.sh` lists everything pending/blocked.

@@ -135,6 +135,11 @@ code works today belongs in README.md and the code itself, not here.
 - State-file component lines are single-line YAML maps ON PURPOSE — the
   deploy scripts rewrite them with sed. Keep the format; no double quotes
   inside reasons.
+- **Flip a component to pending only when the change can alter behaviour**
+  (code, markup, styles, dependencies, Containerfile). Comment/doc-only
+  edits inside shipped files don't warrant a flip or a redeploy — the
+  nightly auto-update or the next real change carries them along
+  (2026-07-31, after a pointless restart over two comment edits).
 - A pending image can fix itself overnight (the VPS also pulls daily via
   podman-auto-update); pending means "not yet confirmed on the target".
 - The live quadlet units carry injected keys, so update-vps.sh must never

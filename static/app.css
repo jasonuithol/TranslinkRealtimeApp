@@ -205,6 +205,17 @@
     padding: 2px 6px 10px; margin-bottom: 8px;
     border-bottom: 1px solid var(--line);
   }
+  /* ✕ closes the stop card back to the pinned address. Same amber-border
+     language as the Change-address / cancel chips. */
+  .board-head .bh-close {
+    margin-left: auto; flex: none;
+    width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: none; color: var(--text);
+    border: 2px solid var(--amber); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 0;
+  }
+  .board-head .bh-close:hover { background: var(--amber); color: #000; }
   /* Monochrome, bright white — the exact ink of the viewed-stop marker on
      the map (LANDMARK_SELECTED_INK), so heading and marker read as one.
      The Noto Emoji face is what makes it monochrome: without it, browsers

@@ -121,10 +121,13 @@
       headRow.className = "it-head";
       headRow.innerHTML =
         `<span class="it-times">${planClock(it.depart)} → ${planClock(it.arrive)}</span>` +
-        `<span class="it-sub">${it.minutes} min · ${transfers}</span>` +
-        (it.at_risk ? `<span class="it-risk">⚠ connection at risk</span>` : "");
+        `<span class="it-sub">${it.minutes} min · ${transfers}</span>`;
       headRow.appendChild(eta);
       card.appendChild(headRow);
+      // The connection warning belongs to the SERVICE that might be missed,
+      // not the whole journey — and only the first such leg: once that
+      // connection breaks, everything after it is moot.
+      const firstRisk = it.legs.findIndex((l) => l.at_risk);
       it.legs.forEach((leg, j) => {
         if (leg.kind === "walk") {
           // A walk is a leg like any other: the 🚶 "vehicle", its own pool
@@ -185,6 +188,8 @@
           </div>
           <div class="it-detail">
             <span>${escapeHtml(leg.board_name)}${plat}</span>
+            ${j === firstRisk
+              ? `<span class="it-risk">⚠ connection at risk</span>` : ""}
           </div>
           <div class="src-col">
             <span title="${leg.realtime ? "Live Location Feed" : "Scheduled/Estimated"}"

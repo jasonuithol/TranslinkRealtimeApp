@@ -154,7 +154,11 @@
      two boards speak one visual language — only the layout shell differs. */
   .itin { position: relative; }
   .itin .it-leg {
-    display: flex; gap: 12px; align-items: center;
+    display: grid;
+    /* badge | departure description | source mark | time — a fixed badge
+       column (like .row's) so descriptions line up across legs. */
+    grid-template-columns: 130px 1fr auto auto;
+    gap: 12px; align-items: center;
     padding: 5px 0; font-size: 13px;
     border-left: 3px solid var(--vcolor); padding-left: 10px;
   }

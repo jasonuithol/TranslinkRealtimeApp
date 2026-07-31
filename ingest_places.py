@@ -82,38 +82,56 @@ def poi_of(tags):
     for key in POI_KEYS:
         val = tags.get(key)
         if val and val not in ("yes", "no") and val not in NOISE:
+            # Only a FALLBACK for places beyond G-NAF's reach — see
+            # address_buckets() for why G-NAF outranks the mapper's tag.
             suburb = tags.get("addr:suburb") or tags.get("addr:city") or ""
             return val.replace("_", " "), name, suburb
     return None
 
 
-def locality_grid():
-    """cell -> (suburb, state), derived from G-NAF: most OSM POIs carry no
-    addr:suburb, but "bunnings burleigh" is how people actually search —
-    the suburb has to come from somewhere, and we own 10M geocoded
-    addresses that know theirs."""
+def address_buckets():
+    """cell -> [(lat, lon, street_id)] plus street -> (locality, state).
+    The NEAREST G-NAF address decides a place's suburb, and G-NAF is the
+    authority even when OSM carries its own addr:suburb tag — mapper tags
+    sit on the wrong side of a boundary often enough (Officeworks Robina
+    tagged Mudgeeraba), and the earlier first-wins cell grid mislabelled
+    boundary shops the same way (Pizza 1 on the Miami/Burleigh Waters
+    line). "bunnings burleigh" is how people actually search — the suburb
+    has to be the one the searcher would say."""
     gnaf = GTFS_DB.parent / "gnaf.sqlite3"
-    grid = {}
     if not gnaf.exists():
         print("no gnaf.sqlite3 — places keep only OSM's own addr:suburb tags")
-        return grid
+        return {}, {}
     con = sqlite3.connect(gnaf)
-    rows = con.execute(
-        "SELECT s.locality, s.state, a.lat, a.lon "
-        "FROM addresses a JOIN streets s ON s.id = a.street_id")
-    for locality, state, lat, lon in rows:
-        grid.setdefault(cell_key(lat, lon), (locality.title(), state))
+    street_loc = {sid: (loc.title(), st) for sid, loc, st in
+                  con.execute("SELECT id, locality, state FROM streets")}
+    buckets = {}
+    for sid, lat, lon in con.execute(
+            "SELECT street_id, lat, lon FROM addresses"):
+        buckets.setdefault(cell_key(lat, lon), []).append((lat, lon, sid))
     con.close()
-    print(f"locality grid: {len(grid):,} cells from G-NAF")
-    return grid
+    print(f"address buckets: {len(buckets):,} cells from G-NAF")
+    return buckets, street_loc
+
+
+def nearest_locality(buckets, street_loc, lat, lon, limit_m=400.0):
+    base = cell_key(lat, lon)
+    best, bd = None, limit_m * limit_m
+    for delta in (-40001, -40000, -39999, -1, 0, 1, 39999, 40000, 40001):
+        for ala, alo, sid in buckets.get(base + delta, ()):
+            d2 = ((ala - lat) * 111000.0) ** 2 + ((alo - lon) * 88000.0) ** 2
+            if d2 < bd:
+                bd, best = d2, sid
+    return street_loc[best] if best is not None else None
 
 
 class Collector(osmium.SimpleHandler):
-    def __init__(self, keep, con, grid):
+    def __init__(self, keep, con, buckets, street_loc):
         super().__init__()
         self.keep = keep
         self.con = con
-        self.grid = grid
+        self.buckets = buckets
+        self.street_loc = street_loc
         self.batch = []
         self.count = 0
 
@@ -123,16 +141,9 @@ class Collector(osmium.SimpleHandler):
             return
         category, name, suburb = poi
         state = ""
-        hit = self.grid.get(base)
-        if hit is None:
-            for d in (1, -1, 40000, -40000, 40001, -40001, 39999, -39999):
-                hit = self.grid.get(base + d)
-                if hit:
-                    break
+        hit = nearest_locality(self.buckets, self.street_loc, lat, lon)
         if hit:
-            if not suburb:
-                suburb = hit[0]   # OSM's own addr:suburb wins when present
-            state = hit[1]
+            suburb, state = hit   # G-NAF wins; the OSM tag is the fallback
         alt = name.replace("'", "").replace("\u2019", "")
         self.batch.append((name, category, suburb, state,
                            alt if alt != name else "", lat, lon))
@@ -177,9 +188,9 @@ def build(pbf: Path) -> None:
                              source TEXT DEFAULT 'osm');
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     """)
-    grid = locality_grid()
+    buckets, street_loc = address_buckets()
     print(f"Reading {pbf} (named places near stops)…")
-    h = Collector(keep, con, grid)
+    h = Collector(keep, con, buckets, street_loc)
     idx = "sparse_file_array," + str(tmp) + ".nodecache"
     h.apply_file(str(pbf), locations=True, idx=idx)
     h.flush()

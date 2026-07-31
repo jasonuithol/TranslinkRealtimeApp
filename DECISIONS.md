@@ -154,6 +154,19 @@ code works today belongs in README.md and the code itself, not here.
   project owns host provisioning and port 8080; this app uses 8000. Check
   both before anything host-level.
 
+## Data files
+
+- **Patch live SQLite by copy → patch → `PRAGMA integrity_check` →
+  `os.replace`, never in place.** The places index was found silently
+  corrupt on 2026-07-31 (double-referenced btree pages, ~36k rows lost,
+  ~20k duplicated) after the early era of in-place patches; it kept
+  answering queries the whole time, so only integrity_check caught it.
+  Check integrity before shipping any patched DB to a target.
+- **Suburbs come from the nearest G-NAF address** — for OSM places too,
+  outranking the mapper's own addr:suburb tag (Officeworks Robina was
+  tagged Mudgeeraba) and the old first-wins cell grid (Pizza 1 on the
+  Miami/Burleigh Waters line). G-NAF is the authority on locality.
+
 ## Ruled out / removed — don't revisit unprompted
 
 - **Bing Maps** (checked 2026-07-21): the free tier retired 30 June 2025 and

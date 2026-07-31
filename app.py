@@ -938,10 +938,25 @@ _STREET_ABBR = {
 PLACES_DB = Path(os.environ.get("PLACES_DB") or DB_PATH.parent / "places.sqlite3")
 
 
-def places_geocode(q: str, viewbox: str, limit: int = 8) -> list | None:
+def _near_dist(near):
+    """Squared flat-earth distance to `near` ((lat, lon) or None) as a sort
+    key builder; without a near point every candidate ties at zero."""
+    if not near:
+        return lambda r: 0.0
+    nlat, nlon = near
+    coslat = math.cos(math.radians(nlat)) or 1e-9
+    def d(r):
+        return ((r["lat"] - nlat) ** 2
+                + ((r["lon"] - nlon) * coslat) ** 2)
+    return d
+
+
+def places_geocode(q: str, viewbox: str, limit: int = 8,
+                   near: tuple | None = None) -> list | None:
     """Named-place lookup. None = no DB or nothing matched — fall through.
     Results inside the current region's viewbox rank first (like the
-    Nominatim viewbox bias); category and suburb ride along in the label."""
+    Nominatim viewbox bias), nearest to `near` first within that; category
+    and suburb ride along in the label."""
     if not PLACES_DB.exists():
         return None
     tokens = [t for t in re.findall(r"[A-Za-z0-9']+", q.lower()) if t]
@@ -958,7 +973,9 @@ def places_geocode(q: str, viewbox: str, limit: int = 8) -> list | None:
         rows = con.execute(
             "SELECT p.name, p.category, p.suburb, p.state, p.lat, p.lon "
             "FROM places_fts f JOIN places p ON p.id = f.rowid "
-            "WHERE places_fts MATCH ? ORDER BY bm25(places_fts) LIMIT 40",
+            # A wide pool: a chain has hundreds of branches and the near
+            # sort can only rank candidates the query returned.
+            "WHERE places_fts MATCH ? ORDER BY bm25(places_fts) LIMIT 250",
             (fts,)).fetchall()
     except sqlite3.OperationalError:
         return None   # pathological FTS query string
@@ -974,7 +991,8 @@ def places_geocode(q: str, viewbox: str, limit: int = 8) -> list | None:
     qnorm = "".join(tokens)
     def exact(r):
         return re.sub(r"[^a-z0-9]", "", r["name"].lower()) == qnorm
-    rows.sort(key=lambda r: (not in_box(r), not exact(r)))
+    dist = _near_dist(near)
+    rows.sort(key=lambda r: (not in_box(r), not exact(r), dist(r)))
     out, seen = [], set()
     for r in rows:
         bits = [r["category"]]
@@ -990,7 +1008,8 @@ def places_geocode(q: str, viewbox: str, limit: int = 8) -> list | None:
     return out or None
 
 
-def gnaf_geocode(q: str, state_bias: str, limit: int = 8) -> list | None:
+def gnaf_geocode(q: str, state_bias: str, limit: int = 8,
+                 near: tuple | None = None) -> list | None:
     """House-number lookup. None means 'not applicable' (no DB, or the query
     doesn't lead with a house number) — the caller falls back to Nominatim.
     An address short of its exact number returns the NEAREST number on that
@@ -1016,7 +1035,7 @@ def gnaf_geocode(q: str, state_bias: str, limit: int = 8) -> list | None:
             "SELECT s.id, s.name, s.type, s.locality, s.state "
             "FROM streets_fts f JOIN streets s ON s.id = f.rowid "
             "WHERE streets_fts MATCH ? "
-            "ORDER BY (s.state = ?) DESC, bm25(streets_fts) LIMIT 40",
+            "ORDER BY (s.state = ?) DESC, bm25(streets_fts) LIMIT 150",
             (fts, state_bias),
         ).fetchall()
         out = []
@@ -1036,7 +1055,13 @@ def gnaf_geocode(q: str, state_bias: str, limit: int = 8) -> list | None:
             })
             if len(out) >= limit:
                 break
-        out.sort(key=lambda r: not r["_exact"])
+        # With a bias point, proximity outranks number-exactness: someone
+        # near Toowong typing "12 High Street" means the High Street THERE,
+        # even where G-NAF's nearest number is 10 — not an exact 12 in
+        # Charleville. Unbiased, exact numbers still come first.
+        dist = _near_dist(near)
+        out.sort(key=(lambda r: (dist(r), not r["_exact"])) if near
+                 else (lambda r: not r["_exact"]))
         for r in out:
             r.pop("_exact")
         return out or None
@@ -1076,7 +1101,9 @@ def _geocode_label(r: dict, state: str) -> str:
 
 @app.get("/api/r/{region}/geocode")
 @app.get("/api/geocode")
-async def geocode(q: str, region: str = "seq"):
+async def geocode(q: str, region: str = "seq",
+                  near_lat: float | None = None,
+                  near_lon: float | None = None):
     """Address -> candidate points, proxied through Nominatim (OpenStreetMap).
     Pair with /api/stops/nearby to answer 'which stops are closest to home?'.
     Bounded to the region's bbox, so "Main St" resolves to the Main St here."""
@@ -1085,18 +1112,22 @@ async def geocode(q: str, region: str = "seq"):
     q = q.strip()
     if len(q) < 4:
         return []
+    # An optional bias point: the searcher's location (origin search) or the
+    # journey's departure (destination search) — near candidates rank first.
+    near = ((near_lat, near_lon)
+            if near_lat is not None and near_lon is not None else None)
     # House-numbered queries answer from the local G-NAF when it's ingested —
     # exact house coordinates, no rate limit, no network.
-    local = gnaf_geocode(q, cfg["state"])
+    local = gnaf_geocode(q, cfg["state"], near=near)
     if local:
         return local
     # Then named places (businesses, POIs) from the local OSM index.
-    placed = places_geocode(q, cfg["geocode_viewbox"])
+    placed = places_geocode(q, cfg["geocode_viewbox"], near=near)
     if placed:
         return placed
     hit = _geocode_cache.get((region, q.lower()))
     if hit and time.time() - hit[0] < GEOCODE_CACHE_S:
-        return hit[1]
+        return sorted(hit[1], key=_near_dist(near)) if near else hit[1]
     async with _geocode_lock:
         # Enforce the 1 req/s policy even if the client misbehaves.
         wait = 1.0 - (time.time() - _geocode_last_call)
@@ -1136,7 +1167,9 @@ async def geocode(q: str, region: str = "seq"):
     # An unbounded cache only grows by distinct queries typed; trim anyway.
     if len(_geocode_cache) > 500:
         _geocode_cache.pop(next(iter(_geocode_cache)))
-    return results
+    # The cache stays bias-free (keyed on the query alone); the near sort is
+    # applied per request on the way out.
+    return sorted(results, key=_near_dist(near)) if near else results
 
 
 # ---------------------------------------------------------------------------

@@ -164,7 +164,11 @@
     fitResults();
     try {
       await regionsReady.catch(() => {});
-      const res = await fetch(api(`/geocode?q=${encodeURIComponent(q)}`),
+      const bias = searchBias();
+      const nearQ = bias
+        ? `&near_lat=${bias.lat.toFixed(5)}&near_lon=${bias.lon.toFixed(5)}`
+        : "";
+      const res = await fetch(api(`/geocode?q=${encodeURIComponent(q)}${nearQ}`),
                               { signal });
       if (stale()) return;   // superseded while the geocoder was working
       if (!res.ok) throw new Error();
@@ -262,6 +266,34 @@
   // so on the bare-IP VPS the button would be a dead end.
   if (!("geolocation" in navigator) || !window.isSecureContext) {
     $("near-me").hidden = true;
+  }
+
+  // A quiet fix of the device's location, taken ONLY when permission was
+  // already granted (no prompt, cached position is fine) — it biases address
+  // search toward home without the user having to say where home is.
+  let nearMe = null;
+  if ("geolocation" in navigator && window.isSecureContext
+      && navigator.permissions?.query) {
+    navigator.permissions.query({ name: "geolocation" }).then((p) => {
+      if (p.state !== "granted") return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { nearMe = { lat: pos.coords.latitude,
+                              lon: pos.coords.longitude }; },
+        () => {},
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
+    }).catch(() => {});
+  }
+
+  // The point address results should sort around: picking a DESTINATION,
+  // it's the journey's departure (the pin, else the viewed stop); picking a
+  // departure, it's wherever the device says the user is (else the pin).
+  function searchBias() {
+    const stopPt = (lastData && lastData.stop
+                    && lastData.stop.stop_lat != null)
+      ? { lat: lastData.stop.stop_lat, lon: lastData.stop.stop_lon } : null;
+    return pickingDest
+      ? (pinParam || stopPt || nearMe)
+      : (nearMe || pinParam);
   }
 
   $("near-me").addEventListener("click", () => {

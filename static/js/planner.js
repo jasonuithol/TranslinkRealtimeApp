@@ -13,12 +13,14 @@
 
   async function refreshPlan() {
     try {
-      // Origin: the viewed stop — or, browsing a pinned address, the
-      // ADDRESS itself (the server walks it to every stop in range).
-      const origin = stopId
-        ? `from=${encodeURIComponent(stopId)}`
-        : `from_lat=${pinParam.lat}&from_lon=${pinParam.lon}`
-          + `&from_label=${encodeURIComponent(pinLabel || "Your address")}`;
+      // Origin: the pinned ADDRESS whenever one exists — trips start at the
+      // departure address, and a stop that later lands in the URL (clicking
+      // a landmark writes ?stop=) must not hijack the origin on reload.
+      // Only a plan with no pin at all starts from the viewed stop.
+      const origin = pinParam
+        ? `from_lat=${pinParam.lat}&from_lon=${pinParam.lon}`
+          + `&from_label=${encodeURIComponent(pinLabel || "Your address")}`
+        : `from=${encodeURIComponent(stopId)}`;
       const dest = toId ? `to=${encodeURIComponent(toId)}`
         : `to_lat=${toPoint.lat}&to_lon=${toPoint.lon}`
           + `&to_label=${encodeURIComponent(toName || "Your destination")}`;

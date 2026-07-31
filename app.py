@@ -1053,15 +1053,25 @@ def gnaf_geocode(q: str, state_bias: str, limit: int = 8,
                 "lat": a["lat"], "lon": a["lon"],
                 "_exact": a["num"] == num,
             })
-            if len(out) >= limit:
-                break
-        # With a bias point, proximity outranks number-exactness: someone
-        # near Toowong typing "12 High Street" means the High Street THERE,
-        # even where G-NAF's nearest number is 10 — not an exact 12 in
-        # Charleville. Unbiased, exact numbers still come first.
-        dist = _near_dist(near)
-        out.sort(key=(lambda r: (dist(r), not r["_exact"])) if near
-                 else (lambda r: not r["_exact"]))
+        # Rank the WHOLE street pool, then trim — cutting at `limit` before
+        # sorting let the bm25 street order decide which candidates existed
+        # at all, and the one exact "397 Christine Avenue" fell off the list
+        # while its Robina/Kuraby namesakes made it in.
+        #
+        # With a bias point, exactness is worth kilometres, not everything:
+        # someone near Toowong typing "12 High Street" means the High Street
+        # THERE (nearest number 10), not an exact 12 in Charleville — but an
+        # exact 397 in the next suburb must beat a 480 marginally closer.
+        # Unbiased, exact numbers simply come first.
+        if near:
+            dist = _near_dist(near)
+            def rank(r):
+                km = math.sqrt(dist(r)) * 111.0
+                return km + (0.0 if r["_exact"] else 25.0)
+            out.sort(key=rank)
+        else:
+            out.sort(key=lambda r: not r["_exact"])
+        del out[limit:]
         for r in out:
             r.pop("_exact")
         return out or None

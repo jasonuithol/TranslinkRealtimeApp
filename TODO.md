@@ -2,12 +2,26 @@
 
 ## Bugs
 
+- **One stop's icon suppressed near the viewed stop (reported ~2026-07-25)**:
+  on the all-stops layer at Varsity Lakes, viewing stop 300051 the station
+  marker `place_varsta` (~23 m away) never draws past zoom 15 — it only
+  appears when a traced route's landmarks include it. Two fixes did NOT cure
+  it: symbol-sort-key priority + cache-busted payload, and
+  `icon-ignore-placement: true` on stop-ring/vehicle-dot/ghost-dot. Facts
+  established: the stop IS in the `/all-stops?v=2` payload (route_type 2);
+  the layer validates and adds in a real MapLibre engine; the failure is
+  specific to this icon. Next diagnostic: load `&mapdebug=1` at the Varsity
+  view and compare `map.queryRenderedFeatures({layers:["all-stops"]})` vs
+  `querySourceFeatures("all-stops")` around that coordinate; also check
+  label collision and whether the landmarks-layer twin at the same spot wins
+  placement.
+
 - ~~**Region silos split same-station services (reported 2026-07-28)**~~ —
   **FIXED 2026-07-29**: boards now union sibling stops across feeds (bare-TSN
   match within TfNSW's syd/nsw family + a hand-curated `STATION_LINKS` table
   for Southern Cross / Roma Street / Adelaide Central Bus), with a
   physical-service dedupe for trains TfNSW publishes in two feeds at once.
-  See the 2026-07-29 HANDOVER.md bullet. Left open: the realtime-preferred
+  See the merged-station bullet in DECISIONS.md. Left open: the realtime-preferred
   dedupe arm hasn't been seen live with keys yet — check a keyed board at
   Newcastle Interchange after deploy.
 
@@ -84,3 +98,8 @@ light.
   (recent stops? a couple of featured cities? state groups?) — that's the
   "visual design" half of the original complaint, to be designed
   properly, not bolted on.
+
+## Older ideas (carried over from the retired HANDOVER.md)
+
+- Multiple pinned stops (home + work) on one screen
+- Filter the board by route or direction

@@ -3,7 +3,7 @@ Build a slim local geocoder database from Geoscape G-NAF (the Geocoded
 National Address File): every street-numbered address in Australia with
 house-level coordinates, so "397 Christine Avenue" resolves to the actual
 house — OpenStreetMap's residential number coverage is patchy, and Nominatim
-falls back to pinning an arbitrary point along the street (see HANDOVER).
+falls back to pinning an arbitrary point along the street (see DECISIONS.md).
 
     python ingest_gnaf.py                # download the quarterly zip (~1.7 GB)
     python ingest_gnaf.py /path/to/gnaf.zip

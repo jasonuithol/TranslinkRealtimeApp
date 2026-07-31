@@ -83,7 +83,7 @@ measure before enabling every region at once. Invalidation: stamp the
 cache with the DB file's mtime — the weekly `--region all` swap changes it,
 next plan request rebuilds. (Same staleness discipline as `sibling_stops`'s
 lru_cache, but planner arrays MUST rebuild because trip ids rot — see the
-HANDOVER bullet on timetable rot.)
+DECISIONS.md bullet on timetable rot.)
 
 ## Transfers
 
@@ -99,7 +99,7 @@ Plan:
 3. **Parent stations**: child platforms of one parent get a flat 3-min
    transfer (Central's 20+ platforms are not 200 m apart pairwise, but you
    do change between them).
-4. **Merged-station siblings**: the region-silo fix (HANDOVER 2026-07-29)
+4. **Merged-station siblings**: the region-silo fix (DECISIONS.md, 2026-07-29)
    already knows `t:200060` = `m:200060` = `nt:200060` (TSN family) and the
    cross-state `STATION_LINKS`. Same-TSN stops are a 3-min transfer *within*
    a region's planner (t: platform → m: platform at Central). Cross-region

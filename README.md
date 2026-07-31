@@ -264,5 +264,7 @@ The machinery underneath (all callable standalone for surgical work):
 
 Check each portal for current licensing and attribution requirements.
 
-See `HANDOVER.md` for the full design log: every architectural decision, bug
-post-mortem and outstanding item.
+See `DECISIONS.md` for the binding design decisions, traps hit once and not
+to be re-hit, and options ruled out; `TODO.md` for outstanding bugs and
+ideas. (The original build diary, `HANDOVER.md`, is retired — it lives on in
+git history.)

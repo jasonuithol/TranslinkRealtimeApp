@@ -7,7 +7,7 @@ live TripUpdates. See PLANNER.md for the full design.
 The timetable is day-filtered (today's active services plus yesterday's
 after-midnight tail, shifted -24 h into today's clock) and cached per
 region; the cache key carries the DB file's mtime, so the weekly re-ingest
-invalidates it — trip ids ROT (see HANDOVER), a stale plan would reference
+invalidates it — trip ids ROT (see DECISIONS.md), a stale plan would reference
 trips realtime can't match.
 
 All times are seconds since midnight of the service date in the region's

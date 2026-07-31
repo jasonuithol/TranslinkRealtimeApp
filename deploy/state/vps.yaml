@@ -30,7 +30,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, reason: "places ingest: G-NAF outranks OSM suburb tags" }
+  image: { status: deployed, at: 2026-07-31 }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.
@@ -51,7 +51,7 @@ components:
   # Walking street graph (planner walk-leg routing along roads).
   walkgraph-db: { status: deployed, at: 2026-07-30 }
   # OSM named-places index (business/POI search).
-  places-db: { status: pending, reason: "rebuilt from sources — old file was corrupt; G-NAF-authoritative suburbs" }
+  places-db: { status: deployed, at: 2026-07-31 }
   # Region enablement (keys + realtime env + first ingest). Timetables
   # refresh themselves weekly once quadlet-units + keys are in place.
   enable-syd-nsw: { status: deployed, at: 2026-07-29 }

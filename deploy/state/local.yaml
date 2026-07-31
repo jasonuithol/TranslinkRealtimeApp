@@ -10,7 +10,7 @@ updated: 2026-07-31
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, reason: "places ingest: G-NAF outranks OSM suburb tags" }
+  image: { status: deployed, at: 2026-07-31 }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }
@@ -25,4 +25,4 @@ components:
   # Walking street graph (planner walk-leg routing along roads).
   walkgraph-db: { status: deployed, at: 2026-07-30 }
   # OSM named-places index (business/POI search).
-  places-db: { status: pending, reason: "rebuilt from sources — old file was corrupt; G-NAF-authoritative suburbs" }
+  places-db: { status: deployed, at: 2026-07-31 }

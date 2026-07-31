@@ -26,8 +26,10 @@
     "#25d3b0", // teal
     "#22d3ee", // cyan
     "#4e8cff", // blue
-    "#8a7bff", // indigo
-    "#c06bff", // purple
+    // No purples: the basemap draws static rail lines in muted violet
+    // (#6a5c95, map-style.json "rail"), and a traced route in the violet
+    // family reads as a train line. Indigo #8a7bff and purple #c06bff
+    // were removed for that.
     "#ff5fb0", // magenta
   ];
   // Landmarks: the stops themselves, never a service.

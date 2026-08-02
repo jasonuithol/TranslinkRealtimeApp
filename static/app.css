@@ -59,6 +59,12 @@
     align-self: center;
   }
   .home-goose svg { height: 26px; display: block; }
+  .home-goose[hidden] { display: none; }
+  /* "Change address" carries the goose: line art in the button's text
+     colour, so it inverts with the label on hover. */
+  #change-stop { display: inline-flex; align-items: center; gap: 8px; align-self: center; }
+  #change-stop svg { height: 20px; display: block; }
+  #change-stop[hidden] { display: none; }
   .home-goose:hover svg { filter: drop-shadow(0 0 6px rgba(255, 180, 0, 0.55)); }
   .home-goose:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
 

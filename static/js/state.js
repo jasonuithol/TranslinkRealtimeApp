@@ -113,11 +113,6 @@
     .then((regions) => { regionList = regions; })
     .catch(() => { /* search stays single-region, no pan-swap */ });
 
-  // With no anchor (stop OR pin) there is nothing but the search, so it is
-  // always open. Anchored, the search folds away and "Change stop" /
-  // "Change address" brings it back.
-  let searchOpen = !stopId && !pinnedBrowse;
-
   function syncChrome() {
     // No stop yet = the landing: just the goose and the search. The class
     // hides the chrome and parks the board/map split off-screen (still sized,
@@ -126,38 +121,47 @@
     const anchored = Boolean(stopId) || pinnedBrowse;
     document.body.classList.toggle("landing", !stopId && !browsing && !pinnedBrowse);
     $("titlebar").hidden = !anchored;
-    $("search-wrap").hidden = anchored && !searchOpen;
+    // Anchored, the search only comes back for a destination pick ("Plan a
+    // trip") — changing the ORIGIN means going home and starting over.
+    $("search-wrap").hidden = anchored && !pickingDest;
     $("search-close").hidden = !anchored;  // nothing to return to without one
     // A selected stop needs no "change" button — the goose is the way back.
-    // The button only serves a pinned browse, to search a different address.
+    // A pinned browse gets the goose ON the button instead: one control,
+    // home to the landing. Never two geese at once.
     $("change-stop").hidden = Boolean(stopId) || !pinnedBrowse;
-    $("change-stop").textContent = "Change address";
+    $("home-goose").hidden = !$("change-stop").hidden;
     // Planner entry/exit: available from a stop OR a pinned address (the
     // trip then STARTS at the address — first leg is the walk to a stop).
     // With a destination set, the same button cancels back.
     $("plan-to").hidden = !stopId && !pinnedBrowse;
     $("plan-to").textContent = hasDest() ? `✕ to ${toName || "destination"}`
                                     : "Plan a trip";
-    if (!searchOpen) $("results").hidden = true;
+    if ($("search-wrap").hidden) $("results").hidden = true;
   }
   if (pinnedBrowse) {
     // The address plays the part of the stop name until a stop is picked.
     $("stop-name").textContent = pinLabel || "Dropped pin";
   }
 
+  // Only reached with pickingDest set (the "Plan a trip" button): anchored,
+  // the search exists solely to pick a destination.
   function openSearch() {
-    searchOpen = true;
     syncChrome();
     $("search").focus();
   }
 
   function closeSearch() {
-    searchOpen = false;
     pickingDest = false;
     $("search").value = "";
     $("search").placeholder = "Search for a stop or an address";
     syncChrome();
   }
 
-  $("change-stop").addEventListener("click", openSearch);
+  // "Change address" flies home to search afresh — carrying whatever was
+  // last actually TYPED (never a picked autocompletion), so a mistyped
+  // address that landed somewhere dumb is one edit away from fixed.
+  $("change-stop").addEventListener("click", () => {
+    const q = localStorage.getItem("lastTyped") || "";
+    location.href = q ? `/?q=${encodeURIComponent(q)}` : "/";
+  });
   $("search-close").addEventListener("click", closeSearch);

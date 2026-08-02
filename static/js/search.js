@@ -225,6 +225,9 @@
   let searchToken = 0;      // bumped on EVERY keypress; in-flight runs bail
   let searchAbort = null;   // …and their fetches are cancelled outright
   $("search").addEventListener("input", (e) => {
+    // Remember what was literally typed — an origin search only, not a
+    // "Where to?" pick — so "Change address" can replay it on the landing.
+    if (!pickingDest) localStorage.setItem("lastTyped", e.target.value.trim());
     clearTimeout(searchDebounce);
     // A new keypress abandons the previous search immediately: its fetches
     // are aborted and any response already in flight is dropped before it

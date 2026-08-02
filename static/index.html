@@ -25,10 +25,12 @@
     <!-- Only once a stop is chosen; before that the name would just say
          "Next service", which costs a line and tells you nothing. -->
     <div class="titlebar" id="titlebar" hidden>
-      <a class="home-goose" href="/" title="Home page"
+      <a class="home-goose" id="home-goose" href="/" title="Home page"
          aria-label="Home page"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></a>
       <h1 id="stop-name"></h1>
-      <button class="change" id="change-stop" type="button">Change stop</button>
+      <!-- Pinned browse only: the goose rides ON the button — one control,
+           home to the landing with the typed query ready to fix. -->
+      <button class="change" id="change-stop" type="button"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg>Change address</button>
       <button class="change" id="plan-to" type="button" hidden></button>
       <span class="tzbadge" id="tz-badge" hidden><span class="tz-icon"
         aria-hidden="true">&#x1F310;&#xFE0E;</span><span id="tz-abbr"></span></span>

@@ -23,9 +23,12 @@
     timer = setInterval(refresh, 15000);
   }
   // ?q= deep-links a search: prefill the box and run it as if typed.
+  // Focused with the caret at the end — the "Change address" round-trip
+  // lands here precisely so the user can fix what they typed.
   const preQ = new URLSearchParams(location.search).get("q");
   if (preQ && !stopId) {
     const inp = $("search");
     inp.value = preQ;
     inp.dispatchEvent(new Event("input", { bubbles: true }));
+    inp.focus();
   }

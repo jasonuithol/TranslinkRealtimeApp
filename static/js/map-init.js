@@ -55,6 +55,49 @@
     window.__map = map;   // debug/UI-test handle (see also ?mapdebug=1)
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), "bottom-left");
+    // The locate button: show the rider's dot and fly the camera to it.
+    // Same gate as the "near me" search button — geolocation needs a secure
+    // context, so on plain http the control simply isn't offered.
+    if ("geolocation" in navigator && window.isSecureContext) {
+      const wrap = document.createElement("div");
+      wrap.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "locate-me";
+      btn.title = "Show my location";
+      btn.setAttribute("aria-label", "Show my location");
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
+        + '<circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="2"/>'
+        + '<circle cx="12" cy="12" r="1.6" fill="currentColor"/>'
+        + '<path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/>'
+        + '</svg>';
+      btn.addEventListener("click", () => {
+        startMeMarker(true);  // arms the live dot; the tap is iOS's compass gesture
+        btn.classList.add("locating");
+        navigator.geolocation.getCurrentPosition((pos) => {
+          btn.classList.remove("locating");
+          const ll = [pos.coords.longitude, pos.coords.latitude];
+          placeMe(ll);
+          // Flying to the rider is the user taking the camera — the next
+          // refresh must not snap it back to the stop and its vehicles.
+          // (movestart only clears autoFit on moves carrying a DOM event,
+          // and this one is programmatic.)
+          autoFit = false;
+          cameraMove(() => map.flyTo({ center: ll,
+                                       zoom: Math.max(map.getZoom(), 16) }));
+        }, () => {
+          btn.classList.remove("locating");
+          btn.classList.add("locate-fail");
+          btn.title = "Could not get your location";
+          setTimeout(() => { btn.classList.remove("locate-fail");
+                             btn.title = "Show my location"; }, 2500);
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 });
+      });
+      wrap.appendChild(btn);
+      map.addControl({ onAdd: () => wrap, onRemove: () => wrap.remove() },
+                     "top-right");
+    }
     // A bad style silently yields a blank map: MapLibre reports it here and
     // nowhere else, and a style error stops 'load' firing at all, so every
     // layer we add in that handler never exists. Surface it rather than let

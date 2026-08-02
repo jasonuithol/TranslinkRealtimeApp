@@ -659,6 +659,12 @@
   .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) button:first-child {
     border-left: 1px solid #ddd;
   }
+  /* The locate button: fly to the rider's GPS dot. Pulses while the fix is
+     being acquired; goes red for a beat when the device refuses one. */
+  .locate-me svg { display: block; margin: auto; color: #333; }
+  .locate-me.locating svg { animation: locate-pulse 1s ease-in-out infinite; }
+  .locate-me.locate-fail svg { color: #c0392b; }
+  @keyframes locate-pulse { 50% { opacity: 0.25; } }
   /* Scale bar, restyled for the dark map. */
   .maplibregl-ctrl-scale {
     background: rgba(12,16,19,.75); color: #cfd8e3; border-color: #7f8c99;

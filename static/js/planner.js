@@ -448,10 +448,21 @@
     }
     map.getSource("walklines").setData(
       { type: "FeatureCollection", features: walks });
-    if (!destMarker && planData.to
+    if (planData.to
         && planData.to.stop_lat != null && planData.to.stop_lon != null) {
-      destMarker = new maplibregl.Marker({ color: "#2ecc71" })
-        .setLngLat([planData.to.stop_lon, planData.to.stop_lat]).addTo(map);
+      const dll = [planData.to.stop_lon, planData.to.stop_lat];
+      if (!destMarker) {
+        // RED, the arrival end (the departure pin is green). Draggable:
+        // dropping it elsewhere re-plans to the new spot.
+        destMarker = new maplibregl.Marker({ color: "#e5484d", draggable: true })
+          .setLngLat(dll).addTo(map);
+        destMarker.on("dragend", () => {
+          const ll = destMarker.getLngLat();
+          setDestPoint(ll.lat, ll.lng, "dropped pin");
+        });
+      } else {
+        destMarker.setLngLat(dll);   // a changed destination moves it
+      }
     }
     if (!planFitted && lines.length && !waiting) {
       const b = new maplibregl.LngLatBounds();

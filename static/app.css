@@ -671,14 +671,15 @@
   /* The destination pin: dragged off its button onto the map. touch-action
      none keeps the browser from scrolling the page mid-drag. */
   .drop-pin { touch-action: none; }
-  .drop-pin svg { display: block; margin: auto; color: #333; }
+  /* Destination red — the pin this button drops becomes the red arrival pin. */
+  .drop-pin svg { display: block; margin: auto; color: #e5484d; }
   /* The pin in flight, riding the pointer — tip at the finger, so the drop
      lands exactly where it points. Bigger than the button's glyph: it has
      to stay visible under a thumb. */
   .pin-ghost {
+    color: #e5484d;           /* destination red, like the pin it drops */
     position: fixed; z-index: 1000; pointer-events: none;
     transform: translate(-50%, -100%);
-    color: var(--amber);
   }
   .pin-ghost svg { display: block; width: 34px; height: 34px; }
   /* Scale bar, restyled for the dark map. */

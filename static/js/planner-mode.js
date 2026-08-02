@@ -70,6 +70,26 @@
     timer = setInterval(refresh, 15000);
   }
 
+  // A dragged departure pin re-homes the journey: the old address label no
+  // longer applies, and the plan (or the surrounding-stop landmarks, when
+  // just browsing) re-derives from the new spot.
+  function movePin(lat, lon) {
+    if (!pinParam) return;
+    pinParam.lat = lat; pinParam.lon = lon;
+    pinRaw = `${lon.toFixed(5)},${lat.toFixed(5)}`;
+    pinLabel = "dropped pin";
+    planData = null; planFitted = false;
+    syncPlanUrl();
+    $("stop-name").textContent = pinLabel;
+    if (hasDest()) {
+      $("board").innerHTML = `<div class="empty">Planning…</div>`;
+      refresh();
+    } else {
+      loadPinSurrounds();
+      if (stopId) refresh();
+    }
+  }
+
   function cancelPlan() {
     toId = null; toPoint = null; toName = ""; planData = null;
     startedPlan = null; saveStarted();

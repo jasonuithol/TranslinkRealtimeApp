@@ -6,6 +6,7 @@
   // deployment has no basemap, /api/config says so and the map stays hidden —
   // the board is the product, the map is an enhancement.
   let map = null, mapReady = false, hasBasemap = false;
+  let pinMarker = null;      // the departure pin (green, draggable)
   // The view auto-fits to the stop plus every tracked vehicle. It stops doing
   // so the moment the user moves the map themselves, and resumes on the next
   // stop selection. `programmatic` distinguishes our own camera moves from

@@ -21,7 +21,7 @@
   // Drawn as an amber marker once the map is up; the cross-region hand-over
   // treats it like an anchored stop (the pin's region was chosen by
   // nearest-stop, so browsing around it must not get second-guessed).
-  const pinRaw = new URLSearchParams(location.search).get("pin");
+  let pinRaw = new URLSearchParams(location.search).get("pin");  // let: a dragged pin rewrites it
   const pinParam = (() => {
     if (!pinRaw) return null;
     const [lon, lat] = pinRaw.split(",").map(Number);
@@ -46,7 +46,7 @@
 
   // The pin's display label ("397 Christine Avenue, Varsity Lakes QLD" /
   // "Near me") — shown in the titlebar like a stop name.
-  const pinLabel = new URLSearchParams(location.search).get("pinlabel") || "";
+  let pinLabel = new URLSearchParams(location.search).get("pinlabel") || "";  // let: see pinRaw
   // Pinned-browse: the map is anchored to an address rather than a stop.
   // The chrome behaves like a stop view (titlebar + goose, folded search,
   // "Change address") until an actual stop is picked. A pin WITHOUT a stop

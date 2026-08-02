@@ -227,9 +227,15 @@
 
     map.on("load", () => {
       if (pinParam) {
-        // The searched address — amber, like the goose.
-        new maplibregl.Marker({ color: "#f0b429" })
+        // The searched address — GREEN, the departure end of the journey
+        // (the destination pin is red). Draggable: dropping it elsewhere
+        // re-homes the journey from the new spot.
+        pinMarker = new maplibregl.Marker({ color: "#2fd07a", draggable: true })
           .setLngLat([pinParam.lon, pinParam.lat]).addTo(map);
+        pinMarker.on("dragend", () => {
+          const ll = pinMarker.getLngLat();
+          movePin(ll.lat, ll.lng);
+        });
       }
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
       map.addSource("ghosts", { type: "geojson", data: emptyFC() });

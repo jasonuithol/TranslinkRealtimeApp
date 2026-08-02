@@ -30,7 +30,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: deployed, at: 2026-08-02 }
+  image: { status: pending, reason: "change-address goose button, anchored-search mode removed, typed-query replay" }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.
@@ -56,5 +56,7 @@ components:
   # refresh themselves weekly once quadlet-units + keys are in place.
   enable-syd-nsw: { status: deployed, at: 2026-07-29 }
   enable-mel: { status: deployed, at: 2026-07-22 }
-  # HTTPS (gates browser geolocation off-localhost).
-  https: { status: blocked, reason: "on ice — waiting on a domain decision" }
+  # HTTPS (gates browser geolocation off-localhost). Caddy terminates TLS
+  # for nextarrival.app (Porkbun-registered, A record -> the VPS) and
+  # auto-renews the Let's Encrypt cert; config in /etc/caddy/Caddyfile.
+  https: { status: deployed, at: 2026-08-02 }

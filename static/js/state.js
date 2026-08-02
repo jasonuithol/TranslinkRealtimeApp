@@ -136,8 +136,13 @@
     $("plan-to").hidden = !stopId && !pinnedBrowse;
     $("plan-to").textContent = hasDest() ? `✕ to ${toName || "destination"}`
                                     : "Plan a trip";
+    // The map's drag-a-pin destination control needs the same origin the
+    // planner does; it may not exist yet (the map builds asynchronously).
+    if (pinCtl) pinCtl.hidden = !stopId && !pinnedBrowse;
     if ($("search-wrap").hidden) $("results").hidden = true;
   }
+  // Set by map-init once the drop-pin control is on the map.
+  let pinCtl = null;
   if (pinnedBrowse) {
     // The address plays the part of the stop name until a stop is picked.
     $("stop-name").textContent = pinLabel || "Dropped pin";

@@ -568,6 +568,9 @@
   /* Stacked by default; side by side only when there is room AND a map. The
      board keeps its natural width and the map takes the remaining space. */
   .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  /* Stacked, the map rides ABOVE the arrivals — on a phone the map is the
+     glanceable half. Side-by-side restores source order (board left). */
+  .split > #map-wrap { order: -1; }
   @media (min-width: 900px) {
     /* The board is a fixed, comfortable reading width on the left; the map takes
        all the remaining width, so the space a wide screen frees up goes to the
@@ -580,7 +583,7 @@
        scrolling. The board caps its own rows to what fits (fittingRowCount). */
     .split.side-by-side #map { height: calc(100vh - 160px); min-height: 460px; }
     /* The map column is sticky so it stays visible against a long board. */
-    .split.side-by-side #map-wrap { position: sticky; top: 24px; }
+    .split.side-by-side #map-wrap { position: sticky; top: 24px; order: 0; }
   }
 
   /* --- map view ---------------------------------------------------------- */
@@ -665,6 +668,19 @@
   .locate-me.locating svg { animation: locate-pulse 1s ease-in-out infinite; }
   .locate-me.locate-fail svg { color: #c0392b; }
   @keyframes locate-pulse { 50% { opacity: 0.25; } }
+  /* The destination pin: dragged off its button onto the map. touch-action
+     none keeps the browser from scrolling the page mid-drag. */
+  .drop-pin { touch-action: none; }
+  .drop-pin svg { display: block; margin: auto; color: #333; }
+  /* The pin in flight, riding the pointer — tip at the finger, so the drop
+     lands exactly where it points. Bigger than the button's glyph: it has
+     to stay visible under a thumb. */
+  .pin-ghost {
+    position: fixed; z-index: 1000; pointer-events: none;
+    transform: translate(-50%, -100%);
+    color: var(--amber);
+  }
+  .pin-ghost svg { display: block; width: 34px; height: 34px; }
   /* Scale bar, restyled for the dark map. */
   .maplibregl-ctrl-scale {
     background: rgba(12,16,19,.75); color: #cfd8e3; border-color: #7f8c99;

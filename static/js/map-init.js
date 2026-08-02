@@ -98,6 +98,67 @@
       map.addControl({ onAdd: () => wrap, onRemove: () => wrap.remove() },
                      "top-right");
     }
+    // The destination pin: drag it off the button and onto the map, and the
+    // journey planner starts to wherever it lands. Availability mirrors the
+    // "Plan a trip" button — there must be an origin (a stop or a pinned
+    // address) to plan FROM — so syncChrome shows/hides it via pinCtl.
+    {
+      const PIN_SVG =
+        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
+        + '<path d="M12 2C8.1 2 5 5.1 5 9c0 5 7 13 7 13s7-8 7-13'
+        + 'c0-3.9-3.1-7-7-7z" fill="currentColor"/>'
+        + '<circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>';
+      const wrap = document.createElement("div");
+      wrap.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "drop-pin";
+      btn.title = "Drag onto the map to plan a trip there";
+      btn.setAttribute("aria-label", "Drag onto the map to set a destination");
+      btn.innerHTML = PIN_SVG;
+      // Pointer events cover mouse AND touch with one code path; capturing
+      // on the button keeps move/up firing wherever the finger goes
+      // (touch-action: none in the CSS stops the page scrolling instead).
+      let ghost = null, downAt = null;
+      const moveGhost = (e) => {
+        if (!ghost) return;
+        ghost.style.left = `${e.clientX}px`;
+        ghost.style.top = `${e.clientY}px`;
+      };
+      const dropGhost = () => { if (ghost) { ghost.remove(); ghost = null; } };
+      btn.addEventListener("contextmenu", (e) => e.preventDefault());
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        downAt = [e.clientX, e.clientY];
+        ghost = document.createElement("div");
+        ghost.className = "pin-ghost";
+        ghost.innerHTML = PIN_SVG;
+        document.body.appendChild(ghost);
+        moveGhost(e);
+      });
+      btn.addEventListener("pointermove", moveGhost);
+      btn.addEventListener("pointercancel", dropGhost);
+      btn.addEventListener("pointerup", (e) => {
+        if (!ghost) return;
+        dropGhost();
+        // A tap is not a drop: the button sits ON the map, so without a
+        // real drag the pin would land right under the button. And only a
+        // drop actually on the map places the destination — anywhere else
+        // is a change of heart, and costs nothing.
+        if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 8) return;
+        const rect = $("map").getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+        const ll = map.unproject([x, y]);
+        setDestPoint(ll.lat, ll.lng, "dropped pin");
+      });
+      wrap.appendChild(btn);
+      map.addControl({ onAdd: () => wrap, onRemove: () => wrap.remove() },
+                     "top-left");
+      pinCtl = wrap;
+      syncChrome();   // the control just appeared: hide it if there's no origin
+    }
     // A bad style silently yields a blank map: MapLibre reports it here and
     // nowhere else, and a style error stops 'load' firing at all, so every
     // layer we add in that handler never exists. Surface it rather than let

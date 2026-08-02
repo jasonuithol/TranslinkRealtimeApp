@@ -11,8 +11,16 @@
     } catch { return new Date(epoch * 1000).toTimeString().slice(0, 5); }
   };
 
+  // "More" journeys: how many extra, later alternates the user has asked
+  // for beyond the planner's own picks. Refetched on every poll so they
+  // re-cost with fresh realtime exactly like the main cards.
+  let planExtra = 0, planExtraFor = null, planMoreDry = false;
+
   async function refreshPlan() {
     try {
+      if (planExtraFor !== destKey()) {   // a new destination starts clean
+        planExtra = 0; planExtraFor = destKey(); planMoreDry = false;
+      }
       // Origin: the pinned ADDRESS whenever one exists — trips start at the
       // departure address, and a stop that later lands in the URL (clicking
       // a landmark writes ?stop=) must not hijack the origin on reload.
@@ -40,6 +48,20 @@
             if (m) { startedPlan.itin = m; saveStarted(); }
           }
         } catch { /* keep the frozen copy */ }
+      }
+      // Each extra slot re-plans anchored one minute past the last shown
+      // departure and keeps the first itinerary not already on the board.
+      for (let i = 0; i < planExtra; i++) {
+        const lastIt = planData.itineraries[planData.itineraries.length - 1];
+        if (!lastIt) { planExtra = i; planMoreDry = true; break; }
+        const rx = await fetch(api(
+          `/plan?${origin}&${dest}&at=${lastIt.depart + 60}`));
+        if (!rx.ok) break;
+        const dx = await rx.json();
+        const have = new Set(planData.itineraries.map(itinKey));
+        const alt = dx.itineraries.find((x) => !have.has(itinKey(x)));
+        if (!alt) { planExtra = i; planMoreDry = true; break; }
+        planData.itineraries.push(alt);
       }
       if (planData.to && (!toName || toName === toId)) {
         toName = planData.to.stop_name;
@@ -240,6 +262,26 @@
       card.appendChild(act);
       board.appendChild(card);
     });
+    // "More": one extra, later journey under the current cards. Goes quiet
+    // once a fetch comes back with nothing new — the timetable dried up.
+    if (shown.length) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "plan-more";
+      if (planMoreDry) {
+        more.disabled = true;
+        more.textContent = "No later journeys";
+      } else {
+        more.textContent = "More";
+        more.addEventListener("click", async () => {
+          more.disabled = true;
+          more.textContent = "Looking…";
+          planExtra += 1;
+          await refreshPlan();   // re-renders the board, button included
+        });
+      }
+      board.appendChild(more);
+    }
   }
 
   let destMarker = null;

@@ -732,3 +732,15 @@
     border-bottom: 9px solid #4e8cff;
   }
   .me-wedge[hidden] { display: none; }
+
+  /* "More": fetch the next, later journey under the current cards. */
+  .plan-more {
+    display: block; margin: 2px auto 10px;
+    background: none; border: 2px solid var(--amber); border-radius: 999px;
+    color: var(--text); font: inherit; font-size: 15px;
+    padding: 4px 22px; cursor: pointer;
+  }
+  .plan-more:hover:enabled { background: var(--amber); color: #000; }
+  .plan-more:disabled {
+    border-color: var(--line); color: var(--muted); cursor: default;
+  }

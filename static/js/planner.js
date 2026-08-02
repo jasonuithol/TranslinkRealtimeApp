@@ -104,19 +104,31 @@
       return;
     }
     // Each journey gets its OWN colour pool (a walk is a vehicle here
-    // too): legs colour in card order with furthest-hue spacing, so no
-    // number of "More" cards can exhaust the palette into a sea of red.
-    // Keys are per-card — the same trip may appear in two cards, wearing
-    // each card's colour; the map reads the selected card's keys.
+    // too), so no number of "More" cards can exhaust the palette. The
+    // bookend walks match their pins: the walk FROM the green departure
+    // pin is green, the walk TO the red destination pin is that pin's
+    // red. Rides and transfer walks draw from the rest of the pool (red
+    // and green reserved, so nothing collides with the bookends). Keys
+    // are per-card; the map reads the selected card's keys.
+    const GREEN_IDX = VEHICLE_COLORS.indexOf("#2fd07a");
+    const RED_IDX = VEHICLE_COLORS.indexOf("#ff5a52");
     planData.__colors = {};
     shown.forEach((it, i) => {
-      const used = new Set();
+      const used = new Set([GREEN_IDX, RED_IDX]);
       it.legs.forEach((leg, j) => {
+        const key = leg.kind === "ride" ? `${i}:${leg.trip_id}`
+                                        : `walk:${i}:${j}`;
+        if (leg.kind === "walk" && j === 0) {
+          planData.__colors[key] = "#2fd07a";        // the departure pin's green
+          return;
+        }
+        if (leg.kind === "walk" && j === it.legs.length - 1) {
+          planData.__colors[key] = "#e5484d";        // the destination pin's red
+          return;
+        }
         const idx = pickFreeIndex(used);
         used.add(idx);
-        planData.__colors[leg.kind === "ride" ? `${i}:${leg.trip_id}`
-                                              : `walk:${i}:${j}`] =
-          VEHICLE_COLORS[idx];
+        planData.__colors[key] = VEHICLE_COLORS[idx];
       });
     });
     shown.forEach((it, i) => {

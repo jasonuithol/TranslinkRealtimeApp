@@ -349,6 +349,18 @@ def plan(tt: Timetable, from_stop, to_stop, dep_sec: int,
                                 trip is None or trips[lo][2][pos] < trip[2][pos]):
                             trip = trips[lo]
                             board_pos = pos
+                        elif (lo < len(trips) and trip is not None
+                              and trips[lo][0] == trip[0]):
+                            # The SAME trip is also catchable here. Board at
+                            # whichever stop leaves the latest set-off — most
+                            # slack between reaching the stop and the bus
+                            # going — instead of the first stop scanned,
+                            # which rode people past their nearest stop.
+                            t_b = tau[k - 1].get(stop_seq[board_pos])
+                            if (t_b is not None
+                                    and trip[2][pos] - t_prev
+                                        > trip[2][board_pos] - t_b):
+                                board_pos = pos
 
         # footpath relaxation within the round
         for s in list(marked):
@@ -360,24 +372,16 @@ def plan(tt: Timetable, from_stop, to_stop, dep_sec: int,
             break
 
     # --- pareto reconstruction -------------------------------------------
-    out = []
-    seen_arr = INF
-    for k in range(1, MAX_ROUNDS + 1):
-        # Arrival means arrival at the DOOR: the walk from each candidate
-        # alighting stop weighs into which one wins.
-        arr, at = min(((tau[k].get(d, INF) + dst_pen[d], d) for d in dst_set),
-                      key=lambda x: x[0])
-        if arr >= seen_arr or arr == INF:
-            continue
-        seen_arr = arr
+    def rebuild(kk, stop):
+        """Walk the parent chain from (round, dest stop) back to a seed.
+        Returns (legs, set_off) — set_off is when you must leave the door
+        to make it — or (None, None) on a broken chain."""
         legs = []
-        kk, stop = k, at
         guard = 0
         while True:
             guard += 1
             if guard > 50:
-                legs = None
-                break
+                return None, None
             via = parent[kk].get(stop)
             if via is None:
                 break               # reached a source stop
@@ -398,9 +402,49 @@ def plan(tt: Timetable, from_stop, to_stop, dep_sec: int,
                              "alight": tt.stop_ids[stop],
                              "dep_sec": dep_s, "arr_sec": arr_s})
                 stop, kk = board_stop_idx, kk - 1
-        if legs:
-            legs.reverse()
-            # trim meaningless leading/trailing walks inside a station group
+        if not legs:
+            return None, None
+        legs.reverse()
+        # When you must leave the door: the first ride's departure, minus
+        # every walk before it (footpath legs and the seed stop's own
+        # walk-from-the-door penalty).
+        set_off = dep_sec
+        for l in legs:
+            if l["kind"] == "ride":
+                set_off = l["dep_sec"]
+                break
+        lead = src_pens.get(stop, 0)
+        for l in legs:
+            if l["kind"] == "ride":
+                break
+            lead += l["secs"]
+        return legs, set_off - lead
+
+    out = []
+    seen_arr = INF
+    for k in range(1, MAX_ROUNDS + 1):
+        # Arrival means arrival at the DOOR: the walk from each candidate
+        # alighting stop weighs into which one wins.
+        arr = min((tau[k].get(d, INF) + dst_pen[d] for d in dst_set),
+                  default=INF)
+        if arr >= seen_arr or arr == INF:
+            continue
+        seen_arr = arr
+        # Latest-set-off tie-break: several alighting stops can reach the
+        # door at the same time — keep the journey you can leave for
+        # LATEST (shortest door-to-door), then the shortest final walk.
+        best_cand = None
+        for d in dst_set:
+            if tau[k].get(d, INF) + dst_pen[d] != arr:
+                continue
+            legs, set_off = rebuild(k, d)
+            if legs is None:
+                continue
+            rank = (set_off, -dst_pen[d])
+            if best_cand is None or rank > best_cand[0]:
+                best_cand = (rank, legs)
+        if best_cand:
+            legs = best_cand[1]
             out.append({"legs": legs, "arr_sec": arr,
                         "dep_sec": next((l["dep_sec"] for l in legs
                                          if l["kind"] == "ride"), dep_sec),

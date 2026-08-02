@@ -1665,6 +1665,30 @@ def walkroute(from_lat: float, from_lon: float, to_lat: float, to_lon: float):
     return out
 
 
+def _walk_pen_secs(alat, alon, blat, blon, crow_m):
+    """Walking time between two points, costed on the REAL street graph
+    when it can answer — the crow-fly ×1.3 guess mis-prices lake suburbs
+    badly enough to board the wrong stop (Varsity Lakes, 2026-08-02).
+    walkroute() is LRU-cached, so the planner's ≤20 candidate walks per
+    plan are only ever computed once each. dist_m excludes the door→node
+    snap hops; add them straight-line."""
+    try:
+        r = walkroute(alat, alon, blat, blon)
+        pts = r["points"]
+        def _sl(la1, lo1, la2, lo2):
+            p1, p2 = math.radians(la1), math.radians(la2)
+            a = (math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2)
+                 * math.sin(math.radians(lo2 - lo1) / 2) ** 2)
+            return 2 * 6371000 * math.asin(math.sqrt(a))
+        d = (r["dist_m"]
+             + _sl(alat, alon, pts[1][1], pts[1][0])
+             + _sl(pts[-2][1], pts[-2][0], blat, blon))
+        return max(60, int(d / journey.WALK_SPEED_MPS))
+    except HTTPException:
+        return max(60, int(crow_m * journey.WALK_DETOUR
+                           / journey.WALK_SPEED_MPS))
+
+
 # ---------------------------------------------------------------------------
 # Journey planner (PLANNER.md phase 1): single-region, schedule-based RAPTOR
 # with realtime re-costing. planner.py owns the routing; this endpoint owns
@@ -1750,8 +1774,8 @@ def plan_endpoint(to: str | None = None,
                                          "of the origin")
             sources = []
             for s in near:
-                pen = max(60, int(s["dist_m"] * journey.WALK_DETOUR
-                                  / journey.WALK_SPEED_MPS))
+                pen = _walk_pen_secs(from_lat, from_lon,
+                                     s["lat"], s["lon"], s["dist_m"])
                 sources.append((s["stop_id"], pen))
                 # reconstruction may end on any member of the seed's group
                 for member in tt.group_of.get(s["stop_id"], {s["stop_id"]}):
@@ -1771,8 +1795,8 @@ def plan_endpoint(to: str | None = None,
                                          "of the destination")
             targets = []
             for s in near:
-                pen = max(60, int(s["dist_m"] * journey.WALK_DETOUR
-                                  / journey.WALK_SPEED_MPS))
+                pen = _walk_pen_secs(s["lat"], s["lon"],
+                                     to_lat, to_lon, s["dist_m"])
                 targets.append((s["stop_id"], pen))
                 for member in tt.group_of.get(s["stop_id"], {s["stop_id"]}):
                     if pen < t_pen.get(member, 1 << 30):

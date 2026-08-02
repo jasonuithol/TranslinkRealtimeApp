@@ -144,10 +144,12 @@
       // the same object as an arrivals row's countdown, in the colour of
       // the first thing you must catch (or start walking for).
       let setOff = it.depart;
-      for (const l of it.legs) {
-        if (l.kind === "ride") break;
-        setOff -= l.secs;
-      }
+      if (it.legs.some((l) => l.kind === "ride")) {
+        for (const l of it.legs) {
+          if (l.kind === "ride") break;
+          setOff -= l.secs;
+        }
+      }   // walk-only: depart already IS the set-off
       const etaMins = Math.round((setOff - Date.now() / 1000) / 60);
       const firstLeg = it.legs[0];
       const firstColor = planData.__colors[
@@ -192,6 +194,12 @@
               if (it.legs[k].kind === "ride") { start = it.legs[k].arr; break; }
             }
             if (start != null) end = start + leg.secs;
+          }
+          if (end == null && start == null) {
+            // A walk-only journey: no ride to pin the clock to — it runs
+            // from the moment you set off.
+            start = it.depart;
+            end = it.depart + leg.secs;
           }
           const mins = Math.max(1, Math.round(leg.secs / 60));
           const row = document.createElement("div");

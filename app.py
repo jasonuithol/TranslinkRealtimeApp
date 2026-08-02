@@ -1938,6 +1938,36 @@ def plan_endpoint(to: str | None = None,
     finally:
         con.close()
 
+    # A journey you could simply WALK. RAPTOR only produces journeys with
+    # rides, so a 1.2 km hop once got a 44-minute bus+train proposal.
+    # When the door-to-door walk is routable and sane (≤35 min), it
+    # competes as an itinerary — and any transit journey it beats outright
+    # (arriving no earlier despite the effort of riding) is dominated and
+    # dropped.
+    o_pt = names["__origin__"] if from_stop is None else names[from_stop]
+    d_pt = names["__dest__"] if to is None else names[to]
+    if (o_pt.get("stop_lat") is not None and d_pt.get("stop_lat") is not None):
+        dl = (d_pt["stop_lat"] - o_pt["stop_lat"]) * 111000.0
+        dn = ((d_pt["stop_lon"] - o_pt["stop_lon"]) * 111000.0
+              * math.cos(math.radians(o_pt["stop_lat"])))
+        straight = math.hypot(dl, dn)
+        if straight <= 2400:
+            wsecs = _walk_pen_secs(o_pt["stop_lat"], o_pt["stop_lon"],
+                                   d_pt["stop_lat"], d_pt["stop_lon"], straight)
+            if wsecs <= 2100:
+                now_epoch = mid_epoch + dep_sec
+                walk_arr = now_epoch + wsecs
+                itineraries = [it for it in itineraries
+                               if it["arrive"] < walk_arr]
+                itineraries.append({
+                    "depart": now_epoch, "arrive": walk_arr,
+                    "minutes": max(1, round(wsecs / 60)),
+                    "transfers": 0, "at_risk": False,
+                    "legs": [{"kind": "walk", "secs": wsecs,
+                              "from_name": o_pt["stop_name"],
+                              "to_name": d_pt["stop_name"]}],
+                })
+
     return {
         "from": names["__origin__"] if from_stop is None else names[from_stop],
         "to": names["__dest__"] if to is None else names[to],

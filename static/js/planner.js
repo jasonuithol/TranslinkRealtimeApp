@@ -15,11 +15,14 @@
   // for beyond the planner's own picks. Refetched on every poll so they
   // re-cost with fresh realtime exactly like the main cards.
   let planExtra = 0, planExtraFor = null, planMoreDry = false;
+  let openLeg = null;         // "itin:leg" whose timetable slice is unfolded
+  let planScrolledFor = null; // destKey already scrolled into view (phones)
 
   async function refreshPlan() {
     try {
       if (planExtraFor !== destKey()) {   // a new destination starts clean
         planExtra = 0; planExtraFor = destKey(); planMoreDry = false;
+        openLeg = null;
       }
       // Origin: the pinned ADDRESS whenever one exists — trips start at the
       // departure address, and a stop that later lands in the URL (clicking
@@ -72,6 +75,22 @@
       if (lastData) { lastData.__vehicles = []; lastData.__ghosts = []; }
       renderPlan();
       drawPlan();
+      // On a phone the fresh cards can render off-screen (the user was
+      // down at the map dropping the pin): scroll them into view ONCE per
+      // destination — never on the 15 s poll.
+      if (planScrolledFor !== destKey()) {
+        planScrolledFor = destKey();
+        if (!window.matchMedia("(min-width: 900px)").matches) {
+          // Instant, and again on the next frame: the map unhiding right
+          // after first render changes the document height, which cancels
+          // an in-flight smooth animation (observed — the scroll died at
+          // whatever pixel the reflow landed on).
+          const toCard = () => document.querySelector(".itin")
+            ?.scrollIntoView({ block: "start" });
+          toCard();
+          setTimeout(toCard, 350);
+        }
+      }
       const risky = planData.itineraries.filter((i) => i.at_risk).length;
       $("status").textContent = "journey plan · refreshed just now"
         + (risky ? ` · ⚠ ${risky} connection${risky > 1 ? "s" : ""} at risk` : "");
@@ -251,7 +270,19 @@
           <div class="it-times2">
             <b>${planClock(leg.dep)}</b>
           </div>`;
+        // Tapping a ride leg unfolds the slice of its timetable the
+        // passenger actually rides: board stop through alight stop.
+        const legKey = `${i}:${j}`;
+        row.classList.add("clickable");
+        row.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          selItin = i;              // a tapped leg also selects its card
+          openLeg = openLeg === legKey ? null : legKey;
+          renderPlan();
+          drawPlan();
+        });
         card.appendChild(row);
+        if (openLeg === legKey) card.appendChild(legTimeline(leg, vcolor));
       });
       // The journey's arrival — location AND time — is one dedicated row:
       // leg rows describe only departures (a leg's arrival always doubled
@@ -311,6 +342,48 @@
       }
       board.appendChild(more);
     }
+  }
+
+  // The ridden slice of a leg's timetable: stops from board to alight,
+  // live times where the feed has them, schedule anchored to the leg's own
+  // scheduled boarding otherwise (hours can exceed 24:00 after midnight).
+  function legTimeline(leg, vcolor) {
+    const box = document.createElement("div");
+    box.className = "leg-tt";
+    box.style.setProperty("--vcolor", vcolor);
+    box.addEventListener("click", (ev) => ev.stopPropagation());
+    const stops = tripStopsCache.get(leg.trip_id);
+    if (stops === undefined) {
+      ensureTripStops(leg.trip_id);     // re-renders the plan on arrival
+      refreshTripTimes(leg.trip_id);
+      box.innerHTML = `<div class="leg-tt-note">Loading stops…</div>`;
+      return box;
+    }
+    if (!stops) {
+      box.innerHTML = `<div class="leg-tt-note">No stop list for this service.</div>`;
+      return box;
+    }
+    const bi = stops.findIndex((x) => x.stop_id === leg.board);
+    const ai = stops.findIndex((x) => x.stop_id === leg.alight);
+    if (bi < 0 || ai <= bi) {
+      box.innerHTML = `<div class="leg-tt-note">No stop list for this service.</div>`;
+      return box;
+    }
+    refreshTripTimes(leg.trip_id);      // freshen while open; cache renders
+    const lt = (tripTimesCache.get(leg.trip_id) || {}).stops || {};
+    const hmsSecs = (h) => h.split(":").reduce((a, x) => a * 60 + +x, 0);
+    const mid = leg.sched_dep - hmsSecs(stops[bi].sched);
+    box.innerHTML = stops.slice(bi, ai + 1).map((x, idx) => {
+      const live = lt[x.stop_id];
+      const t = (live && !live.skipped && live.t) ? live.t
+              : mid + hmsSecs(x.sched);
+      const cls = "leg-stop" + (idx === 0 || idx === ai - bi ? " end" : "");
+      return `<div class="${cls}">`
+        + `<span class="ls-name">${escapeHtml(x.stop_name)}</span>`
+        + `<span class="ls-time">${live && live.skipped
+            ? "skipped" : planClock(t)}</span></div>`;
+    }).join("");
+    return box;
   }
 
   let destMarker = null;

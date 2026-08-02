@@ -39,7 +39,7 @@
       tripStopsCache.set(tripId, res.ok ? (await res.json()).stops : null);
       drawLandmarks();
       renderTripPanel();
-      if (planData) drawPlan();   // a planner leg was waiting on this trip
+      if (planData) { renderPlan(); drawPlan(); }  // a planner leg waited on this
     } catch {
       /* leave unset so a later selection retries */
     } finally {

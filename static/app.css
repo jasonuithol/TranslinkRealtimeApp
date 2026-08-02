@@ -745,3 +745,25 @@
   .plan-more:disabled {
     border-color: var(--line); color: var(--muted); cursor: default;
   }
+
+  /* A tapped ride leg unfolds the slice of its timetable the passenger
+     actually rides: board stop through alight stop. */
+  .itin .it-leg.clickable { cursor: pointer; }
+  .itin .leg-tt {
+    margin: 2px 0 6px 10px; padding: 4px 0 4px 12px;
+    border-left: 2px solid var(--vcolor);
+    max-height: 40vh; overflow-y: auto;
+    font-size: 12.5px;
+  }
+  .itin .leg-stop {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 3px 0; color: var(--muted);
+  }
+  .itin .leg-stop.end { color: var(--text); font-weight: 600; }
+  .itin .leg-stop .ls-name {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .itin .leg-stop .ls-time {
+    flex: none; font-family: "IBM Plex Mono", monospace; color: var(--vcolor);
+  }
+  .itin .leg-tt-note { color: var(--muted); font-size: 12px; padding: 2px 0; }

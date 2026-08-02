@@ -183,7 +183,13 @@
     });
     // The rows underneath must not also react to clicks on the panel.
     panel.addEventListener("click", (ev) => ev.stopPropagation());
-    board.appendChild(panel);
+    // Stacked (phone) layout: the timeline slots into the flow UNDER the
+    // service's own row — the absolute overlay would smother the whole
+    // narrow board. Side by side it stays the overlay below the heading.
+    const ownRow = !window.matchMedia("(min-width: 900px)").matches
+      && board.querySelector(`.row[data-trip="${CSS.escape(selectedTrip)}"]`);
+    if (ownRow) ownRow.after(panel);
+    else board.appendChild(panel);
     const list = panel.querySelector(".tstops");
 
     // Side by side with the map, the stop list may outgrow the arrivals

@@ -281,6 +281,7 @@
                               lon: pos.coords.longitude }; },
         () => {},
         { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
+      startMeMarker(false);   // and keep the rider's dot live on the map
     }).catch(() => {});
   }
 
@@ -302,6 +303,8 @@
       box.innerHTML = ""; resultNote("This browser has no geolocation."); box.hidden = false;
       return;
     }
+    // A user gesture: the one chance iOS gives to request compass events.
+    startMeMarker(true);
     box.innerHTML = "";
     resultNote("Locating…");
     box.hidden = false;

@@ -353,6 +353,18 @@
     border-left: 1px solid var(--line);
     z-index: 5;
   }
+  /* Stacked (phone): the overlay would smother the whole narrow board, so
+     the timeline slots into the flow UNDER the service's own row instead
+     (renderTripPanel picks the insertion point to match). */
+  @media (max-width: 899px) {
+    .trip-panel {
+      position: static; inset: auto;
+      border-left: 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      max-height: 48vh;
+    }
+  }
   .tp-head {
     flex: none; display: flex; align-items: center; gap: 10px;
     padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -657,3 +669,38 @@
     font-family: "IBM Plex Mono", monospace;
   }
   .maplibregl-popup-tip { border-top-color: var(--panel) !important; }
+
+  /* --- Phone portrait. The arrivals grid carries ~364px of fixed columns
+     (badge | src | countdown) before the destination gets a pixel, so a
+     360px screen pushed the countdown off the edge. Shrink the fixed
+     columns and let the destination keep flexing; same for planner legs. */
+  @media (max-width: 560px) {
+    .row {
+      grid-template-columns: 92px minmax(0, 1fr) 30px 58px;
+      gap: 8px; padding: 10px 8px 10px 9px;
+    }
+    .badge .mode { font-size: 16px; padding: 5px 6px; }
+    .badge .num { font-size: 16px; min-width: 30px; padding: 5px 6px; }
+    .badge .num.wide { font-size: 12px; padding: 5px 5px; }
+    .badge .num.xwide { font-size: 10px; max-width: 50px; }
+    .src-col { font-size: 16px; gap: 4px; }
+    .eta .num { font-size: 22px; }
+    .eta .unit { font-size: 9px; }
+    .itin .it-leg { grid-template-columns: 92px minmax(0, 1fr) auto auto; gap: 8px; }
+  }
+
+  /* The rider on the map: GPS blue dot, white ring; the wedge is the
+     compass heading (hidden until the device supplies one). */
+  .me-marker { position: relative; width: 18px; height: 18px; }
+  .me-dot {
+    position: absolute; inset: 2px; border-radius: 50%;
+    background: #4e8cff; border: 2px solid #fff;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  }
+  .me-wedge {
+    position: absolute; left: 50%; top: -8px; transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-bottom: 9px solid #4e8cff;
+  }
+  .me-wedge[hidden] { display: none; }

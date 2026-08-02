@@ -389,6 +389,7 @@
       loadPinSurrounds();   // pin present: draw + fit its surrounding stops
       if (planData) drawPlan();   // a plan booted before the map was ready
       if (lastData) updateMap(lastData);
+      flushMeMarker();      // a GPS fix that beat the map to it
     });
 
     // ?mapdebug=1 — ground-truth probe, run in the viewer's own browser (the

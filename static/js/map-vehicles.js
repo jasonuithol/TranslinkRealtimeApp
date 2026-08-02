@@ -192,3 +192,60 @@
     }
     holder.replaceChildren(frag);
   }
+
+  // --- the rider themself -------------------------------------------------
+  // A live GPS dot with a compass wedge, on every map view. Geolocation is
+  // HTTPS-gated off localhost, so this whole feature arms only in secure
+  // contexts; the wedge appears once the device supplies a heading.
+  let meMarker = null, meWedge = null, mePending = null, meWatch = null;
+  function placeMe(ll) {
+    if (!mapReady) { mePending = ll; return; }
+    if (!meMarker) {
+      const el = document.createElement("div");
+      el.className = "me-marker";
+      meWedge = document.createElement("div");
+      meWedge.className = "me-wedge";
+      meWedge.hidden = true;
+      const dot = document.createElement("div");
+      dot.className = "me-dot";
+      el.append(meWedge, dot);
+      // rotationAlignment map: the wedge keeps pointing the compass way
+      // even if the map is ever rotated.
+      meMarker = new maplibregl.Marker({ element: el, rotationAlignment: "map" })
+        .setLngLat(ll).addTo(map);
+    } else {
+      meMarker.setLngLat(ll);
+    }
+  }
+  // The map may finish loading after the first GPS fix — map-init calls
+  // this from its load handler.
+  function flushMeMarker() {
+    if (mePending) { const p = mePending; mePending = null; placeMe(p); }
+  }
+  function startMeMarker(fromGesture) {
+    if (!("geolocation" in navigator) || !window.isSecureContext) return;
+    if (meWatch == null) {
+      meWatch = navigator.geolocation.watchPosition(
+        (pos) => placeMe([pos.coords.longitude, pos.coords.latitude]),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+      const onOri = (e) => {
+        // iOS names it webkitCompassHeading; the standard event gives alpha
+        // (counter-clockwise from north), trusted only when absolute.
+        const h = e.webkitCompassHeading != null ? e.webkitCompassHeading
+                : (e.absolute && e.alpha != null ? 360 - e.alpha : null);
+        if (h != null && meMarker) {
+          meWedge.hidden = false;
+          meMarker.setRotation(h);
+        }
+      };
+      window.addEventListener("deviceorientationabsolute", onOri, true);
+      window.addEventListener("deviceorientation", onOri, true);
+    }
+    // iOS compass events need a permission that can only be requested
+    // during a user gesture — the near-me tap qualifies.
+    if (fromGesture && typeof DeviceOrientationEvent !== "undefined"
+        && DeviceOrientationEvent.requestPermission) {
+      DeviceOrientationEvent.requestPermission().catch(() => {});
+    }
+  }

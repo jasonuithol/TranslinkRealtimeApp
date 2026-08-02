@@ -103,14 +103,22 @@
         `<div class="empty">No journeys found from here today.</div>`);
       return;
     }
-    // Same colour machinery as the arrivals board: one vehicle colour per
-    // service — and a walk IS a service here, performed by a "walk vehicle"
-    // (🚶): it draws a colour from the same pool, shared by badge and trace.
-    const colorItems = [];
-    shown.forEach((it, i) => it.legs.forEach((leg, j) =>
-      colorItems.push({ trip_id: leg.kind === "ride" ? leg.trip_id
-                                                     : `walk:${i}:${j}` })));
-    planData.__colors = assignColors(colorItems);
+    // Each journey gets its OWN colour pool (a walk is a vehicle here
+    // too): legs colour in card order with furthest-hue spacing, so no
+    // number of "More" cards can exhaust the palette into a sea of red.
+    // Keys are per-card — the same trip may appear in two cards, wearing
+    // each card's colour; the map reads the selected card's keys.
+    planData.__colors = {};
+    shown.forEach((it, i) => {
+      const used = new Set();
+      it.legs.forEach((leg, j) => {
+        const idx = pickFreeIndex(used);
+        used.add(idx);
+        planData.__colors[leg.kind === "ride" ? `${i}:${leg.trip_id}`
+                                              : `walk:${i}:${j}`] =
+          VEHICLE_COLORS[idx];
+      });
+    });
     shown.forEach((it, i) => {
       const card = document.createElement("div");
       card.className = "itin" + (i === selItin ? " selected" : "");
@@ -131,7 +139,8 @@
       const etaMins = Math.round((setOff - Date.now() / 1000) / 60);
       const firstLeg = it.legs[0];
       const firstColor = planData.__colors[
-        firstLeg.kind === "ride" ? firstLeg.trip_id : `walk:${i}:0`] || "#ffb400";
+        firstLeg.kind === "ride" ? `${i}:${firstLeg.trip_id}`
+                                 : `walk:${i}:0`] || "#ffb400";
       const eta = document.createElement("div");
       eta.className = "eta it-eta";
       eta.style.setProperty("--vcolor", firstColor);
@@ -193,7 +202,7 @@
         }
         // A leg is a board row's language: black badge plate with the mode
         // glyph and route in the vehicle colour, 🛜/📅 in the same colour.
-        const vcolor = planData.__colors[leg.trip_id] || "#3fb950";
+        const vcolor = planData.__colors[`${i}:${leg.trip_id}`] || "#3fb950";
         const row = document.createElement("div");
         row.className = "it-leg";
         row.style.setProperty("--vcolor", vcolor);
@@ -367,7 +376,8 @@
         type: "Feature",
         geometry: { type: "LineString", coordinates: coords },
         // Same vehicle colour as the leg's badge — board and map agree.
-        properties: { color: (planData.__colors || {})[leg.trip_id] || "#3fb950" },
+        properties: { color: (planData.__colors || {})[`${selItin}:${leg.trip_id}`]
+                              || "#3fb950" },
       });
       for (const end of [seg[0], seg[seg.length - 1]]) {
         marks.push({

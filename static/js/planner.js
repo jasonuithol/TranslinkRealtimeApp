@@ -522,7 +522,7 @@
     if (!mapReady || !planData || !hasDest()) return;
     const it = (planData.__shown || planData.itineraries)[selItin];
     if (!it) { clearPlanLayers(); return; }
-    const lines = [], marks = [];
+    const lines = [], marks = [], rideLabels = [];
     let waiting = false;
     for (const leg of it.legs) {
       if (leg.kind !== "ride") continue;
@@ -549,6 +549,9 @@
         properties: { color: (planData.__colors || {})[`${selItin}:${leg.trip_id}`]
                               || "#3fb950" },
       });
+      // The ridden slice wears its street names, like the walks do.
+      const rideSts = streetsFor(coords, () => { if (planData) drawPlan(); });
+      rideLabels.push(...streetLabelFeatures(rideSts));
       for (const end of [seg[0], seg[seg.length - 1]]) {
         marks.push({
           type: "Feature",
@@ -561,6 +564,7 @@
       }
     }
     map.getSource("routes").setData({ type: "FeatureCollection", features: lines });
+    // (rideLabels joins the walk labels in the walklabels source below.)
     map.getSource("landmarks").setData({ type: "FeatureCollection", features: marks });
     map.getSource("vehicles").setData(emptyFC());
     map.getSource("ghosts").setData(emptyFC());
@@ -633,7 +637,7 @@
     map.getSource("walklines").setData(
       { type: "FeatureCollection", features: walks });
     map.getSource("walklabels").setData(
-      { type: "FeatureCollection", features: walkLabels });
+      { type: "FeatureCollection", features: [...rideLabels, ...walkLabels] });
     if (planData.to
         && planData.to.stop_lat != null && planData.to.stop_lon != null) {
       const dll = [planData.to.stop_lon, planData.to.stop_lat];

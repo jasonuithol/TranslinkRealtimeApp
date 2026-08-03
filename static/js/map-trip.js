@@ -1,10 +1,41 @@
 // route drawing, trip selection, the trip stops panel
 // Split from index.html; these files load in order as classic
 // scripts and share one global scope — boot.js must stay last.
+  // Street names for ANY drawn line, from /api/streets (G-NAF named,
+  // like the walk legs' lists). Cached per geometry; onReady redraws the
+  // caller once the names land.
+  const streetsCache = new Map();
+  function streetsFor(coords, onReady) {
+    const a = coords[0], b = coords[coords.length - 1];
+    const key = `${a[0].toFixed(5)},${a[1].toFixed(5)}|`
+              + `${b[0].toFixed(5)},${b[1].toFixed(5)}|${coords.length}`;
+    const hit = streetsCache.get(key);
+    if (hit !== undefined) return hit;
+    streetsCache.set(key, null);          // one fetch per line
+    fetch("/api/streets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ points: coords }),
+    }).then((r) => (r.ok ? r.json() : { streets: [] }))
+      .then((d) => { streetsCache.set(key, d.streets || []); onReady(); })
+      .catch(() => streetsCache.set(key, []));
+    return null;
+  }
+  function streetLabelFeatures(streets) {
+    return (streets || [])
+      .filter((st) => st.line && st.line.length > 1)
+      .map((st) => ({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: st.line },
+        properties: { name: st.name },
+      }));
+  }
+
   function drawRoutes(data) {
     if (!mapReady || !map.getSource("routes")) return;
     if (!selectedTrip) {
       map.getSource("routes").setData(emptyFC());
+      if (!planData) map.getSource("walklabels")?.setData(emptyFC());
       return;
     }
     const row = (data.departures || []).find((d) => d.trip_id === selectedTrip);
@@ -22,6 +53,10 @@
         properties: { color: (data.__colors || {})[selectedTrip] || "#3fb950" },
       }],
     });
+    // The traced route wears its street names too.
+    const sts = streetsFor(pts, () => { if (lastData) drawRoutes(lastData); });
+    map.getSource("walklabels")?.setData(
+      { type: "FeatureCollection", features: streetLabelFeatures(sts) });
   }
 
   // Clicking the same service again clears it.

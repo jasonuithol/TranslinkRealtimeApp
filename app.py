@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from google.transit import gtfs_realtime_pb2
@@ -1585,7 +1585,7 @@ def _wg_nearest(con, lat: float, lon: float):
     return None
 
 
-def _walk_streets(points):
+def _walk_streets(points, step=30.0):
     """Name the streets a walk path traverses: the nearest G-NAF address to
     each ~30 m sample of the path names the street underfoot (the walking
     graph itself stores no names). Consecutive samples merge into runs;
@@ -1594,7 +1594,7 @@ def _walk_streets(points):
     G-NAF DB — the caller treats streets as decoration, never structure."""
     if not GNAF_DB.exists() or len(points) < 2:
         return []
-    STEP = 30.0
+    STEP = float(step)
     def sl(a, b):
         return math.hypot((b[1] - a[1]) * 111000.0,
                           (b[0] - a[0]) * 88000.0)
@@ -1648,6 +1648,37 @@ def _walk_streets(points):
             merged.append({"name": n, "m": int(c * STEP),
                            "line": [list(p) for p in pts]})
     return merged
+
+
+_streets_cache: dict = {}
+
+
+@app.post("/api/streets")
+async def streets_for_path(request: Request):
+    """Street names along ANY line the client draws — ride traces and
+    planner leg slices alike (walk legs get theirs from /api/walkroute).
+    Adaptive sampling keeps a 30 km bus shape to ~800 G-NAF probes."""
+    body = await request.json()
+    raw = body.get("points") or []
+    if not (isinstance(raw, list) and 2 <= len(raw) <= 4000):
+        raise HTTPException(400, "points: 2..4000 [lon,lat] pairs")
+    try:
+        pts = [(float(p[0]), float(p[1])) for p in raw]
+    except (TypeError, ValueError, IndexError):
+        raise HTTPException(400, "points: 2..4000 [lon,lat] pairs")
+    total = sum(math.hypot((b[1] - a[1]) * 111000.0, (b[0] - a[0]) * 88000.0)
+                for a, b in zip(pts, pts[1:]))
+    if total > 80000:
+        return {"streets": []}   # an intercity shape; naming it helps no one
+    key = (round(pts[0][0], 5), round(pts[0][1], 5),
+           round(pts[-1][0], 5), round(pts[-1][1], 5), len(pts))
+    hit = _streets_cache.get(key)
+    if hit is None:
+        hit = _walk_streets(pts, step=max(30.0, total / 800.0))
+        if len(_streets_cache) > 256:
+            _streets_cache.pop(next(iter(_streets_cache)))
+        _streets_cache[key] = hit
+    return {"streets": hit}
 
 
 _walkroute_cache: dict = {}

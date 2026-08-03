@@ -5,12 +5,12 @@
 
 target: local
 host: localhost:8000
-updated: 2026-08-02
+updated: 2026-08-03
 
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, reason: "scroll to fresh plan cards; tappable legs unfold their timetable slice" }
+  image: { status: deployed, at: 2026-08-03 }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }

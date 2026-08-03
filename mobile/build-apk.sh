@@ -18,6 +18,8 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEYS="${HOME}/.config/translink"
+# release (default) or debug
+VARIANT="${1:-release}"
 IMAGE="docker.io/mobiledevops/android-sdk-image:34.0.0"
 
 if [[ ! -f "${KEYS}/honker-debug.keystore" ]]; then
@@ -30,8 +32,8 @@ podman run --rm --user root \
   -v honker-gradle:/root/.gradle \
   -v "${KEYS}:/keys:ro" \
   -w /app/android "$IMAGE" \
-  ./gradlew --no-daemon assembleDebug
+  ./gradlew --no-daemon "assemble${VARIANT^}"
 
-APK="${HERE}/android/app/build/outputs/apk/debug/app-debug.apk"
+APK="${HERE}/android/app/build/outputs/apk/${VARIANT}/app-${VARIANT}.apk"
 echo "==> ${APK}"
 ls -lh "$APK"

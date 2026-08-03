@@ -1,34 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script>
-// Packaged-app shim: the UI is bundled, the data is not (yet). Any
-// absolute /api or /basemap request is sent to the API host; everything
-// else — /static/... — resolves inside the app bundle.
-(function () {
-  var BASE = "https://nextarrival.app";
-  var REMOTE = /^\/(api|basemap)\//;
-  function remap(u) {
-    try {
-      var p = new URL(u, location.href);
-      if (p.origin === location.origin && REMOTE.test(p.pathname)) {
-        return BASE + p.pathname + p.search;
-      }
-    } catch (e) { /* not a URL we can parse: leave it alone */ }
-    return u;
-  }
-  var orig = window.fetch.bind(window);
-  window.fetch = function (input, init) {
-    if (typeof input === "string") return orig(remap(input), init);
-    if (input && input.url) {
-      var m = remap(input.url);
-      if (m !== input.url) return orig(new Request(m, input), init);
-    }
-    return orig(input, init);
-  };
-})();
-</script>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Next Service</title>

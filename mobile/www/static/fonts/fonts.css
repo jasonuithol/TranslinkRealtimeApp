@@ -1,0 +1,60 @@
+/* Self-hosted so the board has no external dependencies and works offline.
+   Archivo and IBM Plex Mono are both SIL Open Font License 1.1.
+   Latin subset only, from the Google Fonts CSS API. */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/Archivo-500.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/Archivo-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/IBMPlexMono-500.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/static/fonts/IBMPlexMono-600.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Noto Emoji — the MONOCHROME family, not Noto Color Emoji. Colour-emoji fonts
+   paint their own palette and ignore CSS `color`; these glyphs are ordinary
+   outlines, so they tint like text. Subset to the four transport glyphs used
+   for the mode badges — ⛴ U+26F4, 🚆 U+1F686, 🚊 U+1F68A, 🚍 U+1F68D — the two
+   landmark markers 🏫 U+1F3EB station, 🚏 U+1F68F bus stop and 🚉 U+1F689
+   tram stop, the two
+   prediction-source marks 🛜 U+1F6DC live and 📅 U+1F4C5 scheduled, the two
+   empty-state icons 🕰 U+1F570 arrivals and 🌏 U+1F30F map, the disruption
+   mark ⚠ U+26A0, the ferry-stop marker ☸ U+2638, the planner's walk-leg
+   mode 🚶 U+1F6B6, and the landing-page logo 🪿 U+1FABF. */
+@font-face {
+  font-family: 'Noto Emoji';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  /* ?v bumped whenever the subset changes, to dodge a heuristically-cached old
+     copy that is missing a newly-added glyph (a stale subset silently drops the
+     browser back to the colour-emoji font for the new codepoint). */
+  src: url('/static/fonts/NotoEmoji-mode.woff2?v=6') format('woff2');
+  /* Deliberately no unicode-range. The file is already subset to exactly these
+     glyphs, so a range adds nothing but a second list to keep in sync — and it
+     silently fell out of sync twice, dropping the browser back to the colour
+     emoji font for any codepoint added here but forgotten there. */
+}

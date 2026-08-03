@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from google.transit import gtfs_realtime_pb2
 
@@ -576,6 +577,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Translink Next Service", lifespan=lifespan)
+
+# The packaged phone app (Transport Honker) runs from its own local origin
+# and calls this API cross-origin. Everything here is a public read-only
+# transit endpoint, so a permissive policy costs nothing; there are no
+# cookies or credentials to protect.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")

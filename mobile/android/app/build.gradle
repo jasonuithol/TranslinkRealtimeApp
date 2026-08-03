@@ -8,6 +8,17 @@ android {
     // keys — and is mounted at /keys by build-apk.sh. Absent (a bare
     // gradlew run, CI), Gradle's own debug key is used as before.
     signingConfigs {
+        release {
+            // The app's real identity. Key kept outside the repo
+            // (~/.config/translink), mounted at /keys by build-apk.sh.
+            def rel = file('/keys/honker-release.keystore')
+            if (rel.exists()) {
+                storeFile rel
+                storePassword 'honkhonk'
+                keyAlias 'honker'
+                keyPassword 'honkhonk'
+            }
+        }
         debug {
             def stable = file('/keys/honker-debug.keystore')
             if (stable.exists()) {
@@ -35,6 +46,9 @@ android {
     }
     buildTypes {
         release {
+            if (file('/keys/honker-release.keystore').exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -338,49 +338,6 @@
       card.appendChild(act);
       board.appendChild(card);
     });
-    // The selected journey's stops, listed: a tap opens that stop's
-    // arrivals board (the plan clears; the pinned address stays).
-    const selIt = shown[selItin];
-    const jStops = [];
-    if (selIt) {
-      const seen = new Set();
-      for (const leg of selIt.legs) {
-        if (leg.kind !== "ride") continue;
-        for (const [sid, nm] of [[leg.board, leg.board_name],
-                                 [leg.alight, leg.alight_name]]) {
-          if (sid && !seen.has(sid)) {
-            seen.add(sid);
-            jStops.push({ sid, nm, rt: leg.route_type, rgn: leg.region,
-                          lat: sid === leg.board ? leg.board_lat : leg.alight_lat,
-                          lon: sid === leg.board ? leg.board_lon : leg.alight_lon });
-          }
-        }
-      }
-    }
-    if (jStops.length) {
-      const sec = document.createElement("div");
-      sec.className = "plan-stops";
-      sec.innerHTML = `<div class="ps-head">Stops on this journey</div>`;
-      for (const st of jStops) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "ps-row";
-        b.dataset.sid = st.sid;
-        b.innerHTML =
-          `<span class="ps-icon">${asText(landmarkGlyph(st.rt))}</span>`
-          + `<span class="ps-name">${escapeHtml(st.nm)}</span>`;
-        b.addEventListener("click", () => {
-          cancelPlan();               // hand over from planner to arrivals
-          selectStop(st.sid, st.rgn);
-        });
-        if (st.lat != null) {
-          b.addEventListener("mouseenter", () => hoverStop(st.lat, st.lon, st.rt));
-          b.addEventListener("mouseleave", () => hoverStop(null));
-        }
-        sec.appendChild(b);
-      }
-      board.appendChild(sec);
-    }
     // "More": one extra, later journey under the current cards. Goes quiet
     // once a fetch comes back with nothing new — the timetable dried up.
     if (shown.length) {

@@ -1,6 +1,23 @@
 apply plugin: 'com.android.application'
 
 android {
+    // A STABLE debug signature. Each container build otherwise minted a
+    // throwaway keystore, so every APK was signed by a different key and
+    // Android refused the update ("conflicts with an existing package").
+    // The key lives outside the repo — ~/.config/translink/, like the API
+    // keys — and is mounted at /keys by build-apk.sh. Absent (a bare
+    // gradlew run, CI), Gradle's own debug key is used as before.
+    signingConfigs {
+        debug {
+            def stable = file('/keys/honker-debug.keystore')
+            if (stable.exists()) {
+                storeFile stable
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
     namespace "app.transporthonker"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {

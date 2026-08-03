@@ -1,0 +1,16 @@
+{
+  "name": "transport-honker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Transport Honker — the goose that knows when your bus is coming",
+  "scripts": {
+    "sync": "cap sync",
+    "android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
+    "@capacitor/ios": "^6.2.1"
+  }
+}

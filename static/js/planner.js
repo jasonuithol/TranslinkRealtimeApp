@@ -350,7 +350,9 @@
                                  [leg.alight, leg.alight_name]]) {
           if (sid && !seen.has(sid)) {
             seen.add(sid);
-            jStops.push({ sid, nm, rt: leg.route_type, rgn: leg.region });
+            jStops.push({ sid, nm, rt: leg.route_type, rgn: leg.region,
+                          lat: sid === leg.board ? leg.board_lat : leg.alight_lat,
+                          lon: sid === leg.board ? leg.board_lon : leg.alight_lon });
           }
         }
       }
@@ -363,6 +365,7 @@
         const b = document.createElement("button");
         b.type = "button";
         b.className = "ps-row";
+        b.dataset.sid = st.sid;
         b.innerHTML =
           `<span class="ps-icon">${asText(landmarkGlyph(st.rt))}</span>`
           + `<span class="ps-name">${escapeHtml(st.nm)}</span>`;
@@ -370,6 +373,10 @@
           cancelPlan();               // hand over from planner to arrivals
           selectStop(st.sid, st.rgn);
         });
+        if (st.lat != null) {
+          b.addEventListener("mouseenter", () => hoverStop(st.lat, st.lon));
+          b.addEventListener("mouseleave", () => hoverStop(null));
+        }
         sec.appendChild(b);
       }
       board.appendChild(sec);

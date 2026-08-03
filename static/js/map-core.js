@@ -17,6 +17,17 @@
                  + '<use href="#goose-shape"/></svg>';
     return el;
   }
+  // The stop-hover halo: one point (a hovered list row's stop, or the
+  // landmark under the cursor), or nothing.
+  function hoverStop(lat, lon) {
+    if (!mapReady || !map.getSource("stop-hover")) return;
+    map.getSource("stop-hover").setData(lat == null
+      ? { type: "FeatureCollection", features: [] }
+      : { type: "FeatureCollection", features: [{
+            type: "Feature", properties: {},
+            geometry: { type: "Point", coordinates: [lon, lat] } }] });
+  }
+
   // The view auto-fits to the stop plus every tracked vehicle. It stops doing
   // so the moment the user moves the map themselves, and resumes on the next
   // stop selection. `programmatic` distinguishes our own camera moves from

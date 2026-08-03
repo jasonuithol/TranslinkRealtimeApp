@@ -793,7 +793,8 @@
     padding: 7px 4px; cursor: pointer;
     border-top: 1px solid var(--line);
   }
-  .plan-stops .ps-row:hover { background: #1f2731; }
+  .plan-stops .ps-row:hover,
+  .plan-stops .ps-row.hover { background: #1f2731; }
   .plan-stops .ps-icon {
     flex: none; font-family: "Noto Emoji", system-ui, sans-serif;
     font-variant-emoji: text; font-size: 17px; color: var(--muted);

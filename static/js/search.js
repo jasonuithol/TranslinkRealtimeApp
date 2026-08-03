@@ -171,6 +171,7 @@
       const b = document.createElement("button");
       b.type = "button";
       b.className = "ps-row";
+      b.dataset.sid = s.stop_id;
       b.innerHTML =
         `<span class="ps-icon">${asText(landmarkGlyph(s.route_type))}</span>`
         + `<span class="ps-name">${escapeHtml(s.stop_name)}</span>`
@@ -179,6 +180,9 @@
         s.region && s.region !== region
           ? openInRegion(s.region, s.stop_id)
           : selectStop(s.stop_id));
+      // List -> map: hovering the row halos the stop out on the map.
+      b.addEventListener("mouseenter", () => hoverStop(s.lat, s.lon));
+      b.addEventListener("mouseleave", () => hoverStop(null));
       sec.appendChild(b);
     }
     board.appendChild(sec);

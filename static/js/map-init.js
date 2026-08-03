@@ -240,6 +240,7 @@
       map.addSource("ghosts", { type: "geojson", data: emptyFC() });
       map.addSource("stop", { type: "geojson", data: emptyFC() });
       map.addSource("landmarks", { type: "geojson", data: emptyFC() });
+      map.addSource("stop-hover", { type: "geojson", data: emptyFC() });
       map.addSource("all-stops", { type: "geojson", data: emptyFC() });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
       map.addSource("walklines", { type: "geojson", data: emptyFC() });
@@ -321,6 +322,17 @@
       // pairs), in grey. Drawn above all-stops so a traced route's own stops
       // win any tie. Stations get no special layer — they are stops like any
       // other, in all-stops past zoom 15 and here when on a traced route.
+      map.addLayer({
+        // Hover halo, UNDER the landmark glyphs: lit by a list row being
+        // hovered, or by the cursor resting on the landmark itself.
+        id: "stop-hover", type: "circle", source: "stop-hover",
+        paint: {
+          "circle-radius": 15,
+          "circle-color": "rgba(255, 180, 0, 0.22)",
+          "circle-stroke-color": "#ffb400",
+          "circle-stroke-width": 2,
+        },
+      });
       map.addLayer({
         id: "landmarks", type: "symbol", source: "landmarks",
         layout: {
@@ -461,6 +473,25 @@
       // won — so the bus stop "did nothing". Priority now: a vehicle/ghost keeps
       // its own popup handler; else a route bus stop beats a background station
       // (you are clicking the stop you traced); else empty map clears the route.
+      // Map -> list: resting on a stop landmark lights its list row (the
+      // pinned address's surrounds, or the journey's stops) and its own
+      // halo; leaving clears both.
+      map.on("mousemove", "landmarks", (e) => {
+        const f = e.features && e.features[0];
+        document.querySelectorAll(".ps-row.hover")
+          .forEach((r) => r.classList.remove("hover"));
+        if (!f) return;
+        const row = f.properties.stop_id && document.querySelector(
+          `.ps-row[data-sid="${CSS.escape(f.properties.stop_id)}"]`);
+        if (row) row.classList.add("hover");
+        hoverStop(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+      });
+      map.on("mouseleave", "landmarks", () => {
+        document.querySelectorAll(".ps-row.hover")
+          .forEach((r) => r.classList.remove("hover"));
+        hoverStop(null);
+      });
+
       const stopLayers = ["landmarks", "all-stops"];
       map.on("click", (e) => {
         // Vehicles and ghosts have their own handlers below; leave those to them.

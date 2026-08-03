@@ -141,6 +141,7 @@
       if (!near.length) return;   // the pin alone is still worth showing
       pinStops = near;
       drawLandmarks();
+      renderPinStops();
       if (browsing) {
         const b = new maplibregl.LngLatBounds(
           [pinParam.lon, pinParam.lat], [pinParam.lon, pinParam.lat]);
@@ -148,6 +149,39 @@
         cameraMove(() => map.fitBounds(b, { padding: 80, maxZoom: 16.5 }));
       }
     } catch { /* the pin alone is still worth showing */ }
+  }
+
+  // The pinned address's surrounding stops, LISTED in the board as well
+  // as drawn on the map — each row opens that stop's arrivals board.
+  // No-op outside the pinned-browse state (a stop or a plan owns the
+  // board then).
+  function renderPinStops() {
+    if (!pinParam || stopId || hasDest() || !pinStops.length) return;
+    const board = $("board");
+    board.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "board-head";
+    const nm = document.createElement("span");
+    nm.textContent = `Stops near ${pinLabel || "your pin"}`;
+    head.append(nm);
+    board.appendChild(head);
+    const sec = document.createElement("div");
+    sec.className = "plan-stops";
+    for (const s of pinStops) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "ps-row";
+      b.innerHTML =
+        `<span class="ps-icon">${asText(landmarkGlyph(s.route_type))}</span>`
+        + `<span class="ps-name">${escapeHtml(s.stop_name)}</span>`
+        + `<span class="ps-dist">${fmtDist(s.dist_m)}</span>`;
+      b.addEventListener("click", () =>
+        s.region && s.region !== region
+          ? openInRegion(s.region, s.stop_id)
+          : selectStop(s.stop_id));
+      sec.appendChild(b);
+    }
+    board.appendChild(sec);
   }
 
   // Append address candidates to the dropdown (below any stop matches).

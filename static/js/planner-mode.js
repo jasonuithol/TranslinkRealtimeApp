@@ -102,7 +102,8 @@
       $("board").innerHTML = `<div class="empty placeholder">
         <div>Select a stop to see departures.</div>
         <div class="ph-icon">&#x1F570;&#xFE0E;</div></div>`;
-      drawLandmarks();   // restore the pin's surrounding stops
+      drawLandmarks();     // restore the pin's surrounding stops
+      renderPinStops();    // ...and their list in the board
       return;
     }
     refresh();

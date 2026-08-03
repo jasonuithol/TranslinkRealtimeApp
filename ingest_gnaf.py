@@ -94,6 +94,9 @@ def build(zip_path: Path) -> None:
         CREATE TABLE addresses (
             street_id INTEGER, num INTEGER, lat REAL, lon REAL,
             PRIMARY KEY (street_id, num)) WITHOUT ROWID;
+        -- (lat, lon) feeds the walk-route street namer: nearest address to
+        -- a path sample names the street being walked.
+        CREATE INDEX addresses_lat_lon ON addresses (lat, lon);
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     """)
 

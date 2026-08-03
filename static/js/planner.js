@@ -236,7 +236,18 @@
             <div class="it-times2">
               <b>${start != null ? planClock(start) : ""}</b>
             </div>`;
+          // Tapping a walk leg unfolds the streets it traverses.
+          const legKey = `${i}:${j}`;
+          row.classList.add("clickable");
+          row.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            selItin = i;
+            openLeg = openLeg === legKey ? null : legKey;
+            renderPlan();
+            drawPlan();
+          });
           card.appendChild(row);
+          if (openLeg === legKey) card.appendChild(walkStreets(it, j, vcolor));
           return;
         }
         // A leg is a board row's language: black badge plate with the mode
@@ -342,6 +353,70 @@
       }
       board.appendChild(more);
     }
+  }
+
+  // A walk leg's endpoints: the previous ride's alight (or the journey's
+  // origin) to the next ride's board (or the destination) — the same pairs
+  // drawPlan routes between.
+  function walkEndpoints(it, j) {
+    let a = null, b = null;
+    for (let k = j - 1; k >= 0; k--) {
+      if (it.legs[k].kind === "ride") {
+        a = [it.legs[k].alight_lon, it.legs[k].alight_lat]; break;
+      }
+    }
+    if (!a && planData.from && planData.from.stop_lat != null) {
+      a = [planData.from.stop_lon, planData.from.stop_lat];
+    }
+    for (let k = j + 1; k < it.legs.length; k++) {
+      if (it.legs[k].kind === "ride") {
+        b = [it.legs[k].board_lon, it.legs[k].board_lat]; break;
+      }
+    }
+    if (!b && planData.to && planData.to.stop_lat != null) {
+      b = [planData.to.stop_lon, planData.to.stop_lat];
+    }
+    return a && b && a[0] != null && b[0] != null ? [a, b] : null;
+  }
+
+  // Streets a walk traverses, from /api/walkroute (named server-side by the
+  // nearest G-NAF address to each path sample). Same endpoint the map's
+  // walk lines come from, so the response is usually already server-cached.
+  const walkStreetsCache = new Map();
+  function walkStreets(it, j, vcolor) {
+    const box = document.createElement("div");
+    box.className = "leg-tt";
+    box.style.setProperty("--vcolor", vcolor);
+    box.addEventListener("click", (ev) => ev.stopPropagation());
+    const eps = walkEndpoints(it, j);
+    if (!eps) {
+      box.innerHTML = `<div class="leg-tt-note">No route detail for this walk.</div>`;
+      return box;
+    }
+    const [a, b] = eps;
+    const key = `${a[0].toFixed(5)},${a[1].toFixed(5)}:${b[0].toFixed(5)},${b[1].toFixed(5)}`;
+    const hit = walkStreetsCache.get(key);
+    if (hit === undefined) {
+      walkStreetsCache.set(key, null);   // one fetch per pair
+      fetch(`/api/walkroute?from_lat=${a[1]}&from_lon=${a[0]}`
+            + `&to_lat=${b[1]}&to_lon=${b[0]}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { walkStreetsCache.set(key, d?.streets || []); renderPlan(); })
+        .catch(() => walkStreetsCache.set(key, []));
+    }
+    if (hit == null) {
+      box.innerHTML = `<div class="leg-tt-note">Tracing the walk…</div>`;
+      return box;
+    }
+    if (!hit.length) {
+      box.innerHTML = `<div class="leg-tt-note">No street names along this walk.</div>`;
+      return box;
+    }
+    const fmt = (m) => m < 950 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+    box.innerHTML = hit.map((st) =>
+      `<div class="leg-stop"><span class="ls-name">${escapeHtml(st.name)}</span>`
+      + `<span class="ls-time">${fmt(st.m)}</span></div>`).join("");
+    return box;
   }
 
   // The ridden slice of a leg's timetable: stops from board to alight,

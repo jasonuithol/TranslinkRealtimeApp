@@ -1585,6 +1585,67 @@ def _wg_nearest(con, lat: float, lon: float):
     return None
 
 
+def _walk_streets(points):
+    """Name the streets a walk path traverses: the nearest G-NAF address to
+    each ~30 m sample of the path names the street underfoot (the walking
+    graph itself stores no names). Consecutive samples merge into runs;
+    sub-60 m blips (clipping a corner at an intersection) are dropped.
+    Empty where addresses are out of reach (parks, bush) or without the
+    G-NAF DB — the caller treats streets as decoration, never structure."""
+    if not GNAF_DB.exists() or len(points) < 2:
+        return []
+    STEP = 30.0
+    def sl(a, b):
+        return math.hypot((b[1] - a[1]) * 111000.0,
+                          (b[0] - a[0]) * 88000.0)
+    samples, carry = [points[0]], 0.0
+    for a, b in zip(points, points[1:]):
+        seg = sl(a, b)
+        if seg <= 0:
+            continue
+        t = STEP - carry
+        while t <= seg:
+            f = t / seg
+            samples.append((a[0] + (b[0] - a[0]) * f,
+                            a[1] + (b[1] - a[1]) * f))
+            t += STEP
+        carry = (carry + seg) % STEP
+    con = sqlite3.connect(GNAF_DB)
+    try:
+        names = []
+        for lon, lat in samples:
+            rows = con.execute(
+                "SELECT s.name, s.type, a.lat, a.lon FROM addresses a "
+                "JOIN streets s ON s.id = a.street_id "
+                "WHERE a.lat BETWEEN ? AND ? AND a.lon BETWEEN ? AND ?",
+                (lat - 0.0006, lat + 0.0006,
+                 lon - 0.00075, lon + 0.00075)).fetchall()
+            best, bd = None, 60.0 ** 2
+            for nm, ty, ala, alo in rows:
+                d2 = (((ala - lat) * 111000.0) ** 2
+                      + ((alo - lon) * 88000.0) ** 2)
+                if d2 < bd:
+                    bd, best = d2, f"{nm.title()} {ty.title()}" if ty else nm.title()
+            names.append(best)
+    finally:
+        con.close()
+    # collapse into runs, drop intersection blips, merge what remains
+    runs = []
+    for n in names:
+        if runs and runs[-1][0] == n:
+            runs[-1][1] += 1
+        else:
+            runs.append([n, 1])
+    kept = [r for r in runs if r[0] is not None and r[1] >= 2]
+    merged = []
+    for n, c in kept:
+        if merged and merged[-1]["name"] == n:
+            merged[-1]["m"] += int(c * STEP)
+        else:
+            merged.append({"name": n, "m": int(c * STEP)})
+    return merged
+
+
 _walkroute_cache: dict = {}
 
 
@@ -1656,7 +1717,8 @@ def walkroute(from_lat: float, from_lon: float, to_lat: float, to_lon: float):
         points = ([[from_lon, from_lat]]
                   + [[pos[n][1], pos[n][0]] for n in path]
                   + [[to_lon, to_lat]])
-        out = {"points": points, "dist_m": g[dst["id"]]}
+        out = {"points": points, "dist_m": g[dst["id"]],
+               "streets": _walk_streets(points)}
     finally:
         con.close()
     if len(_walkroute_cache) > 512:

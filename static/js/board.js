@@ -17,6 +17,43 @@
   }
   const BOARD_BOTTOM_GUTTER = 28;   // breathing room + the status line
 
+  // One goose honk when the next "thing" — the soonest departure on the
+  // arrivals board, or the journey card being followed — crosses to one
+  // minute away. Once per thing; browsers gate audio behind a user
+  // gesture, so the first tap primes the element (a silent muted play).
+  let honkEl = null;
+  const honkPrime = () => {
+    honkEl = honkEl || new Audio("/static/sounds/honk.mp3");
+    return honkEl;
+  };
+  document.addEventListener("pointerdown", () => {
+    try {
+      const a = honkPrime();
+      a.muted = true;
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; })
+              .catch(() => { a.muted = false; });
+    } catch { /* no audio, no honk */ }
+  }, { once: true });
+  const honked = new Set(), honkSeen = new Map();
+  function maybeHonk(key, mins) {
+    const prev = honkSeen.get(key);
+    honkSeen.set(key, mins);
+    if (honked.has(key)) return;
+    // Honk on the crossing into "1 minute away" (a 15 s poll can jump
+    // 2 -> 0, so anything from above into <=1 counts) — but not for a
+    // thing FIRST seen already due: the moment has passed.
+    const crossed = (prev !== undefined && prev > 1 && mins <= 1 && mins >= 0)
+                 || (prev === undefined && mins === 1);
+    if (!crossed) return;
+    honked.add(key);
+    if (honked.size > 200) honked.clear();      // a day-long board tab
+    try {
+      const a = honkPrime();
+      a.currentTime = 0;
+      a.play().catch(() => { /* autoplay policy: needs a gesture first */ });
+    } catch { /* no audio, no honk */ }
+  }
+
   function renderBoard(data) {
     // In a pinned session the SEARCHED ADDRESS stays as the title — it is
     // the user's anchor; the chosen stop is visible on the map and board.
@@ -56,6 +93,11 @@
         `<div class="empty">No services in the next 90 minutes.</div>`);
     }
 
+    // The soonest departure is the stop's "next thing" — honk at 1 minute.
+    if (data.departures.length) {
+      const d0 = data.departures[0];
+      maybeHonk(`dep:${d0.trip_id}`, Math.round(d0.minutes));
+    }
     // Show only what fits, and cut the map to match: a marker with no row on
     // screen is exactly the mismatch the vehicles array exists to prevent.
     const limit = fittingRowCount();

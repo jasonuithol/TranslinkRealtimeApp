@@ -261,6 +261,11 @@ The machinery underneath (all callable standalone for surgical work):
 - Place and business data includes data from Overture Maps Foundation
   (overturemaps.org), licensed under CDLA-Permissive 2.0, and from
   OpenStreetMap contributors.
+- The goose honk (`static/sounds/honk.mp3`) is a Canada goose (*Branta
+  canadensis*) recorded by the US National Park Service (Wind Cave
+  National Park bird list) — a US federal government work in the public
+  domain, via Wikimedia Commons:
+  https://commons.wikimedia.org/wiki/File:Branta_canadensis.ogg
 
 Check each portal for current licensing and attribution requirements.
 

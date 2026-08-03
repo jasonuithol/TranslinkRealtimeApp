@@ -170,6 +170,11 @@
         }
       }   // walk-only: depart already IS the set-off
       const etaMins = Math.round((setOff - Date.now() / 1000) / 60);
+      // The journey being FOLLOWED — started, else the selected card — is
+      // the "next thing": honk when its set-off is a minute away.
+      if (startedPlan ? itinKey(it) === startedPlan.key : i === selItin) {
+        maybeHonk(`plan:${itinKey(it) || `walk:${destKey()}`}`, etaMins);
+      }
       const firstLeg = it.legs[0];
       const firstColor = planData.__colors[
         firstLeg.kind === "ride" ? `${i}:${firstLeg.trip_id}`

@@ -30,7 +30,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, reason: "walk legs list their streets (G-NAF named)" }
+  image: { status: deployed, at: 2026-08-03 }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.
@@ -47,7 +47,7 @@ components:
   # G-NAF address database (house-number geocoding). Built locally by
   # ingest_gnaf.py (quarterly-ish — G-NAF releases quarterly, addresses
   # churn slowly), shipped by release-vps.sh when pending (SHIP_GNAF).
-  gnaf-db: { status: pending, reason: "addresses (lat,lon) index for the walk street namer" }
+  gnaf-db: { status: deployed, at: 2026-08-03 }
   # Walking street graph (planner walk-leg routing along roads).
   walkgraph-db: { status: deployed, at: 2026-07-30 }
   # OSM named-places index (business/POI search).

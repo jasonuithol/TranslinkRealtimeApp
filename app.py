@@ -1629,20 +1629,24 @@ def _walk_streets(points):
             names.append(best)
     finally:
         con.close()
-    # collapse into runs, drop intersection blips, merge what remains
+    # collapse into runs (keeping each run's sample coords — the map draws
+    # the street's name along them), drop intersection blips, merge
     runs = []
-    for n in names:
+    for n, pt in zip(names, samples):
         if runs and runs[-1][0] == n:
             runs[-1][1] += 1
+            runs[-1][2].append(pt)
         else:
-            runs.append([n, 1])
+            runs.append([n, 1, [pt]])
     kept = [r for r in runs if r[0] is not None and r[1] >= 2]
     merged = []
-    for n, c in kept:
+    for n, c, pts in kept:
         if merged and merged[-1]["name"] == n:
             merged[-1]["m"] += int(c * STEP)
+            merged[-1]["line"].extend(pts)
         else:
-            merged.append({"name": n, "m": int(c * STEP)})
+            merged.append({"name": n, "m": int(c * STEP),
+                           "line": [list(p) for p in pts]})
     return merged
 
 

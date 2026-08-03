@@ -464,7 +464,8 @@
   let destMarker = null;
   function clearPlanLayers() {
     if (!mapReady) return;
-    for (const src of ["routes", "vehicles", "ghosts", "landmarks", "walklines"]) {
+    for (const src of ["routes", "vehicles", "ghosts", "landmarks",
+                       "walklines", "walklabels"]) {
       const s = map.getSource(src);
       if (s) s.setData(emptyFC());
     }
@@ -484,7 +485,8 @@
       const res = await fetch(
         `/api/walkroute?from_lat=${a[1]}&from_lon=${a[0]}`
         + `&to_lat=${b[1]}&to_lon=${b[0]}`);
-      walkRouteCache.set(key, res.ok ? (await res.json()).points : null);
+      // keep the whole answer: points draw the line, streets label it
+      walkRouteCache.set(key, res.ok ? await res.json() : null);
       if (planData) drawPlan();
     } catch {
       walkRouteCache.set(key, null);
@@ -566,7 +568,7 @@
     // Walks are the gaps between rides: origin -> first board, alight ->
     // next board. Drawn dashed along the walking graph, in the SAME pool
     // colour as the walk leg's badge — the walk is a vehicle here.
-    const walks = [];
+    const walks = [], walkLabels = [];
     let cursor = (planData.from && planData.from.stop_lat != null)
       ? [planData.from.stop_lon, planData.from.stop_lat] : null;
     let gapWalkIdx = null;
@@ -578,18 +580,25 @@
                               (b[1] - cursor[1]) * 111000);
         if (dm > 25) {   // sub-25 m "walks" are platform hops, not journeys
           const key = walkKey(cursor, b);
-          let pts = walkRouteCache.get(key);
-          if (pts === undefined) { ensureWalkRoute(cursor, b); pts = null; }
+          let wr = walkRouteCache.get(key);
+          if (wr === undefined) { ensureWalkRoute(cursor, b); wr = null; }
           walks.push({
             type: "Feature",
             geometry: { type: "LineString",
-                        coordinates: pts || [cursor, b] },
+                        coordinates: wr?.points || [cursor, b] },
             properties: {
               color: gapWalkIdx !== null
                 ? (planData.__colors || {})[`walk:${selItin}:${gapWalkIdx}`]
                 : undefined,
             },
           });
+          for (const st of wr?.streets || []) {
+            if (st.line?.length > 1) walkLabels.push({
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: st.line },
+              properties: { name: st.name },
+            });
+          }
         }
       }
       if (leg.alight_lat != null) cursor = [leg.alight_lon, leg.alight_lat];
@@ -603,19 +612,28 @@
                             (b[1] - cursor[1]) * 111000);
       if (dm > 25) {
         const key = walkKey(cursor, b);
-        let pts = walkRouteCache.get(key);
-        if (pts === undefined) { ensureWalkRoute(cursor, b); pts = null; }
+        let wr = walkRouteCache.get(key);
+        if (wr === undefined) { ensureWalkRoute(cursor, b); wr = null; }
         walks.push({
           type: "Feature",
-          geometry: { type: "LineString", coordinates: pts || [cursor, b] },
+          geometry: { type: "LineString", coordinates: wr?.points || [cursor, b] },
           properties: {
             color: (planData.__colors || {})[`walk:${selItin}:${gapWalkIdx}`],
           },
         });
+        for (const st of wr?.streets || []) {
+          if (st.line?.length > 1) walkLabels.push({
+            type: "Feature",
+            geometry: { type: "LineString", coordinates: st.line },
+            properties: { name: st.name },
+          });
+        }
       }
     }
     map.getSource("walklines").setData(
       { type: "FeatureCollection", features: walks });
+    map.getSource("walklabels").setData(
+      { type: "FeatureCollection", features: walkLabels });
     if (planData.to
         && planData.to.stop_lat != null && planData.to.stop_lon != null) {
       const dll = [planData.to.stop_lon, planData.to.stop_lat];

@@ -244,6 +244,7 @@
       map.addSource("all-stops", { type: "geojson", data: emptyFC() });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
       map.addSource("walklines", { type: "geojson", data: emptyFC() });
+      map.addSource("walklabels", { type: "geojson", data: emptyFC() });
 
       // The path each tracked vehicle is following, in that vehicle's colour.
       // Bottom of the stack: it is context for the markers, not the subject.
@@ -268,6 +269,23 @@
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 3],
           "line-dasharray": [1.2, 1.6],
           "line-opacity": 0.9,
+        },
+      });
+      // Street names printed along the journey's walks (named server-side
+      // by G-NAF; the basemap's own labels cover the ridden roads).
+      map.addLayer({
+        id: "walk-street-labels", type: "symbol", source: "walklabels",
+        layout: {
+          "symbol-placement": "line",
+          "text-field": ["get", "name"],
+          "text-font": ["Noto Sans Medium"],   // the vendored glyph set the basemap already uses
+          "text-size": 11,
+          "text-max-angle": 40,
+        },
+        paint: {
+          "text-color": "#e8edf1",
+          "text-halo-color": "#101418",
+          "text-halo-width": 1.3,
         },
       });
 

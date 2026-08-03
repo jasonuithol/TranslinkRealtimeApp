@@ -76,9 +76,18 @@ fi
 cat > "$CADDYFILE" <<EOF
 ${MARKER}
 ${DOMAIN} {
-	reverse_proxy localhost:${APP_PORT}
+	# Sideload downloads (the Transport Honker APK) live outside the app
+	# container: drop files in /srv/downloads on the VPS.
+	handle_path /downloads/* {
+		root * /srv/downloads
+		file_server
+	}
+	handle {
+		reverse_proxy localhost:${APP_PORT}
+	}
 }
 EOF
+mkdir -p /srv/downloads
 
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   echo "==> Opening 80/443 in ufw…"

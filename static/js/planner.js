@@ -338,6 +338,42 @@
       card.appendChild(act);
       board.appendChild(card);
     });
+    // The selected journey's stops, listed: a tap opens that stop's
+    // arrivals board (the plan clears; the pinned address stays).
+    const selIt = shown[selItin];
+    const jStops = [];
+    if (selIt) {
+      const seen = new Set();
+      for (const leg of selIt.legs) {
+        if (leg.kind !== "ride") continue;
+        for (const [sid, nm] of [[leg.board, leg.board_name],
+                                 [leg.alight, leg.alight_name]]) {
+          if (sid && !seen.has(sid)) {
+            seen.add(sid);
+            jStops.push({ sid, nm, rt: leg.route_type, rgn: leg.region });
+          }
+        }
+      }
+    }
+    if (jStops.length) {
+      const sec = document.createElement("div");
+      sec.className = "plan-stops";
+      sec.innerHTML = `<div class="ps-head">Stops on this journey</div>`;
+      for (const st of jStops) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ps-row";
+        b.innerHTML =
+          `<span class="ps-icon">${asText(landmarkGlyph(st.rt))}</span>`
+          + `<span class="ps-name">${escapeHtml(st.nm)}</span>`;
+        b.addEventListener("click", () => {
+          cancelPlan();               // hand over from planner to arrivals
+          selectStop(st.sid, st.rgn);
+        });
+        sec.appendChild(b);
+      }
+      board.appendChild(sec);
+    }
     // "More": one extra, later journey under the current cards. Goes quiet
     // once a fetch comes back with nothing new — the timetable dried up.
     if (shown.length) {
@@ -649,7 +685,8 @@
       if (!destMarker) {
         // RED, the arrival end (the departure pin is green). Draggable:
         // dropping it elsewhere re-plans to the new spot.
-        destMarker = new maplibregl.Marker({ color: "#e5484d", draggable: true })
+        destMarker = new maplibregl.Marker(
+          { element: goosePin("dest"), anchor: "bottom", draggable: true })
           .setLngLat(dll).addTo(map);
         destMarker.on("dragend", () => {
           const ll = destMarker.getLngLat();

@@ -7,6 +7,16 @@
   // the board is the product, the map is an enhancement.
   let map = null, mapReady = false, hasBasemap = false;
   let pinMarker = null;      // the departure pin (green, draggable)
+
+  // The journey pins are geese: line art dark, body in the end's colour
+  // (green departure, red destination) — the goose IS this app's mark.
+  function goosePin(kind) {
+    const el = document.createElement("div");
+    el.className = `pin-goose ${kind}`;
+    el.innerHTML = '<svg viewBox="440 -1740 1720 2080" aria-hidden="true">'
+                 + '<use href="#goose-shape"/></svg>';
+    return el;
+  }
   // The view auto-fits to the stop plus every tracked vehicle. It stops doing
   // so the moment the user moves the map themselves, and resumes on the next
   // stop selection. `programmatic` distinguishes our own camera moves from

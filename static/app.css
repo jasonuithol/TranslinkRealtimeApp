@@ -255,7 +255,9 @@
     height: 96px; display: block;
     filter: drop-shadow(0 0 28px rgba(255, 180, 0, 0.35));
   }
-  .goose-body { fill: #00843d; }   /* Australian national green */
+  /* var() pierces <use> shadow trees (descendant selectors cannot):
+     each goose instance recolours its body via --goose-body. */
+  .goose-body { fill: var(--goose-body, #00843d); }  /* Australian national green */
 
   .board {
     border: 1px solid var(--line);
@@ -767,3 +769,35 @@
     flex: none; font-family: "IBM Plex Mono", monospace; color: var(--vcolor);
   }
   .itin .leg-tt-note { color: var(--muted); font-size: 12px; padding: 2px 0; }
+
+  /* Journey pins are geese: dark line art, body in the end's colour. */
+  .pin-goose { width: 30px; height: 36px; cursor: grab; color: #0b0f13; }
+  .pin-goose svg {
+    width: 100%; height: 100%; display: block;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8));
+  }
+  .pin-goose.depart { --goose-body: #2fd07a; }
+  .pin-goose.dest { --goose-body: #e5484d; }
+  /* The drop-pin button's goose is solid destination red. */
+  .drop-pin, .pin-ghost { --goose-body: currentColor; }
+
+  /* The selected journey's stops, tappable into arrivals mode. */
+  .plan-stops { margin-top: 4px; border-top: 1px solid var(--line); }
+  .plan-stops .ps-head {
+    color: var(--muted); font-size: 12px; padding: 8px 2px 4px;
+  }
+  .plan-stops .ps-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: none; border: 0; color: var(--text);
+    font: inherit; font-size: 13px; text-align: left;
+    padding: 7px 4px; cursor: pointer;
+    border-top: 1px solid var(--line);
+  }
+  .plan-stops .ps-row:hover { background: #1f2731; }
+  .plan-stops .ps-icon {
+    flex: none; font-family: "Noto Emoji", system-ui, sans-serif;
+    font-variant-emoji: text; font-size: 17px; color: var(--muted);
+  }
+  .plan-stops .ps-name {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }

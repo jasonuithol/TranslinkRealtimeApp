@@ -104,10 +104,8 @@
     // address) to plan FROM — so syncChrome shows/hides it via pinCtl.
     {
       const PIN_SVG =
-        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
-        + '<path d="M12 2C8.1 2 5 5.1 5 9c0 5 7 13 7 13s7-8 7-13'
-        + 'c0-3.9-3.1-7-7-7z" fill="currentColor"/>'
-        + '<circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>';
+        '<svg viewBox="440 -1740 1720 2080" width="18" height="20" '
+        + 'aria-hidden="true"><use href="#goose-shape"/></svg>';
       const wrap = document.createElement("div");
       wrap.className = "maplibregl-ctrl maplibregl-ctrl-group";
       const btn = document.createElement("button");
@@ -230,7 +228,8 @@
         // The searched address — GREEN, the departure end of the journey
         // (the destination pin is red). Draggable: dropping it elsewhere
         // re-homes the journey from the new spot.
-        pinMarker = new maplibregl.Marker({ color: "#2fd07a", draggable: true })
+        pinMarker = new maplibregl.Marker(
+          { element: goosePin("depart"), anchor: "bottom", draggable: true })
           .setLngLat([pinParam.lon, pinParam.lat]).addTo(map);
         pinMarker.on("dragend", () => {
           const ll = pinMarker.getLngLat();

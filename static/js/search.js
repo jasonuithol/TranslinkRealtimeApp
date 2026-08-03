@@ -181,7 +181,7 @@
           ? openInRegion(s.region, s.stop_id)
           : selectStop(s.stop_id));
       // List -> map: hovering the row halos the stop out on the map.
-      b.addEventListener("mouseenter", () => hoverStop(s.lat, s.lon));
+      b.addEventListener("mouseenter", () => hoverStop(s.lat, s.lon, s.route_type));
       b.addEventListener("mouseleave", () => hoverStop(null));
       sec.appendChild(b);
     }

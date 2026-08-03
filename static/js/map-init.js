@@ -323,17 +323,6 @@
       // win any tie. Stations get no special layer — they are stops like any
       // other, in all-stops past zoom 15 and here when on a traced route.
       map.addLayer({
-        // Hover halo, UNDER the landmark glyphs: lit by a list row being
-        // hovered, or by the cursor resting on the landmark itself.
-        id: "stop-hover", type: "circle", source: "stop-hover",
-        paint: {
-          "circle-radius": 15,
-          "circle-color": "rgba(255, 180, 0, 0.22)",
-          "circle-stroke-color": "#ffb400",
-          "circle-stroke-width": 2,
-        },
-      });
-      map.addLayer({
         id: "landmarks", type: "symbol", source: "landmarks",
         layout: {
           "icon-image": ["get", "icon"],
@@ -342,6 +331,19 @@
           // Unlike the vehicles, these may crowd: let MapLibre thin them out.
           "icon-allow-overlap": false,
           "icon-padding": 2,
+        },
+      });
+      // The hovered stop, wearing the VIEWED stop's clothes: bright white
+      // glyph at the stop-ring's size, over the grey landmarks. Lit by a
+      // list row being hovered, or the cursor resting on the landmark.
+      map.addLayer({
+        id: "stop-hover", type: "symbol", source: "stop-hover",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.975, 15, 1.575],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          "icon-anchor": "bottom",
         },
       });
 
@@ -484,7 +486,8 @@
         const row = f.properties.stop_id && document.querySelector(
           `.ps-row[data-sid="${CSS.escape(f.properties.stop_id)}"]`);
         if (row) row.classList.add("hover");
-        hoverStop(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+        hoverStop(f.geometry.coordinates[1], f.geometry.coordinates[0],
+                  f.properties.rt);
       });
       map.on("mouseleave", "landmarks", () => {
         document.querySelectorAll(".ps-row.hover")

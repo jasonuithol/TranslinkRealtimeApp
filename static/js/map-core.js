@@ -17,14 +17,16 @@
                  + '<use href="#goose-shape"/></svg>';
     return el;
   }
-  // The stop-hover halo: one point (a hovered list row's stop, or the
-  // landmark under the cursor), or nothing.
-  function hoverStop(lat, lon) {
+  // The stop-hover highlight: one stop lit up in the viewed-stop's
+  // clothes (big, white), or nothing.
+  function hoverStop(lat, lon, routeType) {
     if (!mapReady || !map.getSource("stop-hover")) return;
     map.getSource("stop-hover").setData(lat == null
       ? { type: "FeatureCollection", features: [] }
       : { type: "FeatureCollection", features: [{
-            type: "Feature", properties: {},
+            type: "Feature",
+            properties: { icon: ensureVehicleIcon(
+              landmarkGlyph(routeType), LANDMARK_SELECTED_INK) },
             geometry: { type: "Point", coordinates: [lon, lat] } }] });
   }
 

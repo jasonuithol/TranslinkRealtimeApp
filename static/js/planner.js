@@ -374,7 +374,7 @@
           selectStop(st.sid, st.rgn);
         });
         if (st.lat != null) {
-          b.addEventListener("mouseenter", () => hoverStop(st.lat, st.lon));
+          b.addEventListener("mouseenter", () => hoverStop(st.lat, st.lon, st.rt));
           b.addEventListener("mouseleave", () => hoverStop(null));
         }
         sec.appendChild(b);
@@ -605,7 +605,7 @@
           type: "Feature",
           geometry: { type: "Point", coordinates: [end.lon, end.lat] },
           properties: {
-            stop_id: end.stop_id, name: end.stop_name,
+            stop_id: end.stop_id, name: end.stop_name, rt: end.route_type,
             icon: ensureVehicleIcon(landmarkGlyph(end.route_type), LANDMARK_INK),
           },
         });

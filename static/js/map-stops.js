@@ -76,6 +76,7 @@
           stop_id: l.stop_id,   // click a landmark to view it as the stop
           region: rgn,
           name: l.stop_name,
+          rt: l.route_type,     // the hover highlight re-inks this glyph
           icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
         },
       });

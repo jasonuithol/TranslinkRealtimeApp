@@ -138,7 +138,11 @@
                                     : "Plan a trip";
     // The map's drag-a-pin destination control needs the same origin the
     // planner does; it may not exist yet (the map builds asynchronously).
-    if (pinCtl) pinCtl.hidden = !stopId && !pinnedBrowse;
+    if (pinCtl) {
+      pinCtl.hidden = !stopId && !pinnedBrowse;
+      // Newly visible: point at it (no-op once the rider has dragged it).
+      if (!pinCtl.hidden && mapReady) coachDropPin();
+    }
     if ($("search-wrap").hidden) $("results").hidden = true;
   }
   // Set by map-init once the drop-pin control is on the map.

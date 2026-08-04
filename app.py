@@ -1121,6 +1121,48 @@ def _geocode_label(r: dict, state: str) -> str:
     return f"{', '.join(bits)} {state}".strip()
 
 
+@app.get("/api/r/{region}/rgeocode")
+@app.get("/api/rgeocode")
+def reverse_geocode(lat: float, lon: float, region: str = "seq"):
+    """A point -> the address a person would say. Dropped pins otherwise
+    travel as "dropped pin", and a journey card reading "Walk to dropped
+    pin" tells a rider nothing. Nearest G-NAF address wins; beyond ~150 m
+    the answer is hedged ("near ..."), and with nothing within ~600 m
+    there is honestly no address to give."""
+    if not GNAF_DB.exists():
+        return {"label": None}
+    con = sqlite3.connect(GNAF_DB)
+    try:
+        for span_m, hedge in ((150.0, ""), (600.0, "near ")):
+            dlat = span_m / 111000.0
+            dlon = span_m / (111000.0 * max(0.2, math.cos(math.radians(lat))))
+            rows = con.execute(
+                "SELECT a.num, a.lat, a.lon, s.name, s.type, s.locality, s.state "
+                "FROM addresses a JOIN streets s ON s.id = a.street_id "
+                "WHERE a.lat BETWEEN ? AND ? AND a.lon BETWEEN ? AND ?",
+                (lat - dlat, lat + dlat, lon - dlon, lon + dlon)).fetchall()
+            best, bd = None, span_m ** 2
+            for num, ala, alo, name, typ, loc, st in rows:
+                d2 = (((ala - lat) * 111000.0) ** 2
+                      + ((alo - lon) * 111000.0
+                         * math.cos(math.radians(lat))) ** 2)
+                if d2 < bd:
+                    bd, best = d2, (num, name, typ, loc, st)
+            if best:
+                num, name, typ, loc, st = best
+                street = name.title() + (f" {typ.title()}" if typ else "")
+                # Beyond the close range the house number would be a lie;
+                # the street and suburb are still true.
+                head = f"{num} {street}" if not hedge else street
+                return {"label": f"{hedge}{head}, {loc.title()} {st}",
+                        "exact": not hedge}
+    except sqlite3.Error as exc:
+        print(f"[rgeocode] failed: {exc}")
+    finally:
+        con.close()
+    return {"label": None}
+
+
 @app.get("/api/r/{region}/geocode")
 @app.get("/api/geocode")
 async def geocode(q: str, region: str = "seq",

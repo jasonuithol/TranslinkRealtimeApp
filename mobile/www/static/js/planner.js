@@ -235,7 +235,7 @@
               <span class="num wide">${mins} min</span>
             </div>
             <div class="it-detail">
-              <span>${escapeHtml(leg.from_name ?? "")}</span>
+              <span>Walk to ${escapeHtml(leg.to_name ?? "your destination")}</span>
             </div>
             <div class="src-col"></div>
             <div class="it-times2">
@@ -251,6 +251,11 @@
             renderPlan();
             drawPlan();
           });
+          row.setAttribute("role", "button");
+          row.setAttribute("aria-label",
+            `${mins} minute walk to ${leg.to_name ?? "your destination"}`
+            + (start != null ? `, leaving ${planClock(start)}` : "")
+            + ". Tap for the streets on the way.");
           card.appendChild(row);
           if (openLeg === legKey) card.appendChild(walkStreets(it, j, vcolor));
           return;
@@ -265,6 +270,7 @@
         const numClass = routeLabel.length > 8 ? "num xwide"
                        : routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[leg.route_type] ?? DEFAULT_EMOJI;
+        const modeWord = MODE_WORD[leg.route_type] ?? DEFAULT_WORD;
         // Many feeds bake the platform into the stop name already.
         const plat = (leg.board_platform
                       && !/platform|stop [a-z0-9]/i.test(leg.board_name))
@@ -275,7 +281,7 @@
             <span class="${numClass}">${escapeHtml(routeLabel)}</span>
           </div>
           <div class="it-detail">
-            <span>${escapeHtml(leg.board_name)}${plat}</span>
+            <span>Board the ${modeWord} at ${escapeHtml(leg.board_name)}${plat}</span>
             ${j === firstRisk
               ? `<span class="it-risk">⚠ connection at risk</span>` : ""}
           </div>
@@ -297,7 +303,35 @@
           renderPlan();
           drawPlan();
         });
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label",
+          `Board the ${routeLabel} ${modeWord} at ${leg.board_name}`
+          + ` at ${planClock(leg.dep)}, get off at ${leg.alight_name}`
+          + ` at ${planClock(leg.arr)}. Tap for the stops along the way.`);
         card.appendChild(row);
+        // "Get off" is a second row under the same stripe: a wrapping stop
+        // name must never leave an instruction and its time out of line.
+        const off = document.createElement("div");
+        off.className = "it-leg it-leg-off clickable";
+        off.style.setProperty("--vcolor", vcolor);
+        off.setAttribute("aria-hidden", "true");   // the row above says it all
+        off.innerHTML = `
+          <div></div>
+          <div class="it-detail">
+            <span class="it-off">Get off at ${escapeHtml(leg.alight_name)}</span>
+          </div>
+          <div class="src-col"></div>
+          <div class="it-times2">
+            <b class="it-off">${planClock(leg.arr)}</b>
+          </div>`;
+        off.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          selItin = i;
+          openLeg = openLeg === legKey ? null : legKey;
+          renderPlan();
+          drawPlan();
+        });
+        card.appendChild(off);
         if (openLeg === legKey) card.appendChild(legTimeline(leg, vcolor));
       });
       // The journey's arrival — location AND time — is one dedicated row:
@@ -306,7 +340,7 @@
       const arriveRow = document.createElement("div");
       arriveRow.className = "it-arrive";
       arriveRow.innerHTML =
-        `<span>arrive ${escapeHtml(toName || planData.to.stop_name || "")}</span>`
+        `<span>Arrive at ${escapeHtml(toName || planData.to.stop_name || "")}</span>`
         + `<b>${planClock(it.arrive)}</b>`;
       card.appendChild(arriveRow);
 

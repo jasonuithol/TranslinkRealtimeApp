@@ -180,6 +180,12 @@
     color: var(--vcolor);
   }
   /* The journey's arrival: one dedicated row under the legs, plain ink. */
+  /* The second line of a ride leg (getting off) and its time: the same
+     colour, a shade quieter than the boarding instruction above it. */
+  .itin .it-off { opacity: 0.75; }
+  /* The get-off row continues the boarding row's stripe: no top padding,
+     no badge — it is the same leg, second instruction. */
+  .itin .it-leg-off { padding-top: 0; margin-top: -3px; }
   .itin .it-arrive {
     display: flex; justify-content: space-between; align-items: baseline;
     padding: 6px 0 0 10px; margin-top: 2px;

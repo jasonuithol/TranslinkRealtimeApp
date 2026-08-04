@@ -344,8 +344,10 @@
       const arriveRow = document.createElement("div");
       arriveRow.className = "it-arrive";
       arriveRow.innerHTML =
-        `<span>Arrive at <b>${escapeHtml(toName || planData.to.stop_name || "")}</b></span>`
-        + `<b>${planClock(it.arrive)}</b>`;
+        `<div></div>`
+        + `<div class="it-detail"><span>Arrival time</span></div>`
+        + `<div class="src-col"></div>`
+        + `<div class="it-times2"><b>${planClock(it.arrive)}</b></div>`;
       card.appendChild(arriveRow);
 
       // Start = commit to this journey (it stops disappearing once its

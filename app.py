@@ -1163,6 +1163,18 @@ def reverse_geocode(lat: float, lon: float, region: str = "seq"):
     return {"label": None}
 
 
+# Labels a caller may send that name nothing. A shared URL carrying one
+# (or none at all) should still produce a journey a rider can follow.
+_PLACEHOLDER_LABELS = {"", "dropped pin", "destination",
+                       "your address", "your destination"}
+
+
+def _point_label(lat, lon, given, fallback):
+    if given and given.strip().lower() not in _PLACEHOLDER_LABELS:
+        return given
+    return reverse_geocode(lat=lat, lon=lon).get("label") or fallback
+
+
 @app.get("/api/r/{region}/geocode")
 @app.get("/api/geocode")
 async def geocode(q: str, region: str = "seq",
@@ -1933,7 +1945,9 @@ def plan_endpoint(to: str | None = None,
                     if pen < seed_pen.get(member, 1 << 30):
                         seed_pen[member] = pen
             names["__origin__"] = {
-                "stop_id": None, "stop_name": from_label or "Your address",
+                "stop_id": None,
+                "stop_name": _point_label(from_lat, from_lon, from_label,
+                                          "Your address"),
                 "stop_lat": from_lat, "stop_lon": from_lon,
             }
         targets = None
@@ -1953,7 +1967,9 @@ def plan_endpoint(to: str | None = None,
                     if pen < t_pen.get(member, 1 << 30):
                         t_pen[member] = pen
             names["__dest__"] = {
-                "stop_id": None, "stop_name": to_label or "Your destination",
+                "stop_id": None,
+                "stop_name": _point_label(to_lat, to_lon, to_label,
+                                          "Your destination"),
                 "stop_lat": to_lat, "stop_lon": to_lon,
             }
 

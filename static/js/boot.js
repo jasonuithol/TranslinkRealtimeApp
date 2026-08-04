@@ -15,6 +15,7 @@
   });
 
   syncChrome();
+  nameUnnamedPoints();   // bare coordinates in the URL get an address
   initMap();
   if (stopId) selectStop(stopId);
   else if (hasDest() && pinnedBrowse) {

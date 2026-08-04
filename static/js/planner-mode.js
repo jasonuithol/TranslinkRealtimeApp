@@ -59,6 +59,34 @@
   }
   const UNNAMED = /^(dropped pin|destination|your address|your destination)$/i;
 
+  // A reloaded or shared URL can carry bare coordinates — no label, or a
+  // placeholder one. Name them from the address book at boot, so the page
+  // never greets anyone with "Walk to dropped pin".
+  function nameUnnamedPoints() {
+    if (toPoint && (!toName || UNNAMED.test(toName))) {
+      const at = toPoint;
+      addressFor(at.lat, at.lon).then((addr) => {
+        if (!addr || toPoint !== at) return;
+        toName = addr;
+        syncPlanUrl();
+        syncChrome();
+        if (planData) refresh();     // re-plan so the legs say it too
+      });
+    }
+    if (pinParam && (!pinLabel || UNNAMED.test(pinLabel))) {
+      const at = pinParam;
+      addressFor(at.lat, at.lon).then((addr) => {
+        if (!addr || pinParam !== at) return;
+        pinLabel = addr;
+        syncPlanUrl();
+        syncChrome();
+        if (!stopId) $("stop-name").textContent = pinLabel;
+        if (hasDest()) refresh();
+        else renderPinStops();
+      });
+    }
+  }
+
   // A place or address as destination stays a POINT — the pizza joint IS
   // the destination; the planner walks the last leg to its door.
   function setDestPoint(lat, lon, label) {

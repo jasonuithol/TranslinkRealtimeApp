@@ -149,6 +149,8 @@
         const x = e.clientX - rect.left, y = e.clientY - rect.top;
         if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
         const ll = map.unproject([x, y]);
+        // Dragged and dropped for real: stop coaching this control.
+        try { localStorage.setItem("honkerPinDragged", "1"); } catch { /* private mode */ }
         setDestPoint(ll.lat, ll.lng, "dropped pin");
       });
       wrap.appendChild(btn);

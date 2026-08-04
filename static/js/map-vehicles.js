@@ -195,17 +195,21 @@
 
   // --- first-run coaching --------------------------------------------------
   // The drag-me-to-a-destination pin is the app's least discoverable
-  // control: it does nothing on tap, only on drag. Point at it once per
-  // session, the first time a map appears with the control on it.
+  // control: it does nothing on tap, only on drag. So keep pointing at it
+  // — every time a map appears, and whenever the control itself appears —
+  // until the rider has actually dragged the goose once. That one success
+  // is remembered for good (localStorage); the × only silences it for the
+  // current page view.
+  const PIN_LEARNED = "honkerPinDragged";
+  let coachDismissed = false;
   function coachDropPin() {
-    if (sessionStorage.getItem("coachedPin")) return;
+    if (localStorage.getItem(PIN_LEARNED) || coachDismissed) return;
+    if (document.querySelector(".coach")) return;      // already showing
     const btn = document.querySelector(".drop-pin");
     const wrap = $("map-wrap");
     // offsetParent is null while the control is hidden (no origin to plan
-    // from) — nothing to point at yet, so leave the flag unset and try
-    // again on the next map.
+    // from) — nothing to point at yet; syncChrome calls back when it shows.
     if (!btn || !wrap || btn.offsetParent === null) return;
-    sessionStorage.setItem("coachedPin", "1");
 
     const tip = document.createElement("div");
     tip.className = "coach";
@@ -229,9 +233,11 @@
     window.addEventListener("resize", place);
     tip.querySelector(".coach-x").addEventListener("click", (ev) => {
       ev.stopPropagation();
+      coachDismissed = true;        // quiet for this page view only
       close();
     });
-    // Taking the hint dismisses it — no one needs telling twice.
+    // Taking the hint hides it; whether the lesson STUCK is decided by the
+    // drop handler, which sets PIN_LEARNED only on a real drag.
     btn.addEventListener("pointerdown", close, { once: true });
   }
 

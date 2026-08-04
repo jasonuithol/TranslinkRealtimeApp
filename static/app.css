@@ -185,16 +185,23 @@
   /* The place is the point of the instruction: the verb is scaffolding,
      the stop name is what a rider scans for. */
   .itin .it-detail b, .itin .it-arrive span b { font-weight: 700; }
-  .itin .it-off { opacity: 0.75; }
+  /* Only the get-off TIME is quieted; dimming the whole line made its bold
+     stop name read as unbold beside the boarding instruction above it. */
+  .itin .it-times2 b.it-off { opacity: 0.75; }
   /* The get-off row continues the boarding row's stripe: no top padding,
      no badge — it is the same leg, second instruction. */
   .itin .it-leg-off { padding-top: 0; margin-top: -3px; }
   .itin .it-arrive {
-    display: flex; justify-content: space-between; align-items: baseline;
-    padding: 6px 0 0 10px; margin-top: 2px;
+    display: grid;
+    grid-template-columns: 130px 1fr auto auto;   /* as .it-leg */
+    gap: 12px; align-items: center;
+    padding: 7px 0 0 10px; margin-top: 2px;
     border-top: 1px solid var(--line);
-    font-size: 13px; color: var(--muted);
+    font-size: 13px;
   }
+  /* No --vcolor on this row: it belongs to the journey, not a leg. */
+  .itin .it-arrive .it-detail { color: var(--muted); }
+  .itin .it-arrive .it-times2 { color: var(--text); }
   .itin .it-arrive b {
     font-family: "IBM Plex Mono", monospace; color: var(--text);
   }

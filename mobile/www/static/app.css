@@ -28,11 +28,18 @@
     display: flex; align-items: baseline; gap: 12px;
     flex-wrap: wrap; margin-top: 2px;
   }
+  .titlebar > * { min-width: 0; }        /* flex items may shrink to fit */
+  h1 { overflow-wrap: anywhere; }        /* long addresses wrap, never spill */
   .titlebar[hidden] { display: none; }
   .change {
     background: none; border: 2px solid var(--amber); border-radius: 999px;
     color: var(--text); font: inherit; font-size: 18px;
-    padding: 4px 18px; cursor: pointer; white-space: nowrap;
+    padding: 4px 18px; cursor: pointer;
+    /* The destination chip carries a full street address. Nowrap made it
+       wider than a phone in portrait and pushed the whole page sideways;
+       it wraps inside the pill instead, and can never exceed the column. */
+    white-space: normal; overflow-wrap: anywhere;
+    max-width: 100%; text-align: left; line-height: 1.25;
   }
   .change:hover { background: var(--amber); color: #000; }
   .change:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }

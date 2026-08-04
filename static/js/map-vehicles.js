@@ -217,8 +217,9 @@
     const place = () => {
       const b = btn.getBoundingClientRect();
       const w = wrap.getBoundingClientRect();
-      tip.style.left = `${b.left - w.left + b.width / 2}px`;
-      tip.style.top = `${b.bottom - w.top + 12}px`;
+      // Beside the button, on its row: the arrow points back at it.
+      tip.style.left = `${b.right - w.left + 12}px`;
+      tip.style.top = `${b.top - w.top + b.height / 2}px`;
     };
     place();
     const close = () => {

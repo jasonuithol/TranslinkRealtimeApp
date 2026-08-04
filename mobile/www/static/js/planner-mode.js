@@ -47,12 +47,34 @@
     _destChosen(name || sid);
   }
 
+  // "Dropped pin" is not a place a rider can walk to. Ask the server what
+  // is actually there (nearest G-NAF address) and use that instead; the
+  // fallback stands only where the country has no address to give.
+  async function addressFor(lat, lon) {
+    try {
+      const r = await fetch(api(`/rgeocode?lat=${lat}&lon=${lon}`));
+      if (r.ok) return (await r.json()).label || null;
+    } catch { /* offline or no G-NAF: keep the caller's wording */ }
+    return null;
+  }
+  const UNNAMED = /^(dropped pin|destination|your address|your destination)$/i;
+
   // A place or address as destination stays a POINT — the pizza joint IS
   // the destination; the planner walks the last leg to its door.
   function setDestPoint(lat, lon, label) {
     toId = null;
     toPoint = { lat, lon };
     _destChosen(label || "destination");
+    if (!label || UNNAMED.test(label)) {
+      addressFor(lat, lon).then((addr) => {
+        // Ignore a late answer for a pin the user has already moved on from.
+        if (!addr || !toPoint || toPoint.lat !== lat || toPoint.lon !== lon) return;
+        toName = addr;
+        syncPlanUrl();
+        syncChrome();
+        refresh();          // re-plan so the legs say the address too
+      });
+    }
   }
 
   function _destChosen(name) {
@@ -81,6 +103,14 @@
     planData = null; planFitted = false;
     syncPlanUrl();
     $("stop-name").textContent = pinLabel;
+    addressFor(lat, lon).then((addr) => {
+      if (!addr || !pinParam || pinParam.lat !== lat || pinParam.lon !== lon) return;
+      pinLabel = addr;
+      $("stop-name").textContent = pinLabel;
+      syncPlanUrl();
+      if (hasDest()) refresh();   // the legs name the origin too
+      else renderPinStops();      // ..."Stops near <address>"
+    });
     if (hasDest()) {
       $("board").innerHTML = `<div class="empty">Planning…</div>`;
       refresh();

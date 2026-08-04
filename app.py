@@ -1166,7 +1166,8 @@ def reverse_geocode(lat: float, lon: float, region: str = "seq"):
 # Labels a caller may send that name nothing. A shared URL carrying one
 # (or none at all) should still produce a journey a rider can follow.
 _PLACEHOLDER_LABELS = {"", "dropped pin", "destination",
-                       "your address", "your destination"}
+                       "your address", "your destination",
+                       "near me", "your location", "you"}
 
 
 def _point_label(lat, lon, given, fallback):

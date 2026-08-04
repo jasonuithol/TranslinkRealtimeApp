@@ -188,6 +188,30 @@
     board.appendChild(sec);
   }
 
+  // A cold landing with nothing in the URL: if the device has ALREADY
+  // granted location, pin the rider where they are — the board is most
+  // useful pre-answered. No prompt: an unsolicited permission dialog on
+  // page load is hostile (and browsers may auto-deny it), so a first-time
+  // visitor still taps "near me". Once per session, or the goose could
+  // never fly you back to a plain search page.
+  function autoPinNearMe() {
+    if (stopId || pinParam || hasDest()) return;         // context already set
+    if (!("geolocation" in navigator) || !window.isSecureContext) return;
+    if (!navigator.permissions?.query) return;
+    if (sessionStorage.getItem("autoPinned")) return;
+    navigator.permissions.query({ name: "geolocation" }).then((p) => {
+      if (p.state !== "granted") return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          sessionStorage.setItem("autoPinned", "1");
+          // No label: the pin names itself from the address book.
+          openPinned(pos.coords.latitude, pos.coords.longitude, "you", "");
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    }).catch(() => {});
+  }
+
   // Append address candidates to the dropdown (below any stop matches).
   // ONE nationwide query, biased to the current region's viewbox — the
   // region a clicked address lands in comes from its nearest STOP, so

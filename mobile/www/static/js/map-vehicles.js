@@ -193,6 +193,47 @@
     holder.replaceChildren(frag);
   }
 
+  // --- first-run coaching --------------------------------------------------
+  // The drag-me-to-a-destination pin is the app's least discoverable
+  // control: it does nothing on tap, only on drag. Point at it once per
+  // session, the first time a map appears with the control on it.
+  function coachDropPin() {
+    if (sessionStorage.getItem("coachedPin")) return;
+    const btn = document.querySelector(".drop-pin");
+    const wrap = $("map-wrap");
+    // offsetParent is null while the control is hidden (no origin to plan
+    // from) — nothing to point at yet, so leave the flag unset and try
+    // again on the next map.
+    if (!btn || !wrap || btn.offsetParent === null) return;
+    sessionStorage.setItem("coachedPin", "1");
+
+    const tip = document.createElement("div");
+    tip.className = "coach";
+    tip.innerHTML = '<span>Drag this to your destination</span>'
+                  + '<button type="button" class="coach-x" '
+                  + 'aria-label="Got it">&times;</button>';
+    wrap.appendChild(tip);
+
+    const place = () => {
+      const b = btn.getBoundingClientRect();
+      const w = wrap.getBoundingClientRect();
+      tip.style.left = `${b.left - w.left + b.width / 2}px`;
+      tip.style.top = `${b.bottom - w.top + 12}px`;
+    };
+    place();
+    const close = () => {
+      window.removeEventListener("resize", place);
+      tip.remove();
+    };
+    window.addEventListener("resize", place);
+    tip.querySelector(".coach-x").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      close();
+    });
+    // Taking the hint dismisses it — no one needs telling twice.
+    btn.addEventListener("pointerdown", close, { once: true });
+  }
+
   // --- the rider themself -------------------------------------------------
   // A live GPS dot with a compass wedge, on every map view. Geolocation is
   // HTTPS-gated off localhost, so this whole feature arms only in secure

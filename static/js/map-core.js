@@ -71,6 +71,10 @@
     4: "\u{26F4}",  // ⛴ ferry
   };
   const DEFAULT_EMOJI = MODE_EMOJI[3];
+  // The same modes in words: the journey card gives instructions ("Board
+  // the bus at …"), and a glyph alone does not read as an instruction.
+  const MODE_WORD = { 0: "tram", 1: "metro", 2: "train", 3: "bus", 4: "ferry" };
+  const DEFAULT_WORD = MODE_WORD[3];
 
   // Landmark glyphs — the physical stop, not the service calling at it.
   const STOP_STATION = "\u{1F3EB}";  // 🏫

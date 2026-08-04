@@ -10,7 +10,7 @@ updated: 2026-08-04
 components:
   # Same pipeline as the vps image: commit → push → CI → GHCR → pull.
   # deploy.sh gates on git/CI state before pulling here too.
-  image: { status: pending, reason: "coach mark sits beside the pin button" }
+  image: { status: deployed, at: 2026-08-04 }
   # Basemaps live in the shared volume — built in place, nothing to ship.
   basemap-seq: { status: deployed, at: 2026-07-22 }
   basemap-mel: { status: deployed, at: 2026-07-26 }

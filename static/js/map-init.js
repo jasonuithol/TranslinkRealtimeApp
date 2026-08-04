@@ -551,6 +551,7 @@
       if (planData) drawPlan();   // a plan booted before the map was ready
       if (lastData) updateMap(lastData);
       flushMeMarker();      // a GPS fix that beat the map to it
+      coachDropPin();       // first map of the session: point at the pin
     });
 
     // ?mapdebug=1 — ground-truth probe, run in the viewer's own browser (the

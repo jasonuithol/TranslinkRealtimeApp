@@ -813,3 +813,27 @@
     font-family: "IBM Plex Mono", monospace; font-size: 12px;
     color: var(--muted);
   }
+
+  /* First-run coach mark: points up at the drag-me pin control. */
+  .coach {
+    position: absolute; z-index: 6;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px;
+    max-width: min(280px, 70vw);
+    background: var(--amber); color: #000;
+    border-radius: 8px; padding: 8px 8px 8px 12px;
+    font-size: 13px; font-weight: 600; line-height: 1.3;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  .coach::before {           /* the arrow, aimed at the button above */
+    content: ""; position: absolute; top: -7px; left: 50%;
+    transform: translateX(-50%);
+    border-left: 8px solid transparent; border-right: 8px solid transparent;
+    border-bottom: 8px solid var(--amber);
+  }
+  .coach .coach-x {
+    flex: none; background: none; border: 0; color: #000;
+    font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer;
+    opacity: 0.65;
+  }
+  .coach .coach-x:hover { opacity: 1; }

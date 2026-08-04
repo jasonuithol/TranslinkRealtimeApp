@@ -57,7 +57,10 @@
     } catch { /* offline or no G-NAF: keep the caller's wording */ }
     return null;
   }
-  const UNNAMED = /^(dropped pin|destination|your address|your destination)$/i;
+  // Labels that name no place. "Near me" and friends are friendly but
+  // useless in an instruction ("Walk to Near me"), so they resolve to an
+  // address like a dropped pin does.
+  const UNNAMED = /^(dropped pin|destination|your address|your destination|near me|your location|you)$/i;
 
   // A reloaded or shared URL can carry bare coordinates — no label, or a
   // placeholder one. Name them from the address book at boot, so the page

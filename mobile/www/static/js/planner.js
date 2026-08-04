@@ -14,14 +14,18 @@
   // "More" journeys: how many extra, later alternates the user has asked
   // for beyond the planner's own picks. Refetched on every poll so they
   // re-cost with fresh realtime exactly like the main cards.
-  let planExtra = 0, planExtraFor = null, planMoreDry = false;
+  // A rider wants a choice, not a verdict: the board opens with the best
+  // journey AND the one after it. "More" adds another each press.
+  const INITIAL_ALTERNATES = 1;
+  let planExtra = INITIAL_ALTERNATES, planExtraFor = null, planMoreDry = false;
   let openLeg = null;         // "itin:leg" whose timetable slice is unfolded
   let planScrolledFor = null; // destKey already scrolled into view (phones)
 
   async function refreshPlan() {
     try {
       if (planExtraFor !== destKey()) {   // a new destination starts clean
-        planExtra = 0; planExtraFor = destKey(); planMoreDry = false;
+        planExtra = INITIAL_ALTERNATES; planExtraFor = destKey();
+        planMoreDry = false;
         openLeg = null;
       }
       // Origin: the pinned ADDRESS whenever one exists — trips start at the

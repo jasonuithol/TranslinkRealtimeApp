@@ -182,6 +182,9 @@
   /* The journey's arrival: one dedicated row under the legs, plain ink. */
   /* The second line of a ride leg (getting off) and its time: the same
      colour, a shade quieter than the boarding instruction above it. */
+  /* The place is the point of the instruction: the verb is scaffolding,
+     the stop name is what a rider scans for. */
+  .itin .it-detail b, .itin .it-arrive span b { font-weight: 700; }
   .itin .it-off { opacity: 0.75; }
   /* The get-off row continues the boarding row's stripe: no top padding,
      no badge — it is the same leg, second instruction. */

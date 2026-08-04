@@ -239,7 +239,7 @@
               <span class="num wide">${mins} min</span>
             </div>
             <div class="it-detail">
-              <span>Walk to ${escapeHtml(leg.to_name ?? "your destination")}</span>
+              <span>Walk to <b>${escapeHtml(leg.to_name ?? "your destination")}</b></span>
             </div>
             <div class="src-col"></div>
             <div class="it-times2">
@@ -285,7 +285,7 @@
             <span class="${numClass}">${escapeHtml(routeLabel)}</span>
           </div>
           <div class="it-detail">
-            <span>Board the ${modeWord} at ${escapeHtml(leg.board_name)}${plat}</span>
+            <span>Board the ${modeWord} at <b>${escapeHtml(leg.board_name)}${plat}</b></span>
             ${j === firstRisk
               ? `<span class="it-risk">⚠ connection at risk</span>` : ""}
           </div>
@@ -322,7 +322,7 @@
         off.innerHTML = `
           <div></div>
           <div class="it-detail">
-            <span class="it-off">Get off at ${escapeHtml(leg.alight_name)}</span>
+            <span class="it-off">Get off at <b>${escapeHtml(leg.alight_name)}</b></span>
           </div>
           <div class="src-col"></div>
           <div class="it-times2">
@@ -344,7 +344,7 @@
       const arriveRow = document.createElement("div");
       arriveRow.className = "it-arrive";
       arriveRow.innerHTML =
-        `<span>Arrive at ${escapeHtml(toName || planData.to.stop_name || "")}</span>`
+        `<span>Arrive at <b>${escapeHtml(toName || planData.to.stop_name || "")}</b></span>`
         + `<b>${planClock(it.arrive)}</b>`;
       card.appendChild(arriveRow);
 

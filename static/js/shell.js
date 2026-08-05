@@ -69,6 +69,9 @@
   // Hooks called by the renderers, so they stay ignorant of the shell.
   function shellFreshAsk() { ovDismissed = null; }
 
+  // Something went wrong and the board is holding the message: show it.
+  function shellShowError() { openOverlay("board"); }
+
   function shellShowBoard() {
     // Arrivals rendered: show them, unless a journey card owns the overlay
     // or the user has closed this stop's board already.
@@ -81,6 +84,21 @@
     if (!bar) return;
     const its = (planData && planData.__shown) || [];
     bar.innerHTML = "";
+    // The first plan for a region builds its timetable — seconds, not
+    // milliseconds. The old board said "Planning…" but the board lives in
+    // a hidden overlay now, so a dropped goose looked like it did nothing.
+    if (!its.length && hasDest()) {
+      const wait = document.createElement("span");
+      wait.className = "tb tb-wait";
+      wait.innerHTML = '<span class="tb-wait-goose">'
+        + '<svg viewBox="440 -1740 1720 2080" aria-hidden="true">'
+        + '<use href="#goose-shape"/></svg></span>';
+      wait.title = "Planning your journey…";
+      wait.setAttribute("aria-label", wait.title);
+      bar.appendChild(wait);
+      if (coachPlace) coachPlace();
+      return;
+    }
     its.forEach((it, i) => {
       const b = document.createElement("button");
       b.type = "button";

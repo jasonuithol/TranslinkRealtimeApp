@@ -927,6 +927,13 @@
     font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--muted);
   }
 
+  /* Planning: the goose walks in miniature where the journeys will land. */
+  .tb.tb-wait { cursor: default; }
+  .tb-wait-goose { width: 24px; color: var(--amber); display: block;
+                   animation: waddle 2.4s linear infinite; }
+  .tb-wait-goose svg { width: 100%; display: block; }
+  .tb-wait-goose .goose-body { fill: #e5484d; }   /* the destination's colour */
+
   /* The overlay: a stop's arrivals, or one journey card. */
   .ov {
     position: fixed; z-index: 14;

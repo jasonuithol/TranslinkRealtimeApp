@@ -112,6 +112,7 @@
     toName = name;
     pickingDest = false;
     planData = null; selItin = 0; planFitted = false;
+    shellSyncSolutions();     // "planning…" now, real journeys when they land
     $("search").placeholder = "Search for a stop or an address";
     closeSearch();
     syncPlanUrl();

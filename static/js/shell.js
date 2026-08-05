@@ -8,39 +8,10 @@
   // it; hold it to read its card. Nothing on this page scrolls — the map
   // fills the viewport and everything else floats over it.
   //
-  // Tap vs hold is the whole grammar: tap acts, hold offers the typed
-  // alternative (an address instead of GPS, a search instead of a drag).
-  const HOLD_MS = 450;
-
-  // One handler pair for every toolbar button: fires hold OR tap, never
-  // both, and cancels cleanly if the finger wanders off (a drag, a scroll
-  // attempt, a change of mind).
-  function tapOrHold(el, onTap, onHold) {
-    let timer = null, held = false, from = null;
-    const clear = () => { clearTimeout(timer); timer = null; };
-    el.addEventListener("pointerdown", (e) => {
-      if (e.button > 0) return;
-      held = false;
-      from = [e.clientX, e.clientY];
-      timer = setTimeout(() => { held = true; timer = null; onHold(); }, HOLD_MS);
-    });
-    el.addEventListener("pointermove", (e) => {
-      if (!timer || !from) return;
-      if (Math.hypot(e.clientX - from[0], e.clientY - from[1]) > 10) clear();
-    });
-    el.addEventListener("pointerup", () => {
-      if (held) { held = false; return; }   // the hold already acted
-      if (timer) { clear(); onTap(); }
-    });
-    el.addEventListener("pointercancel", clear);
-    el.addEventListener("pointerleave", clear);
-    // Keyboard: Enter acts, Shift+Enter offers the typed alternative.
-    el.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return;
-      e.preventDefault();
-      e.shiftKey ? onHold() : onTap();
-    });
-  }
+  // The grammar is tap and drag. A long press asked users to discover a
+  // gesture nothing else on their phone uses, so everything it did now
+  // happens on the short tap: a goose taps open its search, a journey taps
+  // open its card. Dragging a goose still places it.
 
   // Drag a goose off its button and onto the map. Both geese answer the
   // same three gestures — tap, hold, drag — so one implementation serves
@@ -48,9 +19,8 @@
   // landed. Pointer capture keeps move/up coming to the button wherever
   // the finger goes; touch-action: none stops the page fighting for the
   // gesture. A drop that misses the map is a change of heart, and free.
-  function gooseGesture(btn, { kind, onTap, onHold, onDrop }) {
-    let ghost = null, from = null, timer = null, held = false, dragging = false;
-    const clearTimer = () => { clearTimeout(timer); timer = null; };
+  function gooseGesture(btn, { kind, onTap, onDrop }) {
+    let ghost = null, from = null, dragging = false;
     const dropGhost = () => { if (ghost) { ghost.remove(); ghost = null; } };
     btn.addEventListener("contextmenu", (e) => e.preventDefault());
     btn.addEventListener("pointerdown", (e) => {
@@ -58,53 +28,42 @@
       e.preventDefault();
       btn.setPointerCapture(e.pointerId);
       from = [e.clientX, e.clientY];
-      held = false; dragging = false;
-      if (onHold) timer = setTimeout(() => {
-        timer = null; held = true;
-        dropGhost();                 // a hold is not a drag
-        onHold();
-      }, HOLD_MS);
+      dragging = false;
     });
     btn.addEventListener("pointermove", (e) => {
-      if (!from || held) return;
+      if (!from) return;
       const far = Math.hypot(e.clientX - from[0], e.clientY - from[1]) > 8;
       if (far && !dragging && onDrop) {
-        clearTimer();                // moving means dragging, not holding
         dragging = true;
         ghost = document.createElement("div");
         ghost.className = `pin-ghost ${kind}`;
         ghost.innerHTML = '<svg viewBox="440 -1740 1720 2080" width="18" '
           + 'height="20" aria-hidden="true"><use href="#goose-shape"/></svg>';
         document.body.appendChild(ghost);
-      } else if (far) {
-        clearTimer();
       }
       if (ghost) {
         ghost.style.left = `${e.clientX}px`;
         ghost.style.top = `${e.clientY}px`;
       }
     });
-    btn.addEventListener("pointercancel", () => { clearTimer(); dropGhost(); });
+    btn.addEventListener("pointercancel", () => { from = null; dropGhost(); });
     btn.addEventListener("pointerup", (e) => {
-      clearTimer();
       dropGhost();
       const moved = from
         && Math.hypot(e.clientX - from[0], e.clientY - from[1]) >= 8;
       from = null;
-      if (held) { held = false; return; }
-      if (!moved) { if (onTap) onTap(); return; }
-      if (!onDrop || !mapReady) return;
+      if (!moved) { if (onTap) onTap(); return; }   // a tap, not a drag
+      if (!onDrop || !map) return;
       const rect = $("map").getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
       const ll = map.unproject([x, y]);
       onDrop(ll.lat, ll.lng);
     });
-    // Keyboard: Enter acts, Shift+Enter offers the typed alternative.
     btn.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
       e.preventDefault();
-      (e.shiftKey && onHold) ? onHold() : (onTap && onTap());
+      if (onTap) onTap();
     });
   }
 
@@ -129,7 +88,7 @@
     // have no meaning once the card explaining them is gone.
     if (wasBoard) deselectStop();
   }
-  // renderPlan honours this: a held solution shows THAT journey alone.
+  // renderPlan honours this: a tapped solution shows THAT journey alone.
   let soloCard = null;
 
   // Hooks called by the renderers, so they stay ignorant of the shell.
@@ -185,22 +144,19 @@
       if (colour) b.style.setProperty("--vcolor", colour);
       b.innerHTML = `<span class="sol-n">${i + 1}</span>`
                   + `<span class="sol-t">${planClock(it.depart)}</span>`;
-      b.title = `Journey ${i + 1}, ${planClock(it.depart)} — hold for details`;
+      b.title = `Journey ${i + 1}, leaves ${planClock(it.depart)}`;
       b.setAttribute("aria-label", b.title);
-      tapOrHold(b,
-        () => {                        // tap: draw it on the map
-          selItin = i; planFitted = false;
-          closeOverlay();
-          renderPlan(); drawPlan();
-        },
-        () => {                        // hold: read its card
-          selItin = i; planFitted = false;
-          soloCard = i;
-          // Claim the overlay BEFORE rendering: boardTargetFor sends the
-          // card to a throwaway while the overlay still says "arrivals".
-          openOverlay("plan");
-          renderPlan(); drawPlan();
-        });
+      b.addEventListener("click", () => {
+        // One tap does both halves of one idea: draw the route and open
+        // its card. Splitting them across two gestures was a distinction
+        // only the implementation cared about.
+        selItin = i; planFitted = false;
+        soloCard = i;
+        // Claim the overlay BEFORE rendering: boardTargetFor sends the
+        // card to a throwaway while the overlay still says "arrivals".
+        openOverlay("plan");
+        renderPlan(); drawPlan();
+      });
       bar.appendChild(b);
     });
     if (coachPlace) coachPlace();   // the tip steps aside for the journeys
@@ -216,6 +172,11 @@
     $("toolbar").hidden = false;
     wireTargetHold();          // the control exists by now
     if (!locating) $("boot").hidden = true;
+    // A URL that already carries a destination is planning from the first
+    // frame: show the waiting goose now, not when the answer arrives. (An
+    // interactively chosen destination goes through _destChosen, which
+    // does the same.)
+    if (hasDest()) shellSyncSolutions();
   }
   // Give up on GPS: the goose steps aside and the search takes over.
   function bootToSearch(why) {
@@ -274,15 +235,13 @@
   }
 
   // --- toolbar wiring ------------------------------------------------------
-  // GREEN goose — where you are. Tap: find me by GPS. Hold: type an
-  // address. Drag: put me exactly there, no GPS and no typing.
+  // GREEN goose — where you are. Tap: the search, which carries "near me"
+  // as its middle segment, so GPS is one more tap and never a gesture you
+  // have to guess. Drag: put yourself exactly there.
   gooseGesture($("tb-home"), {
     kind: "depart",
     onTap: () => {
       startMeMarker(true);   // a real tap: iOS only grants the compass here
-      $("near-me").click();  // the located-point flow, unchanged
-    },
-    onHold: () => {
       pickingDest = false;
       pickingOrigin = true;      // the search stays up even when anchored
       $("search").placeholder = "Where are you?";
@@ -305,15 +264,13 @@
     const btn = document.querySelector(".drop-pin");
     if (!btn || btn.dataset.holdWired) return;
     btn.dataset.holdWired = "1";
-    const typeIt = () => {
-      pickingDest = true;
-      $("search").placeholder = "Where to?";
-      openSearch();
-    };
     gooseGesture(btn, {
       kind: "dest",
-      onTap: typeIt,
-      onHold: typeIt,
+      onTap: () => {
+        pickingDest = true;
+        $("search").placeholder = "Where to?";
+        openSearch();
+      },
       onDrop: (lat, lon) => {
         try { localStorage.setItem("honkerPinDragged", "1"); }
         catch { /* private mode */ }

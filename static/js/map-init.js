@@ -71,7 +71,7 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "drop-pin";
-      btn.title = "Drag onto the map to plan a trip there";
+      btn.title = "Where to — tap to search, drag onto the map to place";
       btn.setAttribute("aria-label", "Drag onto the map to set a destination");
       btn.innerHTML = PIN_SVG;
       // Tap, hold and drag all live in the shell's one gesture handler

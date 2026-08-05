@@ -140,8 +140,8 @@
     // planner does; it may not exist yet (the map builds asynchronously).
     if (pinCtl) {
       pinCtl.hidden = !stopId && !pinnedBrowse;
-      // Newly visible: point at it (no-op once the rider has dragged it).
-      if (!pinCtl.hidden && mapReady) coachDropPin();
+      // Newly visible: it may be the walkthrough's next step.
+      if (!pinCtl.hidden && mapReady) coachShow();
     }
     if ($("search-wrap").hidden) $("results").hidden = true;
   }

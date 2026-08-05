@@ -83,22 +83,6 @@
     const bhName = document.createElement("span");
     bhName.textContent = data.stop.stop_name;
     head.append(bhIcon, bhName);
-    // In a pinned session the stop card is dismissible: ✕ drops the stop
-    // and returns to browsing the address (same page shape openPinned
-    // builds). Without a pin there is nothing to fall back to.
-    if (pinParam) {
-      const close = document.createElement("button");
-      close.type = "button";
-      close.className = "bh-close";
-      close.title = "Close this stop";
-      close.textContent = "×";   // ×, as the search box's close uses
-      close.addEventListener("click", () => {
-        location.href = `?region=${encodeURIComponent(region)}`
-          + `&at=${pinRaw},16&pin=${pinRaw}`
-          + `&pinlabel=${encodeURIComponent(pinLabel || "Your address")}`;
-      });
-      head.appendChild(close);
-    }
     board.appendChild(head);
     if (data.departures.length === 0) {
       board.insertAdjacentHTML("beforeend",

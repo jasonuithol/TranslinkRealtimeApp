@@ -139,13 +139,13 @@ jobs:
           # after-midnight (24:xx) services as if they were departing now.
           # Forcing TZ=UTC here reproduces the container case exactly.
           docker run --rm -e TZ=UTC -v ci-data:/data translink:ci python -c "
-          import datetime, zoneinfo, app
+          import datetime, zoneinfo, gtfsdb
           bne = zoneinfo.ZoneInfo('Australia/Brisbane')
           day = datetime.datetime(2026, 7, 21, 12, 0, tzinfo=bne)
-          got = datetime.datetime.fromtimestamp(app.gtfs_time_to_epoch('10:16:00', day), bne)
+          got = datetime.datetime.fromtimestamp(gtfsdb.gtfs_time_to_epoch('10:16:00', day), bne)
           assert (got.hour, got.minute) == (10, 16), f'10:16 resolved to {got}'
           # 24:xx is the *next* morning under the same service date.
-          got = datetime.datetime.fromtimestamp(app.gtfs_time_to_epoch('24:28:00', day), bne)
+          got = datetime.datetime.fromtimestamp(gtfsdb.gtfs_time_to_epoch('24:28:00', day), bne)
           assert (got.day, got.hour, got.minute) == (22, 0, 28), f'24:28 resolved to {got}'
           print('scheduled times resolve correctly under TZ=UTC')
           "
@@ -156,25 +156,25 @@ jobs:
           # marker for trips with no live GPS. Exercises the pure geometry so it
           # does not depend on the mock feed's timing.
           docker run --rm -v ci-data:/data translink:ci python -c "
-          import app
+          import gtfsdb
           # Two stops 0.1 deg apart in longitude, 1000s apart in time.
           nodes = [(1000, -27.0, 153.0), (2000, -27.0, 153.1)]
-          mid = app._interpolate_along(nodes, 1500)
+          mid = gtfsdb._interpolate_along(nodes, 1500)
           assert abs(mid['lon'] - 153.05) < 1e-9 and abs(mid['lat'] + 27.0) < 1e-9, mid
           # At the origin departure time: on the road, drawn at the origin.
-          assert app._interpolate_along(nodes, 1000) == {'lat': -27.0, 'lon': 153.0}
+          assert gtfsdb._interpolate_along(nodes, 1000) == {'lat': -27.0, 'lon': 153.0}
           # Before it departs, with no staging window: no position (no phantom
           # bus parked at the route start).
-          assert app._interpolate_along(nodes, 500) is None
+          assert gtfsdb._interpolate_along(nodes, 500) is None
           # Staging window: within it, a not-yet-departed trip shows at origin...
-          assert app._interpolate_along(nodes, 500, 600) == {'lat': -27.0, 'lon': 153.0}
+          assert gtfsdb._interpolate_along(nodes, 500, 600) == {'lat': -27.0, 'lon': 153.0}
           # ...but outside it (leaves in 700s > 600s window), still nothing.
-          assert app._interpolate_along(nodes, 300, 600) is None
+          assert gtfsdb._interpolate_along(nodes, 300, 600) is None
           # After the last stop: the trip has finished, so no position.
-          assert app._interpolate_along(nodes, 3000) is None
-          assert app._interpolate_along(nodes, 3000, 600) is None
+          assert gtfsdb._interpolate_along(nodes, 3000) is None
+          assert gtfsdb._interpolate_along(nodes, 3000, 600) is None
           # Anchoring by seconds-into-day stays monotonic across 24:00.
-          assert app._seconds_into_day('24:28:00') == 88080
+          assert gtfsdb._seconds_into_day('24:28:00') == 88080
           print('ghost interpolation: midpoint, origin-clamp and end-of-trip all correct')
           "
 

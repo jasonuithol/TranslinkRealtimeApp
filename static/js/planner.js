@@ -528,7 +528,7 @@
   // must appear under your finger at once, not seconds later when the
   // planner answers. Draggable — dropping it elsewhere re-plans.
   function placeDestMarker(lat, lon) {
-    if (!mapReady || lat == null || lon == null) return;
+    if (!map || lat == null || lon == null) return;
     const ll = [lon, lat];
     if (!destMarker) {
       destMarker = new maplibregl.Marker(

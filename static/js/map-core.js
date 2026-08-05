@@ -17,6 +17,26 @@
                  + '<use href="#goose-shape"/></svg>';
     return el;
   }
+  // The GREEN goose stands where you are. Like its red twin, placing it is
+  // its own step: a goose dragged off the toolbar button must appear at
+  // the drop the instant it lands, and movePin used to update everything
+  // EXCEPT the marker, leaving the old goose behind until a reload.
+  function placePinMarker(lat, lon) {
+    if (!map || lat == null || lon == null) return;
+    const ll = [lon, lat];
+    if (!pinMarker) {
+      pinMarker = new maplibregl.Marker(
+        { element: goosePin("depart"), anchor: "bottom", draggable: true })
+        .setLngLat(ll).addTo(map);
+      pinMarker.on("dragend", () => {
+        const p = pinMarker.getLngLat();
+        movePin(p.lat, p.lng);
+      });
+    } else {
+      pinMarker.setLngLat(ll);
+    }
+  }
+
   // The stop-hover highlight: one stop lit up in the viewed-stop's
   // clothes (big, white), or nothing.
   function hoverStop(lat, lon, routeType) {

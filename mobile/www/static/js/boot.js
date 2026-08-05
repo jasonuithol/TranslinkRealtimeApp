@@ -16,7 +16,7 @@
 
   syncChrome();
   nameUnnamedPoints();   // bare coordinates in the URL get an address
-  autoPinNearMe();       // a blank landing pins you where you are
+  shellBootFlow();       // cold start: find the rider, then the map
   initMap();
   if (stopId) selectStop(stopId);
   else if (hasDest() && pinnedBrowse) {

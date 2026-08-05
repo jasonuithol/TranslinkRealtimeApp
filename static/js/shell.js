@@ -106,11 +106,65 @@
     if (coachPlace) coachPlace();   // the tip steps aside for the journeys
   }
 
-  // --- boot: the goose waddles until the map is up -------------------------
+  // --- boot: the goose waddles until there is somewhere to stand ----------
+  // A cold start has no context, so the first step of the workflow runs
+  // itself: find the rider. The goose keeps walking through the GPS query
+  // AND the map load — standing it down when the map alone was ready just
+  // dumped a search box on someone who had asked for nothing.
+  let locating = false;
   function shellReady() {
-    $("boot").hidden = true;
     $("toolbar").hidden = false;
     wireTargetHold();          // the control exists by now
+    if (!locating) $("boot").hidden = true;
+  }
+  // Give up on GPS: the goose steps aside and the search takes over.
+  function bootToSearch(why) {
+    locating = false;
+    $("boot").hidden = true;
+    bootSay("Finding you…");
+    pickingDest = false;
+    $("search").placeholder = "Where are you?";
+    openSearch();
+    if (why) {
+      $("results").innerHTML = "";
+      resultNote(why);
+      $("results").hidden = false;
+      fitResults();
+    }
+  }
+  function shellBootFlow() {
+    // Any context in the URL — a stop, a pin, a destination — means the
+    // rider already said where they are. Nothing to find.
+    if (stopId || pinParam || hasDest()) return;
+    if (!("geolocation" in navigator) || !window.isSecureContext) {
+      bootToSearch(null);      // http, or no GPS: straight to the search
+      return;
+    }
+    locating = true;
+    bootSay("Finding you…");
+    let done = false;
+    // A phone that never answers must not strand the goose forever.
+    const giveUp = setTimeout(() => {
+      if (done) return;
+      done = true;
+      bootToSearch("Still looking for you — search an address instead.");
+    }, 15000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (done) return;
+        done = true; clearTimeout(giveUp);
+        bootSay("Finding your stops…");
+        // openPinned reloads onto ?pin=… — the goose walks until it does.
+        openPinned(pos.coords.latitude, pos.coords.longitude, "you", "");
+      },
+      (err) => {
+        if (done) return;
+        done = true; clearTimeout(giveUp);
+        bootToSearch(err && err.code === 1
+          ? "Location declined — search an address instead."
+          : "Could not get your location — search an address instead.");
+      },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 120000 });
   }
   function bootSay(msg) {
     const el = $("boot-say");

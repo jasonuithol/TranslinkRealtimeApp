@@ -53,7 +53,6 @@
       attributionControl: { compact: true },
     });
     window.__map = map;   // debug/UI-test handle (see also ?mapdebug=1)
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), "bottom-left");
     // The locate button: show the rider's dot and fly the camera to it.
     // Same gate as the "near me" search button — geolocation needs a secure
@@ -114,45 +113,8 @@
       btn.title = "Drag onto the map to plan a trip there";
       btn.setAttribute("aria-label", "Drag onto the map to set a destination");
       btn.innerHTML = PIN_SVG;
-      // Pointer events cover mouse AND touch with one code path; capturing
-      // on the button keeps move/up firing wherever the finger goes
-      // (touch-action: none in the CSS stops the page scrolling instead).
-      let ghost = null, downAt = null;
-      const moveGhost = (e) => {
-        if (!ghost) return;
-        ghost.style.left = `${e.clientX}px`;
-        ghost.style.top = `${e.clientY}px`;
-      };
-      const dropGhost = () => { if (ghost) { ghost.remove(); ghost = null; } };
-      btn.addEventListener("contextmenu", (e) => e.preventDefault());
-      btn.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-        btn.setPointerCapture(e.pointerId);
-        downAt = [e.clientX, e.clientY];
-        ghost = document.createElement("div");
-        ghost.className = "pin-ghost";
-        ghost.innerHTML = PIN_SVG;
-        document.body.appendChild(ghost);
-        moveGhost(e);
-      });
-      btn.addEventListener("pointermove", moveGhost);
-      btn.addEventListener("pointercancel", dropGhost);
-      btn.addEventListener("pointerup", (e) => {
-        if (!ghost) return;
-        dropGhost();
-        // A tap is not a drop: the button sits ON the map, so without a
-        // real drag the pin would land right under the button. And only a
-        // drop actually on the map places the destination — anywhere else
-        // is a change of heart, and costs nothing.
-        if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 8) return;
-        const rect = $("map").getBoundingClientRect();
-        const x = e.clientX - rect.left, y = e.clientY - rect.top;
-        if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
-        const ll = map.unproject([x, y]);
-        // Dragged and dropped for real: stop coaching this control.
-        try { localStorage.setItem("honkerPinDragged", "1"); } catch { /* private mode */ }
-        setDestPoint(ll.lat, ll.lng, "dropped pin");
-      });
+      // Tap, hold and drag all live in the shell's one gesture handler
+      // (gooseGesture), wired once this button is in the toolbar.
       wrap.appendChild(btn);
       // The workflow's second step lives in the toolbar, not on the map:
       // [green goose] [red goose] [journeys…]. The drag itself is unchanged

@@ -567,9 +567,39 @@ async def lifespan(app: FastAPI):
     # thing to hang the first zoomed-in map view on. ONE thread, regions in
     # sequence — three concurrent warms starved the event loop on the small
     # VPS for minutes and the deploy health check read it as "never came up".
-    def _warm_all(rids=tuple(warm_rids)):
+    # ...and then the planner's timetable, on the same one thread. A cold
+    # container makes the first journey request pay for the whole RAPTOR
+    # build (seq ~4 s, mel ~13 s) — the container restarts on every deploy,
+    # so that bill lands on the first person to drop a destination pin.
+    # Only the regions named in PLANNER_WARM are built: each timetable is
+    # tens of MB, and warming all nine would cost more RAM than the VPS
+    # should spend on cities nobody is looking at.
+    warm_planner = [r.strip() for r in
+                    os.environ.get("PLANNER_WARM", "seq").split(",") if r.strip()]
+
+    def _warm_all(rids=tuple(warm_rids), plan_rids=tuple(warm_planner)):
+        # Order matters more than completeness. The map is on screen at
+        # once (so the home region's stops come first), then the planner —
+        # the click that otherwise blocks a rider for ~9 s — and only then
+        # the other cities' stop caches, which nobody is looking at yet.
+        home = plan_rids[0] if plan_rids else None
+        if home in rids:
+            all_stops(home)
+        for r in plan_rids:
+            cfg = REGIONS.get(r)
+            if not cfg or not cfg["db"].exists():
+                continue
+            try:
+                t0 = time.time()
+                journey.get_timetable(r, cfg["db"], _service_dates(cfg["tz"]),
+                                      tsn_family=(r in TSN_REGIONS))
+                print(f"[warm] {r} planner timetable ready "
+                      f"in {time.time() - t0:.1f}s")
+            except Exception as exc:      # a cold cache is not fatal
+                print(f"[warm] {r} planner timetable failed: {exc}")
         for r in rids:
-            all_stops(r)
+            if r != home:
+                all_stops(r)
     tasks.append(asyncio.create_task(asyncio.to_thread(_warm_all)))
     yield
     for t in tasks:
@@ -1829,6 +1859,18 @@ def walkroute(from_lat: float, from_lon: float, to_lat: float, to_lon: float):
     return out
 
 
+def _service_dates(tz, at=None):
+    """The service dates a journey may ride: today's, plus yesterday's
+    after-midnight tail (GTFS 24:xx times) shifted back a day. Shared by
+    the plan endpoint and the startup warm so both build the same cache
+    key — a mismatch would build the timetable twice."""
+    now = datetime.now(tz) if at is None else datetime.fromtimestamp(at, tz)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday = midnight - timedelta(days=1)
+    return ((midnight.strftime("%Y%m%d"), midnight.weekday(), 0),
+            (yesterday.strftime("%Y%m%d"), yesterday.weekday(), -86400))
+
+
 def _walk_pen_secs(alat, alon, blat, blon, crow_m):
     """Walking time between two points, costed on the REAL street graph
     when it can answer — the crow-fly ×1.3 guess mis-prices lake suburbs
@@ -1921,9 +1963,7 @@ def plan_endpoint(to: str | None = None,
         now = (datetime.now(tz) if at is None
                else datetime.fromtimestamp(at, tz))
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        yesterday = midnight - timedelta(days=1)
-        dates = ((midnight.strftime("%Y%m%d"), midnight.weekday(), 0),
-                 (yesterday.strftime("%Y%m%d"), yesterday.weekday(), -86400))
+        dates = _service_dates(tz, at)
         tt = journey.get_timetable(region, cfg["db"], dates,
                                    tsn_family=(region in TSN_REGIONS))
         dep_sec = int((now - midnight).total_seconds())

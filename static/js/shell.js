@@ -42,6 +42,72 @@
     });
   }
 
+  // Drag a goose off its button and onto the map. Both geese answer the
+  // same three gestures — tap, hold, drag — so one implementation serves
+  // them: the ghost follows the finger, and the drop hands back where it
+  // landed. Pointer capture keeps move/up coming to the button wherever
+  // the finger goes; touch-action: none stops the page fighting for the
+  // gesture. A drop that misses the map is a change of heart, and free.
+  function gooseGesture(btn, { kind, onTap, onHold, onDrop }) {
+    let ghost = null, from = null, timer = null, held = false, dragging = false;
+    const clearTimer = () => { clearTimeout(timer); timer = null; };
+    const dropGhost = () => { if (ghost) { ghost.remove(); ghost = null; } };
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      btn.setPointerCapture(e.pointerId);
+      from = [e.clientX, e.clientY];
+      held = false; dragging = false;
+      if (onHold) timer = setTimeout(() => {
+        timer = null; held = true;
+        dropGhost();                 // a hold is not a drag
+        onHold();
+      }, HOLD_MS);
+    });
+    btn.addEventListener("pointermove", (e) => {
+      if (!from || held) return;
+      const far = Math.hypot(e.clientX - from[0], e.clientY - from[1]) > 8;
+      if (far && !dragging && onDrop) {
+        clearTimer();                // moving means dragging, not holding
+        dragging = true;
+        ghost = document.createElement("div");
+        ghost.className = `pin-ghost ${kind}`;
+        ghost.innerHTML = '<svg viewBox="440 -1740 1720 2080" width="18" '
+          + 'height="20" aria-hidden="true"><use href="#goose-shape"/></svg>';
+        document.body.appendChild(ghost);
+      } else if (far) {
+        clearTimer();
+      }
+      if (ghost) {
+        ghost.style.left = `${e.clientX}px`;
+        ghost.style.top = `${e.clientY}px`;
+      }
+    });
+    btn.addEventListener("pointercancel", () => { clearTimer(); dropGhost(); });
+    btn.addEventListener("pointerup", (e) => {
+      clearTimer();
+      dropGhost();
+      const moved = from
+        && Math.hypot(e.clientX - from[0], e.clientY - from[1]) >= 8;
+      from = null;
+      if (held) { held = false; return; }
+      if (!moved) { if (onTap) onTap(); return; }
+      if (!onDrop || !mapReady) return;
+      const rect = $("map").getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+      const ll = map.unproject([x, y]);
+      onDrop(ll.lat, ll.lng);
+    });
+    // Keyboard: Enter acts, Shift+Enter offers the typed alternative.
+    btn.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      (e.shiftKey && onHold) ? onHold() : (onTap && onTap());
+    });
+  }
+
   // --- the overlay: arrivals or a journey card, never both -----------------
   let ovKind = null;            // "board" | "plan" | null
   function openOverlay(kind) {
@@ -207,42 +273,49 @@
   }
 
   // --- toolbar wiring ------------------------------------------------------
-  // GREEN goose: tap re-pins you where you are; hold types an address.
-  tapOrHold($("tb-home"),
-    () => $("near-me").click(),          // the located-point flow, unchanged
-    () => {
+  // GREEN goose — where you are. Tap: find me by GPS. Hold: type an
+  // address. Drag: put me exactly there, no GPS and no typing.
+  gooseGesture($("tb-home"), {
+    kind: "depart",
+    onTap: () => $("near-me").click(),   // the located-point flow, unchanged
+    onHold: () => {
       pickingDest = false;
       pickingOrigin = true;      // the search stays up even when anchored
       $("search").placeholder = "Where are you?";
       openSearch();
-    });
+    },
+    onDrop: (lat, lon) => {
+      if (pinParam) { movePin(lat, lon); return; }
+      // No pin yet (a stop-only or cold view): openPinned makes one, and
+      // picks the region from the nearest stop.
+      openPinned(lat, lon, "there", "");
+    },
+  });
 
   // RED goose: drag it onto the map (that logic lives with the map), or
   // hold it to type the destination instead. The hold cancels the drag it
   // interrupted — the ghost pin goes back in its box.
+  // RED goose — where you're going. The same three gestures; a real drop
+  // sets the destination and retires the coach mark for good.
   function wireTargetHold() {
     const btn = document.querySelector(".drop-pin");
     if (!btn || btn.dataset.holdWired) return;
     btn.dataset.holdWired = "1";
-    let timer = null, from = null;
-    const clear = () => { clearTimeout(timer); timer = null; };
-    btn.addEventListener("pointerdown", (e) => {
-      from = [e.clientX, e.clientY];
-      timer = setTimeout(() => {
-        timer = null;
-        document.querySelectorAll(".pin-ghost").forEach((g) => g.remove());
-        try { btn.releasePointerCapture(e.pointerId); } catch { /* gone */ }
-        pickingDest = true;
-        $("search").placeholder = "Where to?";
-        openSearch();
-      }, HOLD_MS);
+    const typeIt = () => {
+      pickingDest = true;
+      $("search").placeholder = "Where to?";
+      openSearch();
+    };
+    gooseGesture(btn, {
+      kind: "dest",
+      onTap: typeIt,
+      onHold: typeIt,
+      onDrop: (lat, lon) => {
+        try { localStorage.setItem("honkerPinDragged", "1"); }
+        catch { /* private mode */ }
+        setDestPoint(lat, lon, "dropped pin");
+      },
     });
-    btn.addEventListener("pointermove", (e) => {
-      if (timer && from
-          && Math.hypot(e.clientX - from[0], e.clientY - from[1]) > 10) clear();
-    });
-    btn.addEventListener("pointerup", clear);
-    btn.addEventListener("pointercancel", clear);
   }
 
   $("ov-x").addEventListener("click", closeOverlay);

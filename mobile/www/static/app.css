@@ -77,37 +77,46 @@
 
   .search { position: relative; margin-bottom: 22px; }
   .search[hidden] { display: none; }
-  .search-row { display: flex; gap: 10px; }
-  .search-field { position: relative; flex: 1; }
+  /* One control, three parts: type here | find me | done. Joined into a
+     single pill with hairline dividers, so it reads as one thing rather
+     than three that happen to sit near each other. */
+  .search-row {
+    display: flex; align-items: stretch; gap: 0;
+    background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px;
+    overflow: hidden;
+  }
+  .search-row:focus-within { border-color: var(--amber-dim); }
+  .search-field { position: relative; flex: 1; min-width: 0; display: flex; }
   .near-me {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    background: none; border: 0; border-left: 1px solid var(--line);
+    border-radius: 0; flex: none;
     color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap;
-    padding: 0 16px; cursor: pointer;
+    padding: 0 14px; cursor: pointer;
   }
   .near-me[hidden] { display: none; }
   .near-me:hover { color: var(--text); border-color: var(--amber-dim); }
   .near-me:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: 2px; }
   .search-close {
-    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-    background: none; border: 0; color: var(--muted);
-    font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer;
+    background: none; border: 0; border-left: 1px solid var(--line);
+    flex: none; color: var(--muted);
+    font-size: 22px; line-height: 1; padding: 0 14px; cursor: pointer;
   }
   .search-close:hover { color: var(--text); }
   .search-close[hidden] { display: none; }
-  /* Keep typed text clear of the close button. */
-  .search-field:has(.search-close:not([hidden])) input { padding-right: 42px; }
+  /* (The × is its own segment at the end now, not floating over the text.) */
   .search input {
     width: 100%;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
+    background: none;
+    border: 0;
+    border-radius: 0;
     color: var(--text);
     font: inherit;
     font-size: 15px;
     padding: 12px 14px;
     outline: none;
   }
-  .search input:focus { border-color: var(--amber-dim); }
+  .search input:focus { outline: none; }
   .search-results {
     position: absolute; inset-inline: 0; top: calc(100% + 4px);
     background: var(--panel);
@@ -882,6 +891,10 @@
   .tb-target-wrap .drop-pin {
     width: 100%; height: 100%; background: none; border: 0;
     display: flex; align-items: center; justify-content: center;
+    /* A <button> does not inherit colour: without these the line art took
+       the UA's black, and --goose-body: currentColor painted the body
+       black with it. Light line art, red body — the green goose's twin. */
+    color: var(--text); --goose-body: #e5484d;
   }
   .tb-target-wrap .drop-pin svg { width: 26px; height: 30px; }
   .tb:active { border-color: var(--amber); }

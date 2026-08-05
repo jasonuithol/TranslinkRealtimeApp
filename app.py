@@ -2127,13 +2127,21 @@ def plan_endpoint(to: str | None = None,
             arrive = next((l["arr"] for l in reversed(legs)
                            if l["kind"] == "ride"), None)
             depart = next((l["dep"] for l in legs if l["kind"] == "ride"), None)
-            # A trailing walk to the destination's door counts: "arrive"
-            # means at the pizza joint, not at the last bus stop.
+            # Both walks belong to the journey. "arrive" means at the pizza
+            # joint, not at the last bus stop; "depart" means leaving your
+            # door, not the moment the bus pulls out — the walk to the stop
+            # is time you must spend, and a journey that quietly started at
+            # the bus stop under-reported itself by the whole first walk.
             if arrive is not None:
                 for l in reversed(legs):
                     if l["kind"] == "ride":
                         break
                     arrive += l["secs"]
+            if depart is not None:
+                for l in legs:
+                    if l["kind"] == "ride":
+                        break
+                    depart -= l["secs"]
             if depart is None:
                 continue
             itineraries.append({

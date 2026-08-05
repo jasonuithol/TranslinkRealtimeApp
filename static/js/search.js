@@ -76,6 +76,33 @@
     );
   }
 
+  // Closing a stop's arrivals lets the stop GO: without this the poll kept
+  // running, so its marker stayed lit and its buses stayed on the map with
+  // no card to explain them. The opposite of selectStop, in place — no
+  // reload, so the pinned address and the camera survive.
+  function deselectStop() {
+    if (!stopId) return;
+    stopId = null;
+    selectedTrip = null;
+    lastData = null;
+    clearInterval(timer);
+    timer = null;
+    if (mapReady) {
+      for (const src of ["vehicles", "ghosts", "stop", "routes", "walklabels"]) {
+        const s = map.getSource(src);
+        if (s) s.setData(emptyFC());
+      }
+      syncEdgeMarkers();      // the off-screen markers go with them
+      drawLandmarks();        // back to the pin's surrounding stops
+      syncRailStationFilter();
+    }
+    renderTripPanel();        // any open timeline closes with it
+    $("board").innerHTML = "";
+    syncPlanUrl();            // ?stop= leaves the URL
+    syncChrome();
+    renderPinStops();
+  }
+
   // Stop names and geocoder labels are external data; never trust them as HTML.
   const escapeHtml = (t) => String(t).replace(/[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

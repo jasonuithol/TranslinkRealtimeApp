@@ -254,6 +254,7 @@
       (pos) => {
         if (done) return;
         done = true; clearTimeout(giveUp);
+        startMeMarker(false);      // the live dot, now that we may
         bootSay("Finding your stops…");
         // openPinned reloads onto ?pin=… — the goose walks until it does.
         openPinned(pos.coords.latitude, pos.coords.longitude, "you", "");
@@ -277,7 +278,10 @@
   // address. Drag: put me exactly there, no GPS and no typing.
   gooseGesture($("tb-home"), {
     kind: "depart",
-    onTap: () => $("near-me").click(),   // the located-point flow, unchanged
+    onTap: () => {
+      startMeMarker(true);   // a real tap: iOS only grants the compass here
+      $("near-me").click();  // the located-point flow, unchanged
+    },
     onHold: () => {
       pickingDest = false;
       pickingOrigin = true;      // the search stays up even when anchored

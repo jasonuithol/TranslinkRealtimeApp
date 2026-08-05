@@ -979,12 +979,18 @@
     align-items: center; justify-content: center; gap: 22px;
   }
   .boot[hidden] { display: none; }
-  .boot-goose { width: 140px; color: var(--amber); animation: waddle 1.6s ease-in-out infinite; }
+  .boot-goose { width: 140px; color: var(--amber); animation: waddle 2.4s linear infinite; }
   .boot-goose svg { width: 100%; display: block; }
   .boot-say { color: var(--muted); font-size: 14px; }
+  /* The goose walks: it crosses, turns on the spot (a flip about its own
+     vertical axis, ~5% of the cycle), and walks back. No rotation — the
+     tilting version read as seasick rather than purposeful. */
   @keyframes waddle {
-    0%, 100% { transform: translateX(-26px) rotate(-4deg); }
-    50%      { transform: translateX(26px) rotate(4deg); }
+    0%   { transform: translateX(30px) scaleX(1); }    /* faces left, sets off */
+    45%  { transform: translateX(-30px) scaleX(1); }
+    50%  { transform: translateX(-30px) scaleX(-1); }  /* about-face */
+    95%  { transform: translateX(30px) scaleX(-1); }
+    100% { transform: translateX(30px) scaleX(1); }    /* and again */
   }
   @media (prefers-reduced-motion: reduce) {
     .boot-goose { animation: none; }

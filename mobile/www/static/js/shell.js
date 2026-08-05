@@ -67,7 +67,17 @@
   let soloCard = null;
 
   // Hooks called by the renderers, so they stay ignorant of the shell.
-  function shellFreshAsk() { ovDismissed = null; }
+  function shellFreshAsk() { ovDismissed = null; ovKind = "board"; }
+
+  // Both renderers write to #board, and both can be live at once now —
+  // journeys on the toolbar while a stop's arrivals fill the overlay.
+  // Whoever the overlay is showing gets the real element; the other
+  // renders into a throwaway so its work is kept without stealing the
+  // screen. (Its toolbar chips and map drawing happen either way.)
+  function boardTargetFor(kind) {
+    return (ovKind === null || ovKind === kind)
+      ? $("board") : document.createElement("div");
+  }
 
   // Something went wrong and the board is holding the message: show it.
   function shellShowError() { openOverlay("board"); }
@@ -120,8 +130,10 @@
         () => {                        // hold: read its card
           selItin = i; planFitted = false;
           soloCard = i;
-          renderPlan(); drawPlan();
+          // Claim the overlay BEFORE rendering: boardTargetFor sends the
+          // card to a throwaway while the overlay still says "arrivals".
           openOverlay("plan");
+          renderPlan(); drawPlan();
         });
       bar.appendChild(b);
     });

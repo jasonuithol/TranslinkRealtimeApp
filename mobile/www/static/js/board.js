@@ -71,7 +71,7 @@
     // the user's anchor; the chosen stop is visible on the map and board.
     $("stop-name").textContent =
       (pinParam && pinLabel) ? pinLabel : data.stop.stop_name;
-    const board = $("board");
+    const board = boardTargetFor("board");
     board.innerHTML = "";
     // Which stop these arrivals belong to — its glyph and name. Matters most
     // in a pinned session, where the titlebar keeps the searched address.
@@ -208,7 +208,11 @@
   }
 
   async function refresh() {
-    if (hasDest() && (stopId || pinnedBrowse)) return refreshPlan();
+    // The shell can hold both at once: journeys on the toolbar AND a
+    // stop's arrivals in the overlay. So a poll serves whichever of the
+    // two are live, rather than the plan winning and the stop going dark.
+    const planning = hasDest() && (stopId || pinnedBrowse);
+    if (planning) refreshPlan();
     if (!stopId) return;
     try {
       const res = await fetch(api(`/departures/${stopId}`));
@@ -216,8 +220,14 @@
       const data = await res.json();
       renderBoard(data);
       lastData = data;
-      updateMap(data);
-      if (selectedTrip) refreshTripTimes(selectedTrip);
+      if (planning) {
+        // The journey owns the map; the arrivals are the list beside it.
+        // Only the white marker says which stop they belong to.
+        markViewedStop(data);
+      } else {
+        updateMap(data);
+        if (selectedTrip) refreshTripTimes(selectedTrip);
+      }
     } catch (err) {
       $("board").innerHTML = `<div class="error">${err.message}</div>`;
     }

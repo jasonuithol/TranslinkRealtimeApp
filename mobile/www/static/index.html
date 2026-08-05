@@ -37,6 +37,26 @@
     </div>
   </header>
 
+  <!-- The shell's first frame: a waddling goose while we find you, the
+       region loads and the map warms. Hidden the moment the map is up. -->
+  <div class="boot" id="boot">
+    <div class="boot-goose"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></div>
+    <div class="boot-say" id="boot-say">Finding you…</div>
+  </div>
+
+  <!-- The workflow, left to right: where you are, where you're going, then
+       one button per journey. Floats over the map; the page never scrolls. -->
+  <div class="toolbar" id="toolbar" hidden>
+    <button class="tb tb-home" id="tb-home" type="button"
+            title="Where you are — hold to search an address"
+            aria-label="Where you are. Hold to search an address.">
+      <svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg>
+    </button>
+    <span class="tb-slot" id="tb-target-slot"></span>
+    <div class="tb-solutions" id="tb-solutions"></div>
+    <span class="tzbadge" id="tz-badge2" hidden></span>
+  </div>
+
   <!-- Landing logo; only visible while no stop is chosen. -->
   <div id="hero">
     <div class="goose" role="img" aria-label="Next Service"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></div>
@@ -58,13 +78,19 @@
     <div class="search-results" id="results" hidden></div>
   </div>
 
-  <div class="split" id="split">
+  <!-- One overlay, two tenants: a stop's arrivals (tap a stop) or a
+       journey card (hold a solution button). Both render into #board. -->
+  <div class="ov" id="ov" hidden>
+    <button class="ov-x" id="ov-x" type="button" aria-label="Close">&times;</button>
     <div class="board" id="board">
       <div class="empty placeholder">
         <div>Select a stop to see departures.</div>
         <div class="ph-icon">&#x1F570;&#xFE0E;</div>
       </div>
     </div>
+  </div>
+
+  <div class="split" id="split">
     <div id="map-wrap" class="awaiting" hidden>
       <div id="map"></div>
       <!-- Off-screen board vehicles, pinned to the map edge nearest to them. -->
@@ -103,6 +129,7 @@
 <script src="/static/js/alerts.js"></script>
 <script src="/static/js/board.js"></script>
 <script src="/static/js/planner.js"></script>
+<script src="/static/js/shell.js"></script>
 <script src="/static/js/boot.js"></script>
 </body>
 </html>

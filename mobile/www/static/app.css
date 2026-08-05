@@ -833,7 +833,11 @@
 
   /* First-run coach mark: points up at the drag-me pin control. */
   .coach {
-    position: absolute; z-index: 6;
+    position: fixed; z-index: 16;   /* the button lives in the toolbar now */
+    /* It sits beside the red goose, which is exactly where the journey
+       buttons appear — so the bubble must never eat their taps. Only its
+       × is clickable. */
+    pointer-events: none;
     transform: translateY(-50%);   /* centred on the button's row */
     display: flex; align-items: center; gap: 8px;
     max-width: min(280px, 70vw);
@@ -842,6 +846,12 @@
     font-size: 13px; font-weight: 600; line-height: 1.3;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   }
+  .coach.below { transform: translateX(-50%); }
+  .coach.below::before {     /* dropped below: the arrow aims up */
+    left: 50%; top: -7px; transform: translateX(-50%);
+    border-top: 0; border-bottom: 8px solid var(--amber);
+    border-left: 8px solid transparent; border-right: 8px solid transparent;
+  }
   .coach::before {           /* the arrow, aimed left at the button */
     content: ""; position: absolute; left: -7px; top: 50%;
     transform: translateY(-50%);
@@ -849,8 +859,133 @@
     border-right: 8px solid var(--amber);
   }
   .coach .coach-x {
+    pointer-events: auto;
     flex: none; background: none; border: 0; color: #000;
     font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer;
     opacity: 0.65;
   }
   .coach .coach-x:hover { opacity: 1; }
+
+  /* =====================================================================
+     THE SHELL. One screen: the map fills it, everything else floats. The
+     page itself never scrolls — overlays scroll inside themselves.
+     ===================================================================== */
+  html, body { height: 100%; }
+  body { overflow: hidden; padding: 0; display: block; }
+  main, main.wide { position: fixed; inset: 0; max-width: none; width: auto; }
+  header, #hero, .map-caption, .map-empty { display: none !important; }
+
+  /* The map is the page. */
+  #split, .split.side-by-side { position: absolute; inset: 0; display: block; }
+  #map-wrap, .split.side-by-side #map-wrap {
+    position: absolute; inset: 0; height: 100%;
+    border: 0; border-radius: 0; margin: 0;
+  }
+  #map, .split.side-by-side #map,
+  .split.side-by-side #map-wrap.awaiting #map {
+    width: 100%; height: 100%; min-height: 0;
+  }
+
+  /* The workflow bar: [where you are] [where you're going] [journeys…]. */
+  .toolbar {
+    position: fixed; z-index: 15;
+    top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px;
+    display: flex; align-items: center; gap: 8px;
+    pointer-events: none;                 /* the map shows through the gaps */
+  }
+  .toolbar[hidden] { display: none; }
+  .toolbar > *, .toolbar .tb { pointer-events: auto; }
+  .tb, .tb-target-wrap {
+    width: 46px; height: 46px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(16, 20, 24, 0.92); color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    cursor: pointer; padding: 0;
+  }
+  .tb svg { width: 26px; height: 30px; display: block; }
+  .tb-home { --goose-body: #2fd07a; }     /* where you are */
+  .tb-target-wrap { --goose-body: #e5484d; overflow: visible; }
+  .tb-target-wrap .drop-pin {
+    width: 100%; height: 100%; background: none; border: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tb-target-wrap .drop-pin svg { width: 26px; height: 30px; }
+  .tb:active { border-color: var(--amber); }
+  .tb-slot[hidden], .tb-target-wrap[hidden] { display: none; }
+
+  /* One button per journey the planner found. */
+  .tb-solutions { display: flex; gap: 8px; min-width: 0; overflow: hidden; }
+  .tb.tb-sol {
+    width: auto; min-width: 46px; padding: 0 10px;
+    flex-direction: column; gap: 1px;
+    border-color: var(--vcolor, var(--line));
+  }
+  .tb.tb-sol.on { border-width: 2px; background: rgba(16, 20, 24, 0.98); }
+  .tb-sol .sol-n { font-weight: 700; font-size: 15px; color: var(--vcolor, var(--text)); }
+  .tb-sol .sol-t {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--muted);
+  }
+
+  /* The overlay: a stop's arrivals, or one journey card. */
+  .ov {
+    position: fixed; z-index: 14;
+    left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom));
+    max-height: 58vh; overflow-y: auto; overscroll-behavior: contain;
+    background: rgba(16, 20, 24, 0.97);
+    border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+    padding: 8px 10px 10px;
+  }
+  .ov[hidden] { display: none; }
+  .ov .board { border: 0; }
+  .ov-x {
+    position: sticky; top: 0; float: right;
+    background: none; border: 0; color: var(--muted);
+    font-size: 24px; line-height: 1; padding: 0 2px 4px 10px; cursor: pointer;
+    z-index: 1;
+  }
+  .ov-x:hover { color: var(--text); }
+  @media (min-width: 900px) {
+    /* Roomier, not different: the overlay becomes a column beside the map. */
+    .ov {
+      left: 10px; right: auto; width: min(560px, 42vw);
+      top: 68px; bottom: 10px; max-height: none;
+    }
+  }
+
+  /* Long-press search, floating under the toolbar. */
+  .search {
+    position: fixed; z-index: 20;
+    top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+    left: 10px; right: 10px; margin: 0;
+    max-width: 560px;
+  }
+  .search-results { position: static; margin-top: 6px; }
+
+  /* The status line, floating at the foot of the map. */
+  .status {
+    position: fixed; z-index: 13; left: 10px; right: 10px;
+    bottom: max(4px, env(safe-area-inset-bottom));
+    text-align: center; pointer-events: none;
+  }
+  .ov:not([hidden]) ~ .status { display: none; }
+
+  /* First frame: the goose waddles while we find you and the map warms. */
+  .boot {
+    position: fixed; inset: 0; z-index: 40;
+    background: var(--board);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 22px;
+  }
+  .boot[hidden] { display: none; }
+  .boot-goose { width: 140px; color: var(--amber); animation: waddle 1.6s ease-in-out infinite; }
+  .boot-goose svg { width: 100%; display: block; }
+  .boot-say { color: var(--muted); font-size: 14px; }
+  @keyframes waddle {
+    0%, 100% { transform: translateX(-26px) rotate(-4deg); }
+    50%      { transform: translateX(26px) rotate(4deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-goose { animation: none; }
+  }

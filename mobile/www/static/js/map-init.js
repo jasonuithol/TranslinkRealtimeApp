@@ -7,7 +7,7 @@
       cfg = await (await fetch(api("/config"))).json();
       hasBasemap = !!cfg.basemap;
     } catch { hasBasemap = false; }
-    if (!hasBasemap) return;
+    if (!hasBasemap) { shellReady(); return; }
 
     // Must complete before any icon is rasterised, or the wrong glyph gets
     // baked into the cached image. ensureVehicleIcon only runs after the map's
@@ -154,8 +154,11 @@
         setDestPoint(ll.lat, ll.lng, "dropped pin");
       });
       wrap.appendChild(btn);
-      map.addControl({ onAdd: () => wrap, onRemove: () => wrap.remove() },
-                     "top-left");
+      // The workflow's second step lives in the toolbar, not on the map:
+      // [green goose] [red goose] [journeys…]. The drag itself is unchanged
+      // — the drop still lands wherever the finger leaves the map.
+      wrap.className = "tb tb-target-wrap";
+      $("tb-target-slot").appendChild(wrap);
       pinCtl = wrap;
       syncChrome();   // the control just appeared: hide it if there's no origin
     }
@@ -553,6 +556,7 @@
       if (planData) drawPlan();   // a plan booted before the map was ready
       if (lastData) updateMap(lastData);
       flushMeMarker();      // a GPS fix that beat the map to it
+      shellReady();         // the map is up: stand the boot goose down
       coachDropPin();       // first map of the session: point at the pin
     });
 

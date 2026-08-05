@@ -202,6 +202,9 @@
   // current page view.
   const PIN_LEARNED = "honkerPinDragged";
   let coachDismissed = false;
+  // The live tip's own placer, so the toolbar can ask it to move over when
+  // journey buttons appear beside the goose.
+  let coachPlace = null;
   function coachDropPin() {
     if (localStorage.getItem(PIN_LEARNED) || coachDismissed) return;
     if (document.querySelector(".coach")) return;      // already showing
@@ -216,18 +219,28 @@
     tip.innerHTML = '<span>Drag this to your destination</span>'
                   + '<button type="button" class="coach-x" '
                   + 'aria-label="Got it">&times;</button>';
-    wrap.appendChild(tip);
+    document.body.appendChild(tip);
 
     const place = () => {
       const b = btn.getBoundingClientRect();
-      const w = wrap.getBoundingClientRect();
-      // Beside the button, on its row: the arrow points back at it.
-      tip.style.left = `${b.right - w.left + 12}px`;
-      tip.style.top = `${b.top - w.top + b.height / 2}px`;
+      // Beside the button on its row, arrow pointing back at it — unless
+      // journey buttons have appeared in that space, in which case it
+      // drops below the toolbar rather than sitting on top of them.
+      const busy = ($("tb-solutions")?.children.length || 0) > 0;
+      tip.classList.toggle("below", busy);
+      if (busy) {
+        tip.style.left = `${b.left + b.width / 2}px`;
+        tip.style.top = `${b.bottom + 12}px`;
+      } else {
+        tip.style.left = `${b.right + 12}px`;
+        tip.style.top = `${b.top + b.height / 2}px`;
+      }
     };
     place();
+    coachPlace = place;
     const close = () => {
       window.removeEventListener("resize", place);
+      coachPlace = null;
       tip.remove();
     };
     window.addEventListener("resize", place);

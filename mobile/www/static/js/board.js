@@ -11,8 +11,20 @@
 
   function fittingRowCount() {
     if (!rowHeight) return null;
-    const top = $("board").getBoundingClientRect().top;
-    const avail = window.innerHeight - top - BOARD_BOTTOM_GUTTER;
+    // The board lives inside the floating overlay now, so its own top edge
+    // says nothing about how much room it has — measuring that gave one
+    // row. Use the height the overlay's CSS allows it (58vh on a phone,
+    // full column beside the map on a wide screen), less its chrome.
+    const ov = $("board").closest(".ov");
+    let avail;
+    if (ov) {
+      avail = (window.matchMedia("(min-width: 900px)").matches
+                 ? window.innerHeight - 78
+                 : window.innerHeight * 0.58) - 62;
+    } else {
+      avail = window.innerHeight - $("board").getBoundingClientRect().top
+              - BOARD_BOTTOM_GUTTER;
+    }
     return Math.max(1, Math.floor(avail / rowHeight));
   }
   const BOARD_BOTTOM_GUTTER = 28;   // breathing room + the status line
@@ -93,6 +105,7 @@
         `<div class="empty">No services in the next 90 minutes.</div>`);
     }
 
+    shellShowBoard();   // arrivals rendered: raise the overlay
     // The soonest departure is the stop's "next thing" — honk at 1 minute.
     if (data.departures.length) {
       const d0 = data.departures[0];

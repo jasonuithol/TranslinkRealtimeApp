@@ -398,6 +398,7 @@
       return;
     }
     stopId = id;
+    shellFreshAsk();          // a new stop: the overlay is wanted again
     selectedTrip = null;      // a route from the previous stop is not relevant
     // There is something to look at now: uncover the map and give it its full
     // height, then tell MapLibre the container changed.

@@ -123,7 +123,7 @@
     $("titlebar").hidden = !anchored;
     // Anchored, the search only comes back for a destination pick ("Plan a
     // trip") — changing the ORIGIN means going home and starting over.
-    $("search-wrap").hidden = anchored && !pickingDest;
+    $("search-wrap").hidden = anchored && !pickingDest && !pickingOrigin;
     $("search-close").hidden = !anchored;  // nothing to return to without one
     // A selected stop needs no "change" button — the goose is the way back.
     // A pinned browse gets the goose ON the button instead: one control,
@@ -161,6 +161,7 @@
 
   function closeSearch() {
     pickingDest = false;
+    pickingOrigin = false;
     $("search").value = "";
     $("search").placeholder = "Search for a stop or an address";
     syncChrome();

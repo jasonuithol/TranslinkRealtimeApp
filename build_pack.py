@@ -537,6 +537,9 @@ def main():
     ap.add_argument("--data", type=Path, default=DB_PATH.parent,
                     help="where the national databases live")
     ap.add_argument("--skip", default="", help="comma-separated parts to skip")
+    ap.add_argument("--dist", type=Path,
+                    help="also lay the pack out flat here, as it will be "
+                         "served (see publish())")
     args = ap.parse_args()
 
     skip = {s.strip() for s in args.skip.split(",") if s.strip()}
@@ -593,6 +596,19 @@ def main():
         log(f"  {'basemap':12} {human(p.stat().st_size):>10}")
         files["basemap.pmtiles"] = p
 
+    # Rebuilding only the timetable is the weekly routine, so a skipped part
+    # must keep its entry rather than vanish from the manifest — otherwise
+    # the app would be told the region no longer has streets.
+    entries = {}
+    old = out / "manifest.json"
+    if old.exists():
+        for name, e in json.loads(old.read_text()).get("files", {}).items():
+            if name not in files and (out / name).exists():
+                entries[name] = e
+    for name, p in files.items():
+        if p is not None:
+            entries[name] = {"bytes": p.stat().st_size, "sha256": sha256(p)}
+
     manifest = {
         "region": rid,
         "name": cfg["name"],
@@ -601,16 +617,52 @@ def main():
         "center": cfg["center"],
         "tz": str(cfg["tz"]),
         "stats": stats,
-        "files": {
-            name: {"bytes": p.stat().st_size, "sha256": sha256(p)}
-            for name, p in files.items() if p is not None
-        },
+        "files": entries,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
     total = sum(f["bytes"] for f in manifest["files"].values())
     log(f"\n  {'TOTAL':12} {human(total):>10}   in {time.time() - t0:.0f}s")
     log(f"  -> {out}")
+
+    if args.dist:
+        publish(out, args.dist, rid)
+
+
+def publish(pack_dir, dist, rid):
+    """Lay the pack out the way it will be served.
+
+    A GitHub release has no directories — every asset sits in one flat
+    namespace — so the served name is "<region>-<file>". Building that
+    layout here rather than at upload time means a local static server
+    and the real release are byte-identical as far as the app is
+    concerned, and the download code has one URL rule to know.
+    """
+    dist.mkdir(parents=True, exist_ok=True)
+    for src in sorted(pack_dir.iterdir()):
+        if src.is_dir():
+            continue
+        dest = dist / f"{rid}-{src.name}"
+        dest.unlink(missing_ok=True)
+        try:
+            dest.hardlink_to(src)          # same filesystem: costs nothing
+        except OSError:
+            shutil.copyfile(src, dest)
+
+    # index.json: what the app reads first, to learn which regions exist
+    # and which one covers where the rider is standing.
+    regions = []
+    for mf in sorted(dist.glob("*-manifest.json")):
+        m = json.loads(mf.read_text())
+        regions.append({
+            "id": m["region"], "name": m["name"], "bbox": m["bbox"],
+            "center": m["center"], "tz": m["tz"], "built": m["built"],
+            "bytes": sum(f["bytes"] for f in m["files"].values()),
+        })
+    (dist / "index.json").write_text(json.dumps(
+        {"generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+         "regions": regions}, indent=2))
+    log(f"  published {len(regions)} region(s) -> {dist}")
 
 
 if __name__ == "__main__":

@@ -42,6 +42,29 @@
   <div class="boot" id="boot">
     <div class="boot-goose"><svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg></div>
     <div class="boot-say" id="boot-say">Finding you…</div>
+    <!-- Only after a long wait, or a refusal: the rider says where they are
+         instead. Until then there is no map behind this, because we do not
+         yet know which city to show and guessing looks worse than waiting. -->
+    <button class="boot-alt" id="boot-alt" type="button" hidden>
+      Search for an address instead
+    </button>
+
+    <!-- Asking for a region's data, and then downloading it. Lives inside
+         the boot screen: it is the last thing between a cold start and a
+         working app. -->
+    <div class="pk" id="pk" hidden>
+      <div class="pk-title" id="pk-title"></div>
+      <div class="pk-body" id="pk-body"></div>
+      <!-- The meter, with a goose walking the distance for you. -->
+      <div class="meter" id="pk-meter" hidden>
+        <div class="meter-track"><div class="meter-fill" id="pk-fill"></div></div>
+        <span class="meter-goose" id="pk-goose">
+          <svg viewBox="440 -1740 1720 2080" aria-hidden="true"><use href="#goose-shape"/></svg>
+        </span>
+      </div>
+      <div class="pk-say" id="pk-say"></div>
+      <div class="pk-btns" id="pk-btns"></div>
+    </div>
   </div>
 
   <!-- The workflow, left to right: where you are, where you're going, then
@@ -118,6 +141,7 @@
 <script src="/static/vendor/maplibre-gl.js"></script>
 <script src="/static/vendor/pmtiles.js"></script>
 <script src="/static/js/state.js"></script>
+<script src="/static/js/packs.js"></script>
 <script src="/static/js/planner-mode.js"></script>
 <script src="/static/js/search.js"></script>
 <script src="/static/js/map-core.js"></script>

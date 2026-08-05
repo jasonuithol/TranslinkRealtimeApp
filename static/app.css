@@ -1003,3 +1003,78 @@
   @media (prefers-reduced-motion: reduce) {
     .boot-goose { animation: none; }
   }
+  /* The way out, once waiting has clearly failed. Quiet: it is the second
+     choice, offered only after patience has been spent. */
+  .boot-alt {
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font: inherit; font-size: 13px;
+    padding: 8px 16px; cursor: pointer;
+  }
+  .boot-alt[hidden] { display: none; }
+  .boot-alt:hover { color: var(--text); border-color: var(--amber-dim); }
+
+  /* --- region packs ------------------------------------------------------
+     Asking to download a region, and then showing it happen. Sits on the
+     boot screen, so it reads as the last step of starting up rather than
+     as a dialog interrupting an app the rider can already see. */
+  .pk {
+    width: min(420px, calc(100vw - 48px));
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    text-align: center;
+  }
+  .pk[hidden] { display: none; }
+  .pk-title { font-size: 17px; font-weight: 600; color: var(--text); }
+  .pk-body { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+  .pk-say {
+    font-size: 12.5px; color: var(--muted);
+    font-variant-numeric: tabular-nums; min-height: 1em;
+  }
+  .pk-btns { display: flex; gap: 10px; margin-top: 4px; }
+  .pk-btns button {
+    font: inherit; font-size: 14px; padding: 9px 20px;
+    border-radius: 999px; cursor: pointer; border: 1px solid transparent;
+  }
+  .pk-go { background: var(--amber); color: #10151b; font-weight: 600; }
+  .pk-go:hover { filter: brightness(1.08); }
+  .pk-alt { background: none; border-color: var(--line); color: var(--muted); }
+  .pk-alt:hover { color: var(--text); border-color: var(--amber-dim); }
+
+  /* The meter. The goose walks the bar: its position IS the progress, so
+     the bar behind it can stay a thin, quiet line. Extra room at both ends
+     (--goose-w) keeps the bird fully on the track at 0% and at 100%. */
+  .meter {
+    --p: 0;
+    --goose-w: 22px;
+    position: relative; width: 100%; height: 34px; margin-top: 6px;
+  }
+  .meter[hidden] { display: none; }
+  .meter-track {
+    position: absolute; left: 0; right: 0; bottom: 4px; height: 6px;
+    background: var(--line); border-radius: 999px; overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%; width: calc(var(--p) * 100%);
+    background: var(--amber); border-radius: 999px;
+    transition: width 0.25s linear;
+  }
+  .meter-goose {
+    position: absolute; bottom: 8px;
+    left: calc(var(--goose-w) / 2 + var(--p) * (100% - var(--goose-w)));
+    width: var(--goose-w); margin-left: calc(var(--goose-w) / -2);
+    color: var(--amber); --goose-body: #2fd07a;
+    transition: left 0.25s linear;
+    animation: waddle-step 0.5s steps(2, jump-none) infinite;
+  }
+  .meter-goose svg { width: 100%; display: block; transform: scaleX(-1); }
+  /* Walking on the spot while the `left` transition carries it forward:
+     a small rise and fall, which at this size reads as a stride. The
+     glyph faces left, so it is flipped above to walk the way it is going. */
+  @keyframes waddle-step {
+    0%   { transform: translateY(0); }
+    50%  { transform: translateY(-2px); }
+    100% { transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .meter-goose { animation: none; }
+    .meter-fill, .meter-goose { transition: none; }
+  }

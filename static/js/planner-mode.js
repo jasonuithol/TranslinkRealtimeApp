@@ -95,6 +95,7 @@
   function setDestPoint(lat, lon, label) {
     toId = null;
     toPoint = { lat, lon };
+    placeDestMarker(lat, lon);   // the goose lands NOW, planning follows
     _destChosen(label || "destination");
     if (!label || UNNAMED.test(label)) {
       addressFor(lat, lon).then((addr) => {

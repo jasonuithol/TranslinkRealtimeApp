@@ -55,24 +55,29 @@
     forceFit = false;
   }
 
+  // The stop being viewed, in white. Its own step because arrivals can now
+  // be open while a journey owns the rest of the map — the marker belongs
+  // to the stop, not to the vehicle drawing around it.
+  function markViewedStop(data) {
+    if (!mapReady || !map.getSource("stop")) return;
+    const lat = data.stop.stop_lat, lon = data.stop.stop_lon;
+    if (lat == null || lon == null) return;
+    map.getSource("stop").setData({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [lon, lat] },
+        // White: this is the landmark that was searched for.
+        properties: {
+          icon: ensureVehicleIcon(stopGlyph(data), LANDMARK_SELECTED_INK),
+        },
+      }],
+    });
+  }
+
   function updateMap(data) {
     if (!mapReady) return;
-    const lat = data.stop.stop_lat, lon = data.stop.stop_lon;
-
-    if (lat != null && lon != null) {
-      map.getSource("stop").setData({
-        type: "FeatureCollection",
-        features: [{
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [lon, lat] },
-          // White: this is the landmark that was searched for.
-          properties: {
-            icon: ensureVehicleIcon(stopGlyph(data), LANDMARK_SELECTED_INK),
-          },
-        }],
-      });
-    }
-
+    markViewedStop(data);
     drawLandmarks();
 
     const now = Math.floor(Date.now() / 1000);

@@ -18,6 +18,7 @@
   // journey AND the one after it. "More" adds another each press.
   const INITIAL_ALTERNATES = 1;
   let planExtra = INITIAL_ALTERNATES, planExtraFor = null, planMoreDry = false;
+  let planMorePress = false;   // this refresh was asked for by the button
   let openLeg = null;         // "itin:leg" whose timetable slice is unfolded
   let planScrolledFor = null; // destKey already scrolled into view (phones)
 
@@ -60,16 +61,24 @@
       // departure and keeps the first itinerary not already on the board.
       for (let i = 0; i < planExtra; i++) {
         const lastIt = planData.itineraries[planData.itineraries.length - 1];
-        if (!lastIt) { planExtra = i; planMoreDry = true; break; }
+        if (!lastIt) break;
         const rx = await fetch(api(
           `/plan?${origin}&${dest}&at=${lastIt.depart + 60}`));
         if (!rx.ok) break;
         const dx = await rx.json();
         const have = new Set(planData.itineraries.map(itinKey));
         const alt = dx.itineraries.find((x) => !have.has(itinKey(x)));
-        if (!alt) { planExtra = i; planMoreDry = true; break; }
+        if (!alt) {
+          // Nothing new THIS time. Only a deliberate "More" press may
+          // conclude the timetable is spent — a background refresh that
+          // comes up short must not quietly delete a journey the rider
+          // is already looking at, and never try again.
+          if (planMorePress) { planExtra = i; planMoreDry = true; }
+          break;
+        }
         planData.itineraries.push(alt);
       }
+      planMorePress = false;
       if (planData.to && (!toName || toName === toId)) {
         toName = planData.to.stop_name;
         syncPlanUrl();
@@ -105,7 +114,7 @@
   }
 
   function renderPlan() {
-    const board = $("board");
+    const board = boardTargetFor("plan");
     board.innerHTML = "";
     const head = document.createElement("div");
     head.className = "board-head";
@@ -398,6 +407,7 @@
           more.disabled = true;
           more.textContent = "Looking…";
           planExtra += 1;
+          planMorePress = true;
           await refreshPlan();   // re-renders the board, button included
         });
       }

@@ -121,6 +121,8 @@
                               : planData.itineraries;
     planData.__shown = shown;
     if (selItin >= shown.length) selItin = 0;
+    // A held solution button asks for ONE card; the toolbar is the list.
+    const cards = (soloCard != null && shown[soloCard]) ? [shown[soloCard]] : shown;
     if (!shown.length) {
       board.insertAdjacentHTML("beforeend",
         `<div class="empty">No journeys found from here today.</div>`);
@@ -154,7 +156,9 @@
         planData.__colors[key] = VEHICLE_COLORS[idx];
       });
     });
-    shown.forEach((it, i) => {
+    cards.forEach((it0, n) => {
+      const i = (soloCard != null) ? soloCard : n;   // index into `shown`
+      const it = it0;
       const card = document.createElement("div");
       card.className = "itin" + (i === selItin ? " selected" : "");
       card.tabIndex = 0;
@@ -380,7 +384,7 @@
     });
     // "More": one extra, later journey under the current cards. Goes quiet
     // once a fetch comes back with nothing new — the timetable dried up.
-    if (shown.length) {
+    if (shown.length && soloCard == null) {
       const more = document.createElement("button");
       more.type = "button";
       more.className = "plan-more";
@@ -398,6 +402,7 @@
       }
       board.appendChild(more);
     }
+    shellSyncSolutions();   // one toolbar button per journey
   }
 
   // A walk leg's endpoints: the previous ride's alight (or the journey's

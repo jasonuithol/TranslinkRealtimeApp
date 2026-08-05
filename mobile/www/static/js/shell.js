@@ -54,10 +54,14 @@
   // closed overlay must not spring back open on the next tick.
   let ovDismissed = null;
   function closeOverlay() {
+    const wasBoard = ovKind === "board";
     ovDismissed = stopId || destKey() || "-";
     ovKind = null;
     $("ov").hidden = true;
     soloCard = null;            // the card list is no longer pinned to one
+    // Dismissing arrivals dismisses the STOP: its marker and its buses
+    // have no meaning once the card explaining them is gone.
+    if (wasBoard) deselectStop();
   }
   // renderPlan honours this: a held solution shows THAT journey alone.
   let soloCard = null;

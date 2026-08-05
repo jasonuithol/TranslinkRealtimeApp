@@ -3,6 +3,9 @@
 // scripts and share one global scope — boot.js must stay last.
   // --- journey planner mode ------------------------------------------------
   let pickingDest = false;
+  // ...and its twin: the shell's green goose can search for a new ORIGIN
+  // without going home first, which the old chrome never allowed.
+  let pickingOrigin = false;
   let planData = null, selItin = 0, planFitted = false;
 
   // A STARTED journey is a commitment: it stays on the board after its

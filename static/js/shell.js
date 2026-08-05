@@ -145,6 +145,7 @@
     $("boot").hidden = true;
     bootSay("Finding you…");
     pickingDest = false;
+    pickingOrigin = true;
     $("search").placeholder = "Where are you?";
     openSearch();
     if (why) {
@@ -199,6 +200,7 @@
     () => $("near-me").click(),          // the located-point flow, unchanged
     () => {
       pickingDest = false;
+      pickingOrigin = true;      // the search stays up even when anchored
       $("search").placeholder = "Where are you?";
       openSearch();
     });

@@ -156,13 +156,7 @@
         // The searched address — GREEN, the departure end of the journey
         // (the destination pin is red). Draggable: dropping it elsewhere
         // re-homes the journey from the new spot.
-        pinMarker = new maplibregl.Marker(
-          { element: goosePin("depart"), anchor: "bottom", draggable: true })
-          .setLngLat([pinParam.lon, pinParam.lat]).addTo(map);
-        pinMarker.on("dragend", () => {
-          const ll = pinMarker.getLngLat();
-          movePin(ll.lat, ll.lng);
-        });
+        placePinMarker(pinParam.lat, pinParam.lon);
       }
       map.addSource("vehicles", { type: "geojson", data: emptyFC() });
       map.addSource("ghosts", { type: "geojson", data: emptyFC() });

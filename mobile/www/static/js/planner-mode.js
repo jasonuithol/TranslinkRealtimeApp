@@ -134,6 +134,7 @@
   function movePin(lat, lon) {
     if (!pinParam) return;
     pinParam.lat = lat; pinParam.lon = lon;
+    placePinMarker(lat, lon);   // the goose stands there NOW, not on reload
     pinRaw = `${lon.toFixed(5)},${lat.toFixed(5)}`;
     pinLabel = "dropped pin";
     planData = null; planFitted = false;

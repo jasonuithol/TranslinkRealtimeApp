@@ -688,7 +688,18 @@
   .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) button:first-child {
     border-left: 1px solid #ddd;
   }
-  .pin-ghost svg { display: block; width: 34px; height: 34px; }
+  /* The geese are dragged off their buttons: touch-action none keeps the
+     browser from scrolling the page mid-drag instead. */
+  .drop-pin, .tb-home { touch-action: none; }
+  /* The goose in flight, riding the pointer — tip at the finger, so the
+     drop lands exactly where it points. Bigger than the button's glyph:
+     it has to stay visible under a thumb. */
+  .pin-ghost {
+    position: fixed; z-index: 1000; pointer-events: none;
+    transform: translate(-50%, -100%);
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+  }
+  .pin-ghost svg { display: block; width: 40px; height: 46px; }
   /* Scale bar, restyled for the dark map. */
   .maplibregl-ctrl-scale {
     background: rgba(12,16,19,.75); color: #cfd8e3; border-color: #7f8c99;
@@ -785,6 +796,10 @@
   .pin-goose.dest { --goose-body: #e5484d; }
   /* The drop-pin button's goose is solid destination red. */
   .drop-pin, .pin-ghost { --goose-body: currentColor; }
+  /* The goose in flight wears the colour of the end it will become:
+     green for where you are, red for where you're going. */
+  .pin-ghost.depart { color: #2fd07a; }
+  .pin-ghost.dest { color: #e5484d; }
 
   /* The selected journey's stops, tappable into arrivals mode. */
   .plan-stops { margin-top: 4px; border-top: 1px solid var(--line); }

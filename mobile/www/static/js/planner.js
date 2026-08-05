@@ -100,6 +100,7 @@
         + (risky ? ` · ⚠ ${risky} connection${risky > 1 ? "s" : ""} at risk` : "");
     } catch (err) {
       $("board").innerHTML = `<div class="error">${err.message}</div>`;
+      shellShowError();
     }
   }
 

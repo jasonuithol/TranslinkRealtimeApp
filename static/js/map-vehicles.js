@@ -198,67 +198,6 @@
     holder.replaceChildren(frag);
   }
 
-  // --- first-run coaching --------------------------------------------------
-  // The drag-me-to-a-destination pin is the app's least discoverable
-  // control: it does nothing on tap, only on drag. So keep pointing at it
-  // — every time a map appears, and whenever the control itself appears —
-  // until the rider has actually dragged the goose once. That one success
-  // is remembered for good (localStorage); the × only silences it for the
-  // current page view.
-  const PIN_LEARNED = "honkerPinDragged";
-  let coachDismissed = false;
-  // The live tip's own placer, so the toolbar can ask it to move over when
-  // journey buttons appear beside the goose.
-  let coachPlace = null;
-  function coachDropPin() {
-    if (localStorage.getItem(PIN_LEARNED) || coachDismissed) return;
-    if (document.querySelector(".coach")) return;      // already showing
-    const btn = document.querySelector(".drop-pin");
-    const wrap = $("map-wrap");
-    // offsetParent is null while the control is hidden (no origin to plan
-    // from) — nothing to point at yet; syncChrome calls back when it shows.
-    if (!btn || !wrap || btn.offsetParent === null) return;
-
-    const tip = document.createElement("div");
-    tip.className = "coach";
-    tip.innerHTML = '<span>Drag this to your destination</span>'
-                  + '<button type="button" class="coach-x" '
-                  + 'aria-label="Got it">&times;</button>';
-    document.body.appendChild(tip);
-
-    const place = () => {
-      const b = btn.getBoundingClientRect();
-      // Beside the button on its row, arrow pointing back at it — unless
-      // journey buttons have appeared in that space, in which case it
-      // drops below the toolbar rather than sitting on top of them.
-      const busy = ($("tb-solutions")?.children.length || 0) > 0;
-      tip.classList.toggle("below", busy);
-      if (busy) {
-        tip.style.left = `${b.left + b.width / 2}px`;
-        tip.style.top = `${b.bottom + 12}px`;
-      } else {
-        tip.style.left = `${b.right + 12}px`;
-        tip.style.top = `${b.top + b.height / 2}px`;
-      }
-    };
-    place();
-    coachPlace = place;
-    const close = () => {
-      window.removeEventListener("resize", place);
-      coachPlace = null;
-      tip.remove();
-    };
-    window.addEventListener("resize", place);
-    tip.querySelector(".coach-x").addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      coachDismissed = true;        // quiet for this page view only
-      close();
-    });
-    // Taking the hint hides it; whether the lesson STUCK is decided by the
-    // drop handler, which sets PIN_LEARNED only on a real drag.
-    btn.addEventListener("pointerdown", close, { once: true });
-  }
-
   // --- the rider themself -------------------------------------------------
   // A live GPS dot with a compass wedge, on every map view. Geolocation is
   // HTTPS-gated off localhost, so this whole feature arms only in secure

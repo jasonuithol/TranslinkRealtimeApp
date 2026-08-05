@@ -845,7 +845,7 @@
   }
   .coach.below { transform: translateX(-50%); }
   .coach.below::before {     /* dropped below: the arrow aims up */
-    left: 50%; top: -7px; transform: translateX(-50%);
+    left: var(--arrow-x, 50%); top: -7px; transform: translateX(-50%);
     border-top: 0; border-bottom: 8px solid var(--amber);
     border-left: 8px solid transparent; border-right: 8px solid transparent;
   }

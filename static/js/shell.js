@@ -147,6 +147,7 @@
       b.title = `Journey ${i + 1}, leaves ${planClock(it.depart)}`;
       b.setAttribute("aria-label", b.title);
       b.addEventListener("click", () => {
+        coachAdvance("journey");
         // One tap does both halves of one idea: draw the route and open
         // its card. Splitting them across two gestures was a distinction
         // only the implementation cared about.
@@ -159,7 +160,84 @@
       });
       bar.appendChild(b);
     });
-    if (coachPlace) coachPlace();   // the tip steps aside for the journeys
+    coachShow();        // journeys exist now: their tip may be next
+    if (coachPlace) coachPlace();
+  }
+
+  // --- teaching the toolbar ------------------------------------------------
+  // One tip at a time, under the toolbar with an arrow pointing up at the
+  // button it describes, in workflow order: where you are, then where
+  // you're going, then the journeys. Each waits until its button is the
+  // next useful thing — the red goose has no meaning before there is an
+  // origin, and a journey button has none before a plan exists.
+  //
+  // Nothing is remembered between launches. A phone app that has been
+  // closed and reopened, or a URL opened in a new tab, is a fresh start
+  // for someone who may well be new; the tips are small and one tap
+  // dismisses each. Using the button counts as learning it, so a rider
+  // who already knows the app sees each tip for about a second.
+  const COACH = [
+    { key: "home", sel: "#tb-home",
+      text: "Where you are — tap to search, or drag onto the map" },
+    { key: "target", sel: ".drop-pin",
+      text: "Where to? Tap to search, or drag onto the map" },
+    { key: "journey", sel: ".tb-sol",
+      text: "Tap for journey details" },
+  ];
+  let coachStep = 0, coachTip = null, coachPlace = null;
+
+  function coachClear() {
+    if (coachPlace) window.removeEventListener("resize", coachPlace);
+    coachPlace = null;
+    if (coachTip) { coachTip.remove(); coachTip = null; }
+  }
+
+  // The rider did the thing this tip was teaching (or dismissed it): move
+  // on, and show the next one as soon as its button exists.
+  function coachAdvance(key) {
+    if (coachStep >= COACH.length || COACH[coachStep].key !== key) return;
+    coachStep += 1;
+    coachClear();
+    coachShow();
+  }
+
+  function coachShow() {
+    if (coachTip || coachStep >= COACH.length) return;
+    const step = COACH[coachStep];
+    const btn = document.querySelector(step.sel);
+    // offsetParent is null while a control is hidden — its turn has not
+    // come yet, so wait rather than spend the tip on nothing.
+    if (!btn || btn.offsetParent === null || $("toolbar").hidden) return;
+    const tip = document.createElement("div");
+    tip.className = "coach below";
+    tip.innerHTML = `<span>${escapeHtml(step.text)}</span>`
+      + '<button type="button" class="coach-x" aria-label="Got it">&times;</button>';
+    document.body.appendChild(tip);
+    coachTip = tip;
+    coachPlace = () => {
+      // Re-find the button every time: the journey buttons are rebuilt on
+      // every poll, and a captured element quietly becomes detached — its
+      // rect goes to zeroes and the bubble slides to the screen edge with
+      // its arrow pointing at nothing.
+      const live = document.querySelector(step.sel);
+      if (!live || live.offsetParent === null) { coachClear(); return; }
+      const b = live.getBoundingClientRect();
+      const bar = $("toolbar").getBoundingClientRect();
+      const half = tip.offsetWidth / 2;
+      // Centred under its button, but never off the edge of a phone: the
+      // bubble slides in and the arrow follows the button.
+      const want = b.left + b.width / 2;
+      const x = Math.min(Math.max(want, half + 8), window.innerWidth - half - 8);
+      tip.style.left = `${x}px`;
+      tip.style.top = `${bar.bottom + 10}px`;
+      tip.style.setProperty("--arrow-x", `${want - (x - half)}px`);
+    };
+    coachPlace();
+    window.addEventListener("resize", coachPlace);
+    tip.querySelector(".coach-x").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      coachAdvance(step.key);
+    });
   }
 
   // --- boot: the goose waddles until there is somewhere to stand ----------
@@ -177,6 +255,7 @@
     // interactively chosen destination goes through _destChosen, which
     // does the same.)
     if (hasDest()) shellSyncSolutions();
+    coachShow();               // the toolbar is up: start the walkthrough
   }
   // Give up on GPS: the goose steps aside and the search takes over.
   function bootToSearch(why) {
@@ -241,6 +320,7 @@
   gooseGesture($("tb-home"), {
     kind: "depart",
     onTap: () => {
+      coachAdvance("home");
       startMeMarker(true);   // a real tap: iOS only grants the compass here
       pickingDest = false;
       pickingOrigin = true;      // the search stays up even when anchored
@@ -248,6 +328,7 @@
       openSearch();
     },
     onDrop: (lat, lon) => {
+      coachAdvance("home");
       if (pinParam) { movePin(lat, lon); return; }
       // No pin yet (a stop-only or cold view): openPinned makes one, and
       // picks the region from the nearest stop.
@@ -267,13 +348,13 @@
     gooseGesture(btn, {
       kind: "dest",
       onTap: () => {
+        coachAdvance("target");
         pickingDest = true;
         $("search").placeholder = "Where to?";
         openSearch();
       },
       onDrop: (lat, lon) => {
-        try { localStorage.setItem("honkerPinDragged", "1"); }
-        catch { /* private mode */ }
+        coachAdvance("target");
         setDestPoint(lat, lon, "dropped pin");
       },
     });

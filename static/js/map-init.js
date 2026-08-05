@@ -474,7 +474,7 @@
       if (lastData) updateMap(lastData);
       flushMeMarker();      // a GPS fix that beat the map to it
       shellReady();         // the map is up: stand the boot goose down
-      coachDropPin();       // first map of the session: point at the pin
+      coachShow();          // the toolbar walkthrough, from step one
     });
 
     // ?mapdebug=1 — ground-truth probe, run in the viewer's own browser (the

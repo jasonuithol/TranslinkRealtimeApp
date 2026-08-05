@@ -62,8 +62,12 @@
       for (let i = 0; i < planExtra; i++) {
         const lastIt = planData.itineraries[planData.itineraries.length - 1];
         if (!lastIt) break;
-        const rx = await fetch(api(
-          `/plan?${origin}&${dest}&at=${lastIt.depart + 60}`));
+        // Anchor past the last shown journey's first RIDE: its depart is
+        // now the doorstep time, and re-planning from before the walk
+        // would just find the same journey again.
+        const lastRide = lastIt.legs.find((l) => l.kind === "ride");
+        const anchor = (lastRide ? lastRide.dep : lastIt.depart) + 60;
+        const rx = await fetch(api(`/plan?${origin}&${dest}&at=${anchor}`));
         if (!rx.ok) break;
         const dx = await rx.json();
         const have = new Set(planData.itineraries.map(itinKey));
@@ -180,13 +184,10 @@
       // Countdown to set-off (departure minus any leading walk), top right —
       // the same object as an arrivals row's countdown, in the colour of
       // the first thing you must catch (or start walking for).
-      let setOff = it.depart;
-      if (it.legs.some((l) => l.kind === "ride")) {
-        for (const l of it.legs) {
-          if (l.kind === "ride") break;
-          setOff -= l.secs;
-        }
-      }   // walk-only: depart already IS the set-off
+      // depart IS the set-off now: the server counts the walk to the first
+      // stop, so subtracting it here again would send the rider early by
+      // the length of their own walk.
+      const setOff = it.depart;
       const etaMins = Math.round((setOff - Date.now() / 1000) / 60);
       // The journey being FOLLOWED — started, else the selected card — is
       // the "next thing": honk when its set-off is a minute away.

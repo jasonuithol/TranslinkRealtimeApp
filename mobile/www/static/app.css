@@ -679,25 +679,6 @@
   .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) button:first-child {
     border-left: 1px solid #ddd;
   }
-  /* The locate button: fly to the rider's GPS dot. Pulses while the fix is
-     being acquired; goes red for a beat when the device refuses one. */
-  .locate-me svg { display: block; margin: auto; color: #333; }
-  .locate-me.locating svg { animation: locate-pulse 1s ease-in-out infinite; }
-  .locate-me.locate-fail svg { color: #c0392b; }
-  @keyframes locate-pulse { 50% { opacity: 0.25; } }
-  /* The destination pin: dragged off its button onto the map. touch-action
-     none keeps the browser from scrolling the page mid-drag. */
-  .drop-pin { touch-action: none; }
-  /* Destination red — the pin this button drops becomes the red arrival pin. */
-  .drop-pin svg { display: block; margin: auto; color: #e5484d; }
-  /* The pin in flight, riding the pointer — tip at the finger, so the drop
-     lands exactly where it points. Bigger than the button's glyph: it has
-     to stay visible under a thumb. */
-  .pin-ghost {
-    color: #e5484d;           /* destination red, like the pin it drops */
-    position: fixed; z-index: 1000; pointer-events: none;
-    transform: translate(-50%, -100%);
-  }
   .pin-ghost svg { display: block; width: 34px; height: 34px; }
   /* Scale bar, restyled for the dark map. */
   .maplibregl-ctrl-scale {

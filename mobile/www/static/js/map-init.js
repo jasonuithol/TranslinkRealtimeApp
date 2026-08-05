@@ -53,51 +53,11 @@
       attributionControl: { compact: true },
     });
     window.__map = map;   // debug/UI-test handle (see also ?mapdebug=1)
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), "bottom-left");
-    // The locate button: show the rider's dot and fly the camera to it.
-    // Same gate as the "near me" search button — geolocation needs a secure
-    // context, so on plain http the control simply isn't offered.
-    if ("geolocation" in navigator && window.isSecureContext) {
-      const wrap = document.createElement("div");
-      wrap.className = "maplibregl-ctrl maplibregl-ctrl-group";
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "locate-me";
-      btn.title = "Show my location";
-      btn.setAttribute("aria-label", "Show my location");
-      btn.innerHTML =
-        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
-        + '<circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="2"/>'
-        + '<circle cx="12" cy="12" r="1.6" fill="currentColor"/>'
-        + '<path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/>'
-        + '</svg>';
-      btn.addEventListener("click", () => {
-        startMeMarker(true);  // arms the live dot; the tap is iOS's compass gesture
-        btn.classList.add("locating");
-        navigator.geolocation.getCurrentPosition((pos) => {
-          btn.classList.remove("locating");
-          const ll = [pos.coords.longitude, pos.coords.latitude];
-          placeMe(ll);
-          // Flying to the rider is the user taking the camera — the next
-          // refresh must not snap it back to the stop and its vehicles.
-          // (movestart only clears autoFit on moves carrying a DOM event,
-          // and this one is programmatic.)
-          autoFit = false;
-          cameraMove(() => map.flyTo({ center: ll,
-                                       zoom: Math.max(map.getZoom(), 16) }));
-        }, () => {
-          btn.classList.remove("locating");
-          btn.classList.add("locate-fail");
-          btn.title = "Could not get your location";
-          setTimeout(() => { btn.classList.remove("locate-fail");
-                             btn.title = "Show my location"; }, 2500);
-        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 });
-      });
-      wrap.appendChild(btn);
-      map.addControl({ onAdd: () => wrap, onRemove: () => wrap.remove() },
-                     "top-right");
-    }
+    // No locate button: the GREEN goose is where you are — tap it for GPS,
+    // drag it to place yourself. The live rider dot arms itself instead
+    // (startMeMarker, once location permission exists), so the map still
+    // shows you moving without a control that duplicated the goose.
     // The destination pin: drag it off the button and onto the map, and the
     // journey planner starts to wherever it lands. Availability mirrors the
     // "Plan a trip" button — there must be an origin (a stop or a pinned
@@ -114,45 +74,8 @@
       btn.title = "Drag onto the map to plan a trip there";
       btn.setAttribute("aria-label", "Drag onto the map to set a destination");
       btn.innerHTML = PIN_SVG;
-      // Pointer events cover mouse AND touch with one code path; capturing
-      // on the button keeps move/up firing wherever the finger goes
-      // (touch-action: none in the CSS stops the page scrolling instead).
-      let ghost = null, downAt = null;
-      const moveGhost = (e) => {
-        if (!ghost) return;
-        ghost.style.left = `${e.clientX}px`;
-        ghost.style.top = `${e.clientY}px`;
-      };
-      const dropGhost = () => { if (ghost) { ghost.remove(); ghost = null; } };
-      btn.addEventListener("contextmenu", (e) => e.preventDefault());
-      btn.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-        btn.setPointerCapture(e.pointerId);
-        downAt = [e.clientX, e.clientY];
-        ghost = document.createElement("div");
-        ghost.className = "pin-ghost";
-        ghost.innerHTML = PIN_SVG;
-        document.body.appendChild(ghost);
-        moveGhost(e);
-      });
-      btn.addEventListener("pointermove", moveGhost);
-      btn.addEventListener("pointercancel", dropGhost);
-      btn.addEventListener("pointerup", (e) => {
-        if (!ghost) return;
-        dropGhost();
-        // A tap is not a drop: the button sits ON the map, so without a
-        // real drag the pin would land right under the button. And only a
-        // drop actually on the map places the destination — anywhere else
-        // is a change of heart, and costs nothing.
-        if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 8) return;
-        const rect = $("map").getBoundingClientRect();
-        const x = e.clientX - rect.left, y = e.clientY - rect.top;
-        if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
-        const ll = map.unproject([x, y]);
-        // Dragged and dropped for real: stop coaching this control.
-        try { localStorage.setItem("honkerPinDragged", "1"); } catch { /* private mode */ }
-        setDestPoint(ll.lat, ll.lng, "dropped pin");
-      });
+      // Tap, hold and drag all live in the shell's one gesture handler
+      // (gooseGesture), wired once this button is in the toolbar.
       wrap.appendChild(btn);
       // The workflow's second step lives in the toolbar, not on the map:
       // [green goose] [red goose] [journeys…]. The drag itself is unchanged

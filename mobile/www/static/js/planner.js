@@ -513,6 +513,25 @@
   }
 
   let destMarker = null;
+  // The RED goose stands where you're going (the departure pin is green).
+  // Planting it is deliberately NOT part of drawing a plan: a dropped pin
+  // must appear under your finger at once, not seconds later when the
+  // planner answers. Draggable — dropping it elsewhere re-plans.
+  function placeDestMarker(lat, lon) {
+    if (!mapReady || lat == null || lon == null) return;
+    const ll = [lon, lat];
+    if (!destMarker) {
+      destMarker = new maplibregl.Marker(
+        { element: goosePin("dest"), anchor: "bottom", draggable: true })
+        .setLngLat(ll).addTo(map);
+      destMarker.on("dragend", () => {
+        const p = destMarker.getLngLat();
+        setDestPoint(p.lat, p.lng, "dropped pin");
+      });
+    } else {
+      destMarker.setLngLat(ll);
+    }
+  }
   function clearPlanLayers() {
     if (!mapReady) return;
     for (const src of ["routes", "vehicles", "ghosts", "landmarks",
@@ -689,23 +708,7 @@
       { type: "FeatureCollection", features: walks });
     map.getSource("walklabels").setData(
       { type: "FeatureCollection", features: [...rideLabels, ...walkLabels] });
-    if (planData.to
-        && planData.to.stop_lat != null && planData.to.stop_lon != null) {
-      const dll = [planData.to.stop_lon, planData.to.stop_lat];
-      if (!destMarker) {
-        // RED, the arrival end (the departure pin is green). Draggable:
-        // dropping it elsewhere re-plans to the new spot.
-        destMarker = new maplibregl.Marker(
-          { element: goosePin("dest"), anchor: "bottom", draggable: true })
-          .setLngLat(dll).addTo(map);
-        destMarker.on("dragend", () => {
-          const ll = destMarker.getLngLat();
-          setDestPoint(ll.lat, ll.lng, "dropped pin");
-        });
-      } else {
-        destMarker.setLngLat(dll);   // a changed destination moves it
-      }
-    }
+    if (planData.to) placeDestMarker(planData.to.stop_lat, planData.to.stop_lon);
     if (!planFitted && lines.length && !waiting) {
       const b = new maplibregl.LngLatBounds();
       for (const l of lines) for (const c of l.geometry.coordinates) b.extend(c);

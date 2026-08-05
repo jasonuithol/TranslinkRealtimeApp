@@ -147,7 +147,7 @@ one the map hides and the board works unchanged.
   prefixing ids `<mode>:` and normalising extended route types to basic GTFS;
   the Sydney adapter downloads TfNSW's separate per-mode "For Realtime" zips
   (authenticated) and merges them the same way.
-- `app.py` (FastAPI) polls each region's GTFS-RT feeds in background tasks:
+- `realtime.py` polls each region's GTFS-RT feeds in background tasks:
   TripUpdates (arrival predictions, with spec-correct **delay propagation** to
   later stops — Melbourne trams publish only the next stop or two),
   VehiclePositions (the map's solid markers) and Alerts (the ⚠ popup).
@@ -165,10 +165,21 @@ one the map hides and the board works unchanged.
 
 Server side:
 
-- `app.py` — the FastAPI app: every endpoint, the realtime pollers, geocoding
-  (G-NAF → places → Nominatim) and walk routing.
+- `app.py` — the FastAPI app itself: lifecycle, middleware, and the routers
+  it is assembled from. The work lives one module per part of the job:
+
+| File | What it holds |
+| --- | --- |
+| `regions.py` | the networks: their databases, feeds, timezones, keys, shared state |
+| `realtime.py` | the GTFS-RT pollers and the caches they fill |
+| `gtfsdb.py` | reading the static timetable, and dead-reckoning ghosts |
+| `boards.py` | stop search, sibling stations, the arrivals board, trips |
+| `geocoding.py` | text → place (G-NAF, places, Nominatim) and back again |
+| `walking.py` | the walking graph: routes along streets, and their names |
+| `planning.py` | the journey-planner endpoint |
+
 - `planner.py` — the RAPTOR journey-planner core (pure timetable maths;
-  `app.py` wraps it with realtime and walk legs).
+  `planning.py` wraps it with realtime and walk legs).
 - `ingest_gtfs.py` / `ingest_gnaf.py` / `ingest_places.py` /
   `ingest_overture.py` / `ingest_walkgraph.py` — offline builders for the
   SQLite databases in the data volume (timetables, addresses, businesses/POIs,

@@ -16,7 +16,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --chmod so the image does not inherit restrictive host file modes.
-COPY --chmod=0644 app.py planner.py ingest_gtfs.py ingest_gnaf.py \
+COPY --chmod=0644 app.py regions.py realtime.py gtfsdb.py boards.py \
+                  geocoding.py walking.py planning.py planner.py \
+                  ingest_gtfs.py ingest_gnaf.py \
                   ingest_walkgraph.py ingest_places.py ingest_overture.py ./
 # NOT --chmod=0644 here: that applies to directories as well, and a directory
 # without its execute bit cannot be traversed. Starlette turns the resulting

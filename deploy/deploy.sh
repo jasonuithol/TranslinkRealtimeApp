@@ -28,7 +28,9 @@ source "${HERE}/load-keys.sh"
 # that deploys via GitHub (push → CI builds → GHCR → target pulls); every
 # other component ships straight from this working tree. So before pulling
 # a pending image anywhere, prove GHCR actually has the local code.
-IMAGE_INPUTS=(app.py static ingest_gtfs.py requirements.txt Containerfile)
+IMAGE_INPUTS=(app.py regions.py realtime.py gtfsdb.py boards.py geocoding.py
+              walking.py planning.py planner.py
+              static ingest_gtfs.py requirements.txt Containerfile)
 
 image_gate() {
   local dirty sha info run_id status conclusion

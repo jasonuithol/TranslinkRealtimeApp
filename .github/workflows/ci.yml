@@ -20,7 +20,7 @@ jobs:
           python-version: '3.12'
 
       - name: Syntax check
-        run: python -m compileall -q app.py ingest_gtfs.py
+        run: python -m compileall -q *.py
 
       - name: Build the image
         run: docker build -t translink:ci -f Containerfile .

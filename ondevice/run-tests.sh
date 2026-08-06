@@ -71,6 +71,18 @@ for region in "${REGIONS[@]}"; do
     node_ test/equivalence.ts "/out/ref-$region-$d.json" "/packs/$region/timetable.sqlite3" \
       || fails=$((fails + 1))
   done
+
+  # Journeys. Stop-to-stop across the network at four times of day, plus
+  # the address form with walking penalties that a dropped pin produces.
+  echo "==> $region journeys"
+  tz=$(python3 -c "import json,sys; print(json.load(open('$ROOT/packs/$region/manifest.json'))['tz'])")
+  d="${dates[${#dates[@]}-1]}"
+  wd=$(python3 -c "import datetime; print(datetime.date($((10#${d:0:4})), $((10#${d:4:2})), $((10#${d:6:2}))).weekday())")
+  specs=$(python3 "$ROOT/ondevice/test/plan-specs.py" "$region")
+  py sh -c "python /repo/ondevice/test/plan-reference.py $region $d $wd '$specs' \
+            > /out/ref-plan-$region.json"
+  node_ test/plan.ts "/out/ref-plan-$region.json" "/packs/$region/timetable.sqlite3" "$tz" \
+    || fails=$((fails + 1))
 done
 
 echo

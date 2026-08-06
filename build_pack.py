@@ -317,13 +317,12 @@ def build_timetable(src_path, out, weeks):
         rows += len(batch)
     log(f"    stop_times: {rows:,}")
 
-    # Stops nothing calls at are dead weight — drop them now that
-    # stop_times is in and the parent links can be checked.
-    con.execute("""
-        DELETE FROM stops WHERE stop NOT IN (SELECT DISTINCT stop FROM stop_times)
-          AND stop_id NOT IN (SELECT parent_station FROM stops
-                               WHERE parent_station IS NOT NULL
-                                 AND parent_station <> '')""")
+    # Every stop is kept, including ones nothing calls at in this window.
+    # Dropping them looked like free space and was not: a station platform
+    # with no service this month is still a place you can walk from, and
+    # removing it shrank the station group the planner expands an origin
+    # into, silently costing a legitimate Melbourne itinerary. The whole
+    # stops table is under a megabyte.
 
     # Shapes, simplified. Only those a kept trip actually uses.
     before = after = 0

@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # GitHub occasionally does not create a run for a push, which leaves a
+  # deploy blocked on a CI result that will never arrive (deploy.sh gates
+  # on it). This makes the run startable by hand rather than by inventing
+  # an empty commit: gh workflow run ci.yml --ref main
+  workflow_dispatch:
 
 jobs:
   build:

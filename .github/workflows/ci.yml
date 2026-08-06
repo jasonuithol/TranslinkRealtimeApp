@@ -1,3 +1,14 @@
+# A second opinion, not a gatekeeper.
+#
+# The tests below also run locally (./tools/test.sh) and that is the copy
+# that gates a deploy — waiting on a queue to ship a CSS change was a poor
+# trade. This runs on a clean checkout on someone else's machine, which
+# catches the things a local run cannot: a host-specific assumption, or a
+# dependency that only resolves because it is already here.
+#
+# It deliberately does NOT publish an image any more. deploy.sh builds and
+# pushes from the workstation, and a late run here republishing :latest
+# would overwrite a newer build with an older one — which happened.
 name: CI
 
 on:
@@ -236,39 +247,3 @@ jobs:
       - name: Container logs
         if: always()
         run: docker logs translink-ci || true
-
-  # Build the runtime image once, from the exact tree that passed the smoke test, and push
-  # it to GHCR. The VPS pulls this image instead of rebuilding — see deploy/install-vps.sh.
-  # Only runs on pushes to main (a fork PR can't push packages, and untested images shouldn't ship).
-  publish-image:
-    name: publish image
-    needs: build
-    # Pushes and hand-started runs both publish — a workflow_dispatch is
-    # the same tree at the same ref, and a run that tests without
-    # publishing leaves deploy.sh pulling a stale image and calling it
-    # deployed. Only a pull request stays unpublished.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Containerfile
-          push: true
-          # image names must be lowercase; the repo is TranslinkRealtimeApp, so it's hardcoded here
-          tags: |
-            ghcr.io/jasonuithol/translink-departures:latest
-            ghcr.io/jasonuithol/translink-departures:${{ github.sha }}

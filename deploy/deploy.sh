@@ -28,74 +28,61 @@ source "${HERE}/load-keys.sh"
 # that deploys via GitHub (push → CI builds → GHCR → target pulls); every
 # other component ships straight from this working tree. So before pulling
 # a pending image anywhere, prove GHCR actually has the local code.
+# The image these targets run. Built here now, pushed to GHCR so the VPS
+# can pull it exactly as it always has.
+IMAGE_NAME="${IMAGE_NAME:-ghcr.io/jasonuithol/translink-departures}"
+
 IMAGE_INPUTS=(app.py regions.py realtime.py gtfsdb.py boards.py geocoding.py
               walking.py planning.py planner.py
               static ingest_gtfs.py requirements.txt Containerfile)
 
 image_gate() {
-  local dirty sha info run_id status conclusion
+  # The image is built HERE now, from `git archive HEAD` — so the only
+  # thing to check is that HEAD contains what you think it does. CI used
+  # to be the gate; waiting on a queue to test a CSS change was a poor
+  # trade, and a late run could overwrite :latest with an older build.
+  local dirty
   dirty="$(git -C "$REPO" status --porcelain -- "${IMAGE_INPUTS[@]}")"
   if [[ -n "$dirty" ]]; then
-    echo "!! image inputs have uncommitted changes — no image on GHCR can contain them:"
+    echo "!! image inputs have uncommitted changes, and the image is built from HEAD:"
     sed 's/^/     /' <<<"$dirty"
-    echo "   Commit + push, let CI publish, then rerun."
+    echo "   Commit them, or use ./tools/test.sh --dirty to try them first."
     return 1
   fi
-  git -C "$REPO" fetch -q origin main || \
-    echo "   (couldn't fetch origin — checking against last-known origin/main)"
+  return 0
+}
+
+# Build the image from HEAD and tag it. A clean checkout, so a file left
+# uncommitted cannot end up in what ships — the one property of a CI
+# build worth keeping.
+build_image() {
+  local sha tmp
   sha="$(git -C "$REPO" rev-parse HEAD)"
-  if ! git -C "$REPO" merge-base --is-ancestor "$sha" origin/main 2>/dev/null; then
-    if [[ "$DRY" == "yes" ]]; then
-      echo "  GATE image: HEAD is not on origin/main — a real run would offer to push"
-      return 0
-    fi
-    local a=""
-    if [[ -t 0 ]]; then
-      read -r -p "   HEAD isn't on origin/main. Push now? [y/N] " a
-    fi
-    if [[ "$a" == y* || "$a" == Y* ]]; then
-      git -C "$REPO" push
-      git -C "$REPO" fetch -q origin main
-      if ! git -C "$REPO" merge-base --is-ancestor "$sha" origin/main; then
-        echo "!! push didn't land HEAD on origin/main — sort the branch out and rerun."
-        return 1
-      fi
-    else
-      echo "!! image is pending but HEAD isn't pushed — push (CI publishes) and rerun."
-      return 1
-    fi
-  fi
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "   (gh not installed — can't verify CI; assuming GHCR :latest is current)"
-    return 0
-  fi
-  # Find the CI run for HEAD; a just-pushed commit can take a moment to appear.
-  for _ in 1 2 3 4 5 6; do
-    info="$(gh run list --branch main --limit 20 \
-             --json databaseId,headSha,status,conclusion \
-             --jq "[.[] | select(.headSha==\"${sha}\")][0] | select(.) | \"\(.databaseId) \(.status) \(.conclusion)\"" \
-             2>/dev/null || true)"
-    if [[ -n "$info" ]]; then break; fi
-    sleep 5
-  done
-  if [[ -z "$info" ]]; then
-    echo "!! no CI run found for ${sha:0:7} — did the push trigger CI?"
+  tmp="$(mktemp -d)"
+  git -C "$REPO" archive HEAD | tar -x -C "$tmp"
+  echo "==> Building ${IMAGE_NAME}:${sha:0:7} from HEAD…"
+  podman build -q -t "${IMAGE_NAME}:latest" -t "${IMAGE_NAME}:${sha}" "$tmp" >/dev/null
+  rm -rf "$tmp"
+  echo "==> Testing it…"
+  IMAGE="${IMAGE_NAME}:latest" "${REPO}/tools/test.sh" | sed 's/^/   /'
+}
+
+# Send it to GHCR, which the VPS pulls from. Needs a login with
+# write:packages once per machine:
+#
+#   gh auth refresh -h github.com -s write:packages
+#   gh auth token | podman login ghcr.io -u jasonuithol --password-stdin
+push_image() {
+  local sha
+  sha="$(git -C "$REPO" rev-parse HEAD)"
+  echo "==> Pushing ${IMAGE_NAME}:${sha:0:7} and :latest…"
+  if ! podman push "${IMAGE_NAME}:${sha}" 2>&1 | tail -1; then
+    echo "!! push failed — is this machine logged in to GHCR?"
+    echo "   gh auth refresh -h github.com -s write:packages"
+    echo "   gh auth token | podman login ghcr.io -u jasonuithol --password-stdin"
     return 1
   fi
-  read -r run_id status conclusion <<<"$info"
-  if [[ "$status" != "completed" ]]; then
-    if [[ "$DRY" == "yes" ]]; then
-      echo "  GATE image: CI still running for ${sha:0:7} — a real run would wait for it"
-      return 0
-    fi
-    echo "   CI still running for ${sha:0:7} — waiting…"
-    gh run watch --exit-status "$run_id" >/dev/null || {
-      echo "!! CI failed for ${sha:0:7} — fix it and rerun."; return 1; }
-  elif [[ "$conclusion" != "success" ]]; then
-    echo "!! CI for ${sha:0:7} concluded '${conclusion}' — fix it and rerun."
-    return 1
-  fi
-  echo "   image gate OK: HEAD ${sha:0:7} pushed, CI green — GHCR :latest is current."
+  podman push "${IMAGE_NAME}:latest" 2>&1 | tail -1
 }
 
 TARGET="${1:-}"
@@ -199,14 +186,13 @@ REMOTE
 }
 
 if [[ "$TARGET" == "local" ]]; then
-  IMAGE_REF="${IMAGE_REF:-ghcr.io/jasonuithol/translink-departures:latest}"
+  IMAGE_REF="${IMAGE_REF:-${IMAGE_NAME}:latest}"
   if has image; then
     image_gate || exit 1
     if [[ "$DRY" == "yes" ]]; then
-      echo "  PLAN image: podman pull ${IMAGE_REF}; recreate container 'translink' on :8000"
+      echo "  PLAN image: build from HEAD + ./tools/test.sh; recreate container 'translink' on :8000"
     else
-      echo "==> Pulling ${IMAGE_REF}…"
-      podman pull "$IMAGE_REF"
+      build_image
       podman rm -f translink >/dev/null 2>&1 || true
       podman run -d --name translink -p 8000:8000 -v translink-data:/data "$IMAGE_REF" >/dev/null
       for _ in $(seq 1 30); do
@@ -214,23 +200,13 @@ if [[ "$TARGET" == "local" ]]; then
         sleep 1
       done
       curl -fsS -o /dev/null http://localhost:8000/api/regions
-      # Prove it is THIS commit. CI tags every image with its sha, so
-      # the digest of :latest must equal the digest of :<HEAD>. A green
-      # CI run that published nothing (a hand-started run used to do
-      # exactly that) otherwise leaves the old image running and marked
-      # deployed — which is a lie told in the one file whose whole job
-      # is to say what is deployed.
-      want=$(git rev-parse HEAD)
-      sha_ref="ghcr.io/jasonuithol/translink-departures:${want}"
-      if ! podman pull -q "$sha_ref" >/dev/null 2>&1; then
-        echo "!! CI published no image for $(git rev-parse --short HEAD)."
-        echo "   The container is running an OLDER build. Not marking deployed."
-        exit 1
-      fi
-      if [[ "$(podman image inspect "$IMAGE_REF" --format '{{.Id}}')" \
-         != "$(podman image inspect "$sha_ref" --format '{{.Id}}')" ]]; then
-        echo "!! :latest is not the image built from $(git rev-parse --short HEAD)."
-        echo "   Not marking deployed."
+      # Still verified, cheaply: the running container must be the image
+      # built from HEAD a moment ago. Marking something deployed that is
+      # not is the one thing this file must never do.
+      if [[ "$(podman inspect translink --format '{{.Image}}')" \
+         != "$(podman image inspect "${IMAGE_NAME}:$(git rev-parse HEAD)" \
+               --format '{{.Id}}')" ]]; then
+        echo "!! the running container is not the image built from HEAD."
         exit 1
       fi
       echo "==> local translink is up on :8000."
@@ -259,6 +235,13 @@ else  # ------------------------------------------------------------- vps ---
     if [[ "$DRY" == "yes" ]]; then
       echo "  PLAN release: image pull + update on ${HOST}${REGIONS:+, shipping basemaps: ${REGIONS}}$([[ "$GNAF" == yes ]] && echo ", shipping G-NAF DB")$([[ "$WALKG" == yes ]] && echo ", shipping walking graph")$([[ "$PLACES" == yes ]] && echo ", shipping places index")"
     else
+      # Build and test here, then push, then let the VPS pull as it always
+      # has. GHCR is now a delivery mechanism rather than a build service:
+      # nothing waits on a queue, and the sha tag still gives a rollback.
+      if has image; then
+        build_image
+        push_image
+      fi
       SKIP_BASEMAP=$([[ -n "$REGIONS" ]] && echo no || echo yes) \
       BASEMAP_REGIONS="${REGIONS:-}" SHIP_GNAF="$GNAF" \
       SHIP_WALKGRAPH="$WALKG" SHIP_PLACES="$PLACES" TARGET_NAME="$TARGET" \

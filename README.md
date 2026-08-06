@@ -213,11 +213,18 @@ glyph subset — see the comment in `fonts.css` before adding glyphs) and
 
 ## Deployment
 
-CI (GitHub Actions) smoke-tests every push against a mock feed and publishes
-`ghcr.io/jasonuithol/translink-departures`; the server container runs under
-rootless Podman with Quadlet units (`deploy/`) and `AutoUpdate=registry`, so a
-push to `main` rolls out on its own. A weekly systemd timer re-ingests **every
-region's** timetable (`--region all`) — not a nicety: TfNSW rotates Sydney's
+`./tools/test.sh` is the test suite: it builds the image from `git archive
+HEAD` — a clean checkout, so an uncommitted file cannot make it pass — then
+ingests a mock feed, re-ingests it to prove the atomic swap, serves the
+board, queries it, and runs one regression per bug that shipped once. About
+ten seconds. `deploy.sh` runs it as part of every deploy.
+
+GitHub Actions runs the same checks on a clean machine as a second opinion,
+but nothing waits for it and it publishes nothing: the image is built and
+pushed from the workstation, and a late run republishing `:latest` would
+overwrite a newer build with an older one. The server container runs under
+rootless Podman with Quadlet units (`deploy/`). A weekly systemd timer
+re-ingests **every region's** timetable (`--region all`) — not a nicety: TfNSW rotates Sydney's
 train trip ids to a new timetable version within days, after which realtime
 predictions silently stop matching a stale static feed.
 
@@ -234,9 +241,10 @@ deployable component (`image`, `quadlet-units`, `basemap-<region>`,
 it, with a reason), or `blocked` (waiting on a key/decision). Whoever
 changes a deployable asset flips its component to pending in the same
 change; `deploy.sh` deploys exactly what's pending and flips it back. The
-image is the one component that ships via GitHub (push → CI → GHCR →
-pull), so `deploy.sh` gates on git state: uncommitted image inputs abort,
-an unpushed HEAD offers to push, and it waits for CI green before pulling.
+image is built from HEAD, so `deploy.sh` refuses to run with uncommitted
+image inputs — there would be no way for them to reach the artifact. A VPS
+deploy pushes that image to GHCR for the VPS to pull; a local deploy needs
+no registry at all.
 `./deploy/status.sh` shows what's stale where; `--dry-run` prints the plan.
 
 The machinery underneath (all callable standalone for surgical work):

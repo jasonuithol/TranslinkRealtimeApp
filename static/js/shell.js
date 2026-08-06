@@ -228,6 +228,8 @@
     // Nor before there is a map: every tip here teaches a map gesture,
     // and "drag onto the map" is nonsense while there is none.
     if (document.body.classList.contains("unplaced")) return;
+    // Nor over the settings panel, which is a conversation of its own.
+    if (!$("settings").hidden) return;
     const tip = document.createElement("div");
     tip.className = "coach below";
     tip.innerHTML = `<span>${escapeHtml(step.text)}</span>`

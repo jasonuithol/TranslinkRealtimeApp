@@ -145,6 +145,15 @@
     try { return JSON.parse(localStorage.getItem(packKey(region))) || null; }
     catch { return null; }
   }
+  // The human name of the region, kept with the record so the settings
+  // panel can say "Translink · South East Queensland" rather than "seq"
+  // without needing the network to tell it.
+  function packSaveName(region, name) {
+    const rec = packLocal(region) || { files: {} };
+    rec.name = name;
+    localStorage.setItem(packKey(region), JSON.stringify(rec));
+  }
+
   function packSaveFile(region, file, entry) {
     const rec = packLocal(region) || { files: {} };
     rec.files[file] = entry;
@@ -334,7 +343,8 @@
 
   // The download itself, install or update. Resolves either way: a cancelled
   // or failed download is not a reason to refuse to start the app.
-  async function packDownload(region, plan) {
+  async function packDownload(region, plan, { overMap = true } = {}) {
+    packOverMap = overMap;
     const ctl = new AbortController();
     packShow(region.name, plan.kind === "install"
       ? `Downloading ${packSay(plan.bytes)}…`
@@ -385,6 +395,7 @@
     } catch {
       return null;                     // nothing published for this region yet
     }
+    packSaveName(region.id, region.name);
     const plan = packPlan(packLocal(region.id), manifest);
     if (plan.kind === "current") return region;
     if (plan.kind === "install" && !(await packAsk(region, plan))) {

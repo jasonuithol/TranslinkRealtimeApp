@@ -979,6 +979,11 @@
   }
   .ov:not([hidden]) ~ .status { display: none; }
 
+  /* Until we know which city the rider is in, there is no map to show.
+     Hidden rather than unbuilt: it keeps its size so MapLibre can warm up
+     and the first real frame is instant. */
+  body.unplaced #map { visibility: hidden; }
+
   /* First frame: the goose waddles while we find you and the map warms. */
   .boot {
     position: fixed; inset: 0; z-index: 40;

@@ -54,6 +54,9 @@
       from = null;
       if (!moved) { if (onTap) onTap(); return; }   // a tap, not a drag
       if (!onDrop || !map) return;
+      // No map on screen means no coordinate to drop onto: unproject
+      // would answer with a point in whichever city we guessed.
+      if (document.body.classList.contains("unplaced")) return;
       const rect = $("map").getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
@@ -211,6 +214,9 @@
     // The toolbar exists behind the boot screen; a tip pointing at it
     // from over the top of a download is teaching nobody.
     if (!$("boot").hidden) return;
+    // Nor before there is a map: every tip here teaches a map gesture,
+    // and "drag onto the map" is nonsense while there is none.
+    if (document.body.classList.contains("unplaced")) return;
     const tip = document.createElement("div");
     tip.className = "coach below";
     tip.innerHTML = `<span>${escapeHtml(step.text)}</span>`

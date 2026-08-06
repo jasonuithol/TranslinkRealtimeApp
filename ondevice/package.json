@@ -1,0 +1,12 @@
+{
+  "name": "transport-honker-ondevice",
+  "private": true,
+  "type": "module",
+  "description": "The query layer that answers from a region pack instead of the API.",
+  "devDependencies": {
+    "better-sqlite3": "^11.5.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "@types/better-sqlite3": "^7.6.11"
+  }
+}

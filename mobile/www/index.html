@@ -106,6 +106,24 @@
     <span class="tb-slot" id="tb-target-slot"></span>
     <div class="tb-solutions" id="tb-solutions"></div>
     <span class="tzbadge" id="tz-badge2" hidden></span>
+    <!-- Last, and deliberately so: the workflow reads left to right and
+         settings are not a step in it. -->
+    <button class="tb tb-menu" id="tb-menu" type="button"
+            title="Settings" aria-label="Settings">
+      <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+    </button>
+  </div>
+
+  <!-- Settings: what the app is holding, and how to be rid of it. -->
+  <div class="sheet" id="settings" hidden>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="sheet-head">
+        <h2>Settings</h2>
+        <button class="sheet-x" id="settings-x" type="button"
+                aria-label="Close settings">&times;</button>
+      </div>
+      <div class="sheet-body" id="settings-body"></div>
+    </div>
   </div>
 
   <!-- Landing logo; only visible while no stop is chosen. -->
@@ -170,6 +188,7 @@
 <script src="/static/vendor/pmtiles.js"></script>
 <script src="/static/js/state.js"></script>
 <script src="/static/js/packs.js"></script>
+<script src="/static/js/settings.js"></script>
 <script src="/static/js/planner-mode.js"></script>
 <script src="/static/js/search.js"></script>
 <script src="/static/js/map-core.js"></script>

@@ -27,6 +27,21 @@ if [[ ! -f "${KEYS}/honker-debug.keystore" ]]; then
   echo "throwaway signature and will NOT install over an existing copy." >&2
 fi
 
+# Stage the web app into the Android project. This is what `npx cap copy`
+# does, done directly because there is no node toolchain on the host — and
+# it is NOT optional: gradle reads assets/public, never mobile/www, so
+# skipping it silently rebuilds yesterday's UI and reports success. That
+# happened, and it cost an afternoon of debugging a phone running code six
+# hours older than the machine it was being compared against.
+ASSETS="${HERE}/android/app/src/main/assets/public"
+if [[ ! -f "${HERE}/www/index.html" ]]; then
+  echo "no ${HERE}/www — run ./mobile/bundle-www.sh first" >&2
+  exit 1
+fi
+rm -rf "$ASSETS"
+cp -r "${HERE}/www" "$ASSETS"
+echo "staged $(find "$ASSETS" -type f | wc -l) files into assets/public"
+
 podman run --rm --user root \
   -v "${HERE}:/app:Z" \
   -v honker-gradle:/root/.gradle \

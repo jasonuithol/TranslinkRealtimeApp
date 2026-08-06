@@ -54,6 +54,9 @@
       from = null;
       if (!moved) { if (onTap) onTap(); return; }   // a tap, not a drag
       if (!onDrop || !map) return;
+      // No map on screen means no coordinate to drop onto: unproject
+      // would answer with a point in whichever city we guessed.
+      if (document.body.classList.contains("unplaced")) return;
       const rect = $("map").getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
@@ -208,6 +211,12 @@
     // offsetParent is null while a control is hidden — its turn has not
     // come yet, so wait rather than spend the tip on nothing.
     if (!btn || btn.offsetParent === null || $("toolbar").hidden) return;
+    // The toolbar exists behind the boot screen; a tip pointing at it
+    // from over the top of a download is teaching nobody.
+    if (!$("boot").hidden) return;
+    // Nor before there is a map: every tip here teaches a map gesture,
+    // and "drag onto the map" is nonsense while there is none.
+    if (document.body.classList.contains("unplaced")) return;
     const tip = document.createElement("div");
     tip.className = "coach below";
     tip.innerHTML = `<span>${escapeHtml(step.text)}</span>`
@@ -284,29 +293,61 @@
     locating = true;
     bootSay("Finding you…");
     let done = false;
-    // A phone that never answers must not strand the goose forever.
-    const giveUp = setTimeout(() => {
+
+    // Waiting is not failing. A cold GPS fix under cover can take a minute,
+    // and the alternative to waiting is showing a map of a city the rider
+    // is not in — the app used to fall back to its remembered region, so
+    // someone opening it in Brisbane got Sydney CBD, which reads as a
+    // broken app rather than a patient one. So: no deadline. The goose
+    // keeps walking, the words admit it is taking a while, and after
+    // twelve seconds a way out appears for anyone who would rather type.
+    const patience = [
+      [12000, "Still finding you…"],
+      [30000, "Your phone is taking its time…"],
+      [60000, "Still trying — GPS can be slow indoors."],
+    ].map(([ms, msg]) => setTimeout(() => { if (!done) bootSay(msg); }, ms));
+    const offerSearch = setTimeout(() => {
       if (done) return;
-      done = true;
-      bootToSearch("Still looking for you — search an address instead.");
-    }, 15000);
+      const alt = $("boot-alt");
+      alt.hidden = false;
+      alt.onclick = () => {
+        done = true;
+        stopWaiting();
+        bootToSearch(null);
+      };
+    }, 12000);
+    function stopWaiting() {
+      patience.forEach(clearTimeout);
+      clearTimeout(offerSearch);
+      $("boot-alt").hidden = true;
+    }
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         if (done) return;
-        done = true; clearTimeout(giveUp);
+        done = true; stopWaiting();
         startMeMarker(false);      // the live dot, now that we may
+        const { latitude: lat, longitude: lon } = pos.coords;
+        // Now that we know where the rider is, we know which region's data
+        // they need. Ask for it (first time) or refresh its timetable
+        // (every time after) BEFORE the app opens — this is the one moment
+        // where a download is the obvious thing to be doing.
+        try { await packGate(lat, lon); } catch { /* never blocks the app */ }
         bootSay("Finding your stops…");
         // openPinned reloads onto ?pin=… — the goose walks until it does.
-        openPinned(pos.coords.latitude, pos.coords.longitude, "you", "");
+        openPinned(lat, lon, "you", "");
       },
       (err) => {
         if (done) return;
-        done = true; clearTimeout(giveUp);
+        done = true; stopWaiting();
         bootToSearch(err && err.code === 1
           ? "Location declined — search an address instead."
           : "Could not get your location — search an address instead.");
       },
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 120000 });
+      // No timeout: see above. maximumAge lets a fix from the last two
+      // minutes answer instantly, which is the common case on a phone
+      // that has just been using maps.
+      { enableHighAccuracy: false, maximumAge: 120000 });
   }
   function bootSay(msg) {
     const el = $("boot-say");

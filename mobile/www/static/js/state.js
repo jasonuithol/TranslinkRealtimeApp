@@ -113,7 +113,18 @@
     .then((regions) => { regionList = regions; })
     .catch(() => { /* search stays single-region, no pan-swap */ });
 
+  // Do we actually know where the rider is? Only the URL can say so: a
+  // stop, a pin, a destination or a browsed camera position. The remembered
+  // region is NOT an answer — it is where they last looked, which after one
+  // curious visit to Sydney is Sydney forever. Nothing may be drawn on the
+  // strength of a guess, because a map of the wrong city does not read as a
+  // guess; it reads as an app that does not know what it is doing.
+  // A function, not a value: hasDest() lives in planner-mode.js, which
+  // loads after this file — these are classic scripts in one shared scope.
+  const placed = () => Boolean(stopId || pinParam || hasDest() || atParam);
+
   function syncChrome() {
+    document.body.classList.toggle("unplaced", !placed());
     // No stop yet = the landing: just the goose and the search. The class
     // hides the chrome and parks the board/map split off-screen (still sized,
     // so the map keeps warming underneath). Map-browsing mode (?at=, from a

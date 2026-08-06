@@ -49,6 +49,21 @@ echo "==> typecheck"
 podman run --rm -v "$ROOT/ondevice:/work:z" -v honker-node:/work/node_modules \
   -w /work --user root "$NODE_IMAGE" npx tsc --noEmit || fails=$((fails + 1))
 
+echo "==> realtime: the hand-written protobuf reader vs the generated library"
+if py python /repo/ondevice/test/rt-reference.py /out 2>&1 | sed 's/^/    /'; then
+  node_ test/rt.ts /out || fails=$((fails + 1))
+else
+  echo "    feeds unreachable — skipped"
+fi
+
+echo "==> geocoding and walking"
+if [[ -f "$ROOT/packs/seq/addresses.sqlite3" ]]; then
+  py sh -c "python /repo/ondevice/test/geo-reference.py > /out/ref-geo.json"
+  node_ test/geo.ts /out/ref-geo.json /packs/seq || fails=$((fails + 1))
+else
+  echo "    no seq address pack — skipped"
+fi
+
 echo "==> the clock, across both DST boundaries"
 py sh -c "python /repo/ondevice/test/time-reference.py > /out/ref-time.json"
 node_ test/time.ts /out/ref-time.json || fails=$((fails + 1))

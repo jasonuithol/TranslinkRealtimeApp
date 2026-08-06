@@ -243,7 +243,11 @@ jobs:
   publish-image:
     name: publish image
     needs: build
-    if: github.event_name == 'push'
+    # Pushes and hand-started runs both publish — a workflow_dispatch is
+    # the same tree at the same ref, and a run that tests without
+    # publishing leaves deploy.sh pulling a stale image and calling it
+    # deployed. Only a pull request stays unpublished.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -214,6 +214,25 @@ if [[ "$TARGET" == "local" ]]; then
         sleep 1
       done
       curl -fsS -o /dev/null http://localhost:8000/api/regions
+      # Prove it is THIS commit. CI tags every image with its sha, so
+      # the digest of :latest must equal the digest of :<HEAD>. A green
+      # CI run that published nothing (a hand-started run used to do
+      # exactly that) otherwise leaves the old image running and marked
+      # deployed — which is a lie told in the one file whose whole job
+      # is to say what is deployed.
+      want=$(git rev-parse HEAD)
+      sha_ref="ghcr.io/jasonuithol/translink-departures:${want}"
+      if ! podman pull -q "$sha_ref" >/dev/null 2>&1; then
+        echo "!! CI published no image for $(git rev-parse --short HEAD)."
+        echo "   The container is running an OLDER build. Not marking deployed."
+        exit 1
+      fi
+      if [[ "$(podman image inspect "$IMAGE_REF" --format '{{.Id}}')" \
+         != "$(podman image inspect "$sha_ref" --format '{{.Id}}')" ]]; then
+        echo "!! :latest is not the image built from $(git rev-parse --short HEAD)."
+        echo "   Not marking deployed."
+        exit 1
+      fi
       echo "==> local translink is up on :8000."
       "${HERE}/mark-deployed.sh" local image
     fi

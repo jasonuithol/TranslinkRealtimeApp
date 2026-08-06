@@ -70,6 +70,17 @@
     });
   }
 
+  // A goose can be dragged clean out of the region we hold data for —
+  // Coolangatta to Tweed Heads is one gesture, and a different network.
+  // Wherever one lands, ask the same question the cold start asks: is
+  // this somewhere we can answer offline, and if not, shall we fetch it?
+  // The goose is already standing at the drop by the time this runs, so
+  // the map never looks like it ignored the gesture.
+  function packGateForDrop(lat, lon) {
+    if (typeof packGate !== "function") return Promise.resolve();
+    return packGate(lat, lon, { overMap: true }).catch(() => {});
+  }
+
   // --- the overlay: arrivals or a journey card, never both -----------------
   let ovKind = null;            // "board" | "plan" | null
   function openOverlay(kind) {
@@ -258,7 +269,12 @@
   function shellReady() {
     $("toolbar").hidden = false;
     wireTargetHold();          // the control exists by now
-    if (!locating) $("boot").hidden = true;
+    // Not while the pack sheet is using it. The sheet borrows this same
+    // full-screen element as a scrim over the map, and the map finishing
+    // its load is no reason to snatch a question away mid-read — which is
+    // exactly what happened: a goose dropped in an uninstalled region
+    // asked, and a late map load dismissed the asking.
+    if (!locating && $("pk").hidden) $("boot").hidden = true;
     // A URL that already carries a destination is planning from the first
     // frame: show the waiting goose now, not when the answer arrives. (An
     // interactively chosen destination goes through _destChosen, which
@@ -370,10 +386,15 @@
     },
     onDrop: (lat, lon) => {
       coachAdvance("home");
-      if (pinParam) { movePin(lat, lon); return; }
+      if (pinParam) {
+        movePin(lat, lon);              // goose stands there now
+        packGateForDrop(lat, lon);      // ...then the region question
+        return;
+      }
       // No pin yet (a stop-only or cold view): openPinned makes one, and
-      // picks the region from the nearest stop.
-      openPinned(lat, lon, "there", "");
+      // picks the region from the nearest stop. It navigates, so the
+      // question has to be asked and answered before it does.
+      packGateForDrop(lat, lon).then(() => openPinned(lat, lon, "there", ""));
     },
   });
 
@@ -397,6 +418,7 @@
       onDrop: (lat, lon) => {
         coachAdvance("target");
         setDestPoint(lat, lon, "dropped pin");
+        packGateForDrop(lat, lon);
       },
     });
   }

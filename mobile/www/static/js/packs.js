@@ -127,9 +127,14 @@
   // engine to read a pack with yet, so downloading one would spend a
   // rider's disk on nothing — and asking github.com on every cold start
   // for an answer we would throw away only slows the page down.
+  // Read ONCE, at load. The planner rewrites the query string on every pin
+  // move (syncPlanUrl), and ?packbase= is not among the parameters it
+  // keeps — so re-reading location.search here meant packs quietly switched
+  // themselves off the moment a goose was dragged, which is precisely when
+  // the next question needed asking.
+  const PACK_BASE_GIVEN = new URLSearchParams(location.search).has("packbase");
   const packsSupported = () => packStore !== null
-    && (Boolean(window.Capacitor)
-        || new URLSearchParams(location.search).has("packbase"));
+    && (Boolean(window.Capacitor) || PACK_BASE_GIVEN);
 
   // --- what is installed ---------------------------------------------------
   // The record of an install is the manifest entry of every file that
@@ -156,11 +161,17 @@
     return packIndexCache;
   }
 
+  // Memoised for the session: dragging a goose asks this question on
+  // every drop, and the common answer — "you already have this region" —
+  // must not cost a round trip each time a pin is nudged.
+  const packManifestCache = {};
   async function packManifest(region) {
+    if (packManifestCache[region]) return packManifestCache[region];
     const res = await fetch(packUrl(region, "manifest.json"),
                             { cache: "no-cache" });
     if (!res.ok) throw new Error(`manifest: HTTP ${res.status}`);
-    return res.json();
+    packManifestCache[region] = await res.json();
+    return packManifestCache[region];
   }
 
   // Which region covers a point. The bbox is the honest answer — it is the
@@ -262,8 +273,21 @@
   // asking, because it replaces data they already said yes to — but let
   // them wave it off while it runs.
   const $pk = (id) => document.getElementById(id);
+  // Where the sheet is being shown. At startup it belongs to the boot
+  // screen, which stays up afterwards while the app finishes starting.
+  // Mid-session it borrows the same full-screen container as a scrim
+  // over the map, and must put it away again when it is done.
+  let packOverMap = false;
 
   function packShow(title, body) {
+    if (packOverMap) {
+      $pk("boot").hidden = false;
+      $pk("boot").classList.add("sheet-only");
+      // A toolbar tip left over from a moment ago has nothing to teach
+      // across a modal question. New ones are already suppressed while
+      // this is up; this clears the one that was mid-sentence.
+      if (typeof coachClear === "function") coachClear();
+    }
     $pk("pk").hidden = false;
     $pk("boot-say").hidden = true;   // the sheet speaks for itself now
     $pk("pk-title").textContent = title;
@@ -274,6 +298,10 @@
   function packHide() {
     $pk("pk").hidden = true;
     $pk("boot-say").hidden = false;
+    if (packOverMap) {
+      $pk("boot").classList.remove("sheet-only");
+      $pk("boot").hidden = true;      // give the map back
+    }
   }
 
   function packButton(label, cls, onClick) {
@@ -346,8 +374,9 @@
   // or null when packs do not apply — a browser with nowhere to put them,
   // or no published packs yet, both of which mean "carry on using the
   // server". Never throws: a pack problem must not block the app.
-  async function packGate(lat, lon) {
+  async function packGate(lat, lon, { overMap = false } = {}) {
     if (!packsSupported()) return null;
+    packOverMap = overMap;
     let region, manifest;
     try {
       region = packRegionFor(lat, lon, await packIndex());

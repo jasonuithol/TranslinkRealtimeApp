@@ -1018,6 +1018,23 @@
   .boot-alt[hidden] { display: none; }
   .boot-alt:hover { color: var(--text); border-color: var(--amber-dim); }
 
+  /* The same full-screen container, borrowed mid-session: a goose landing
+     in a region we hold no data for asks about it over the live map. The
+     startup furniture (the big walking goose, "Finding you…") has no place
+     here — the map is already up and the question is about one region. */
+  .boot.sheet-only {
+    background: rgba(8, 11, 14, 0.72);
+    backdrop-filter: blur(2px);
+  }
+  .boot.sheet-only .boot-goose,
+  .boot.sheet-only .boot-alt { display: none; }
+  .boot.sheet-only .pk {
+    background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 20px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+
   /* --- region packs ------------------------------------------------------
      Asking to download a region, and then showing it happen. Sits on the
      boot screen, so it reads as the last step of starting up rather than

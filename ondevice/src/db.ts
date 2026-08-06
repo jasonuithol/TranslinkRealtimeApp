@@ -30,3 +30,25 @@ export function num(v: unknown): number | null {
 export function str(v: unknown): string | null {
   return v === null || v === undefined ? null : String(v);
 }
+
+/**
+ * How the pack stores coordinates in this database.
+ *
+ * The walk graph and the address table hold micro-degree integers, which
+ * halves their size; places and stops hold plain degrees, because they are
+ * small enough not to matter. Rather than remember which is which, each
+ * database says so in its own meta table — and getting this wrong is
+ * silent, not loud: every coordinate simply lands near the equator.
+ */
+const scales = new WeakMap<object, number>();
+export function coordScale(db: Db): number {
+  const hit = scales.get(db as object);
+  if (hit !== undefined) return hit;
+  let scale = 1;
+  try {
+    const r = db.get("SELECT value FROM meta WHERE key = 'coord_scale'");
+    if (r) scale = Number(r["value"]) || 1;
+  } catch { /* no meta table: plain degrees */ }
+  scales.set(db as object, scale);
+  return scale;
+}

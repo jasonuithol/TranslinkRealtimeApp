@@ -138,11 +138,20 @@
     if (packBaseSet) {
       const src = settingsSection("Pack source");
       src.appendChild(settingsNote(
-        `Packs are being fetched from ${packBaseSet} rather than the `
-        + "published release. This was set by a ?packbase= link and is "
-        + "remembered, because the app drops the parameter when it "
-        + "navigates."));
-      src.appendChild(settingsButton("Use the published packs", "set-alt", () => {
+        `Packs come from ${packBaseSet}, set by a ?packbase= link and `
+        + "remembered — the app drops the parameter when it navigates, so "
+        + "reading it once would lose it a second later."));
+      // Say what forgetting it actually does, which is not the same on both
+      // platforms. The packaged app falls back to the published release; a
+      // browser has no other source it can use, so packs simply stop being
+      // offered — calling that button "use the published packs" was a
+      // promise it could not keep.
+      src.appendChild(settingsNote(window.Capacitor
+        ? "Forgetting it falls back to the published release."
+        : "Forgetting it stops packs being offered in this browser until "
+          + "you open a ?packbase= link again. Data already downloaded is "
+          + "kept."));
+      src.appendChild(settingsButton("Forget this pack source", "set-alt", () => {
         localStorage.removeItem("packbase");
         location.reload();
       }));

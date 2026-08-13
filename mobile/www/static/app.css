@@ -303,9 +303,12 @@
     border-top: 1px solid var(--line);
   }
   .row > .badge { grid-row: 1 / span 2; }
-  .row > .route-desc {
+  /* Where this service is actually going, full width and never truncated:
+     it is the one field that tells the two directions of a route apart, and
+     it spent a while ellipsised into "The Pines Sh…" in a narrow column. */
+  .row > .headsign {
     grid-column: 2 / -1;
-    font-size: 12.5px; color: var(--muted); line-height: 1.3;
+    font-size: 15px; font-weight: 500; line-height: 1.25;
     overflow-wrap: anywhere;
   }
   .row:first-child { border-top: 0; }
@@ -373,11 +376,8 @@
     display: block; align-content: center;
   }
   .dest { min-width: 0; }
-  .dest .headsign {
-    font-size: 15px; font-weight: 500;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
   .dest .sub {
+    margin-top: 0;
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px; color: var(--muted); margin-top: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

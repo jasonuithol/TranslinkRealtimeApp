@@ -149,14 +149,17 @@
         const numClass = routeLabel.length > 8 ? "num xwide"
                        : routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
-        // A route number runs in two directions and says nothing about which.
-        // The long name does — so it gets a line of its own under the number,
-        // full width, instead of competing for a narrow column on a phone.
-        const routeDesc = d.route_desc || "";
-        // ...and the badge takes the first real word of it, which is the
-        // shorthand a local would use ("The Gap" is the Gap route). "The" is
-        // never the distinguishing word, so it is skipped.
-        const routeWord = (routeDesc.match(/[A-Za-z][A-Za-z'-]*/g) || [])
+        // A route number runs in two directions and says nothing about
+        // which. Neither does the route's long name: measured across SEQ, all
+        // 1024 routes have ONE long name for both directions ("The Pines -
+        // Robina via Burleigh Heads" is the 765 either way). The headsign is
+        // the field that differs — "Robina Town Centre" against "The Pines
+        // Shopping Centre" — so it gets the room, on a full-width line where
+        // nothing truncates it.
+        const headsign = d.headsign ?? "";
+        // The badge takes its first real word as the shorthand a local uses.
+        // "The" is never the distinguishing one, so it is skipped.
+        const routeWord = (headsign.match(/[A-Za-z][A-Za-z'-]*/g) || [])
           .find((w) => w.toLowerCase() !== "the") || "";
         // "~" marks a timetable-derived countdown, same mark as the map's
         // estimated labels. (The timeline stays bare — a tilde on every
@@ -177,7 +180,6 @@
             ${routeWord ? `<span class="word">${escapeHtml(routeWord.toUpperCase())}</span>` : ""}
           </div>
           <div class="dest">
-            <div class="headsign">${d.headsign ?? ""}</div>
             <div class="sub">${bits.filter(Boolean).join(" · ")}</div>
           </div>
           <div class="src-col">
@@ -189,7 +191,7 @@
               : ""}
           </div>
           <div class="eta">${eta}</div>
-          ${routeDesc ? `<div class="route-desc">${escapeHtml(routeDesc)}</div>` : ""}`;
+          ${headsign ? `<div class="headsign">${escapeHtml(headsign)}</div>` : ""}`;
         // The ⚠ opens the disruption popup; it must not also select the row.
         const am = row.querySelector(".alert-mark");
         if (am) am.addEventListener("click", (ev) => {

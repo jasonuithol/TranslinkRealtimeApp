@@ -35,8 +35,14 @@ android {
         applicationId "app.transporthonker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // From git, passed in by build-apk.sh: the commit count always
+        // increases, which is exactly what Android wants of a versionCode,
+        // and the name carries the sha so a screenshot identifies a build.
+        // The fallbacks are for someone running gradle by hand.
+        versionCode project.hasProperty("honkerVersionCode")
+                     ? honkerVersionCode.toInteger() : 1
+        versionName project.hasProperty("honkerVersionName")
+                     ? honkerVersionName : "0.0-dev"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

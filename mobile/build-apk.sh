@@ -17,6 +17,7 @@
 # image's own user cannot write to the mounted project.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 KEYS="${HOME}/.config/translink"
 # release (default) or debug
 VARIANT="${1:-release}"
@@ -42,12 +43,20 @@ rm -rf "$ASSETS"
 cp -r "${HERE}/www" "$ASSETS"
 echo "staged $(find "$ASSETS" -type f | wc -l) files into assets/public"
 
+# Version from git: the commit count only ever rises (a valid Android
+# versionCode), and the name carries the short sha and date so a build can
+# be identified from a screenshot or the settings panel.
+VCODE="$(git -C "$ROOT" rev-list --count HEAD)"
+VNAME="$(git -C "$ROOT" show -s --format=%cd --date=format:%Y.%m.%d HEAD)-$(git -C "$ROOT" rev-parse --short HEAD)"
+echo "version ${VNAME} (code ${VCODE})"
+
 podman run --rm --user root \
   -v "${HERE}:/app:Z" \
   -v honker-gradle:/root/.gradle \
   -v "${KEYS}:/keys:ro" \
   -w /app/android "$IMAGE" \
-  ./gradlew --no-daemon "assemble${VARIANT^}"
+  ./gradlew --no-daemon "assemble${VARIANT^}" \
+    "-PhonkerVersionCode=${VCODE}" "-PhonkerVersionName=${VNAME}"
 
 APK="${HERE}/android/app/build/outputs/apk/${VARIANT}/app-${VARIANT}.apk"
 echo "==> ${APK}"

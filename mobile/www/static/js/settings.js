@@ -135,6 +135,16 @@
     }
     body.appendChild(data);
 
+    // Which build this is. The packaged app stamps it in at bundle time;
+    // the web app is whatever the server just served, so it says so. This
+    // exists because "the APK does not appear to have been updated" was
+    // otherwise a question nobody could answer by looking.
+    const about = settingsSection("About");
+    about.appendChild(settingsNote(window.__BUILD
+      ? `Transport Honker, build ${window.__BUILD}.`
+      : "Running from the web, so this is whatever the server last served."));
+    body.appendChild(about);
+
     if (packBaseSet) {
       const src = settingsSection("Pack source");
       src.appendChild(settingsNote(

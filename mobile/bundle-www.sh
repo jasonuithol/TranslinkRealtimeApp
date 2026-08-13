@@ -18,11 +18,15 @@ rm -rf "$HERE/www"
 mkdir -p "$HERE/www/static"
 cp -r "$ROOT/static/." "$HERE/www/static/"
 
-python3 - "$ROOT/static/index.html" "$HERE/www/index.html" "$BASE" <<'PY'
+# The build stamp travels with the bundle: the settings panel shows it, so
+# "did the new APK actually install?" is answerable by looking.
+BUILD="$(git -C "$ROOT" show -s --format=%cd --date=format:%Y.%m.%d HEAD)-$(git -C "$ROOT" rev-parse --short HEAD)"
+python3 - "$ROOT/static/index.html" "$HERE/www/index.html" "$BASE" "$BUILD" <<'PY'
 import sys
-src, dst, base = sys.argv[1], sys.argv[2], sys.argv[3]
+src, dst, base, build = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 html = open(src).read()
 shim = '''<script>
+window.__BUILD = "%s";
 // Packaged-app shim: the UI is bundled, the data is not (yet). Any
 // absolute /api or /basemap request is sent to the API host; everything
 // else — /static/... — resolves inside the app bundle.
@@ -49,7 +53,7 @@ shim = '''<script>
   };
 })();
 </script>
-''' % base
+''' % (build, base)
 assert "<head>" in html
 open(dst, "w").write(html.replace("<head>", "<head>\n" + shim, 1))
 print("bundled www/index.html -> API base", base)

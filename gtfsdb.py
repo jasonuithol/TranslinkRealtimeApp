@@ -106,12 +106,6 @@ def scheduled_departures(con, stop_ids: list[str], service_date: datetime,
                 "headsign": r["trip_headsign"],
                 "route_id": r["route_id"],
                 "route": r["route_short_name"] or r["route_long_name"],
-                # Every route number runs both ways; the long name is
-                # what distinguishes them ("Loganholme - City" vs the
-                # reverse). Sent separately so the board can give it a
-                # line of its own rather than squeeze it beside a number.
-                "route_desc": (r["route_long_name"]
-                               if r["route_short_name"] else None),
                 "route_type": r["route_type"],
                 "route_color": r["route_color"],
                 "platform": platform_label(r["platform_code"], r["platform_stop_name"]),

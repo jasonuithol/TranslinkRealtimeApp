@@ -81,8 +81,13 @@ def _bearing(lat1, lon1, lat2, lon2) -> float:
 
 
 @lru_cache(maxsize=8192)
-def stop_heading(region: str, stop_id: str) -> str | None:
-    """Compass point a service leaving this stop heads off in, or None.
+def stop_heading(region: str, stop_id: str) -> tuple | None:
+    """(compass point, bearing in degrees) for a service leaving this stop.
+
+    The degrees are the useful half: the client draws an arrow pointing that
+    way, because "SW" asks a rider to know which way south-west is while an
+    arrow just shows them. The letters ride along for the tooltip and for
+    anyone reading it with a screen reader.
 
     None for a terminus (nothing after it), for a stop nothing calls at, and
     for stations — a platform's direction is already given by its number and
@@ -112,7 +117,7 @@ def stop_heading(region: str, stop_id: str) -> str | None:
     if abs(la1 - la2) < 1e-7 and abs(lo1 - lo2) < 1e-7:
         return None
     deg = _bearing(la1, lo1, la2, lo2)
-    return COMPASS[int((deg + 22.5) % 360 // 45)]
+    return COMPASS[int((deg + 22.5) % 360 // 45)], round(deg)
 
 
 
@@ -152,6 +157,7 @@ def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
                 "stop_name": r["stop_name"],
                 "is_station": r["location_type"] == 1,
                 "heading": None,        # filled in below, for the survivors
+                "bearing": None,        # degrees from north, for the arrow
                 "route_type": modes.get(r["stop_id"], 3),
                 "dist_m": round(haversine_m(r["stop_lat"], r["stop_lon"])),
                 # For drawing the surrounds of a dropped pin on the map.
@@ -168,9 +174,20 @@ def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
     # lost the distance sort are never shown. A station is left without one —
     # its platforms carry the direction, and the station itself has none.
     for st in out:
-        if not st["is_station"]:
-            st["heading"] = stop_heading(region, st["stop_id"])
+        if st["is_station"]:
+            continue
+        hd = stop_heading(region, st["stop_id"])
+        if hd:
+            st["heading"], st["bearing"] = hd
     return out
+
+def _heading_fields(region: str, stop) -> dict:
+    """The heading pair as payload fields, or empty for a station."""
+    if stop["location_type"] == 1:
+        return {}
+    hd = stop_heading(region, stop["stop_id"])
+    return {"heading": hd[0], "bearing": hd[1]} if hd else {}
+
 
 # ---------------------------------------------------------------------------
 @lru_cache(maxsize=4096)
@@ -502,9 +519,7 @@ def departures(stop_id: str, region: str = "seq"):
     ages_rt = [STATE[r]["rt_fetch"] for r in merged if STATE[r]["rt_fetch"]]
     ages_vp = [STATE[r]["vp_fetch"] for r in merged if STATE[r]["vp_fetch"]]
     return {
-        "stop": {**dict(stop),
-                 "heading": (None if stop["location_type"] == 1
-                             else stop_heading(region, stop_id))},
+        "stop": {**dict(stop), **_heading_fields(region, stop)},
         "generated_at": now_epoch,
         # False = NO merged region has realtime feeds configured (no key):
         # the status must say "timetable only", not "waiting for first fetch".

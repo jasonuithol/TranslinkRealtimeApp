@@ -313,21 +313,6 @@
   /* Split badge: mode glyph | route number. Black plate, white border and
      divider; the glyph and the number both inherit the vehicle colour via
      `color`, so the badge matches the row stripe and the map marker. */
-  /* The plate holds the number, and under it the route's first real word in
-     capitals — the shorthand a local uses, and a second chance to tell two
-     directions of one number apart at a glance. */
-  .badge .plate {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 2px;
-  }
-  .badge .word {
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em;
-    line-height: 1; opacity: 0.85;
-    max-width: 84px; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .badge.two-line { align-items: center; }
   .badge {
     justify-self: start;
     display: inline-flex;
@@ -344,6 +329,26 @@
     display: flex; align-items: center; justify-content: center;
     padding: 6px 9px;
     border-right: 1px solid #fff;
+  }
+  /* With a word underneath, the badge stops being a row of two cells and
+     becomes a small grid: glyph | number across the top, and the route's
+     first real word in capitals across BOTH of them beneath, divided by a
+     hairline. The divider between glyph and number stops at the caption. */
+  .badge.two-line {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: stretch;
+  }
+  .badge.two-line .mode { grid-row: 1; grid-column: 1; }
+  .badge.two-line .num  { grid-row: 1; grid-column: 2; }
+  .badge.two-line .word {
+    grid-row: 2; grid-column: 1 / -1;
+    border-top: 1px solid #fff;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em;
+    line-height: 1; text-align: center;
+    padding: 3px 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* Noto Emoji is monochrome, so the glyph inherits the badge's `color`.
      Listing it first means only these codepoints come from it. */
@@ -844,23 +849,17 @@
     flex: none; font-family: "Noto Emoji", system-ui, sans-serif;
     font-variant-emoji: text; font-size: 17px; color: var(--muted);
   }
-  /* The direction services leave in: a small hard-edged tag, because it is
-     data rather than decoration and must not read as part of the name. */
-  /* Same tag on the arrivals header as in the stops list. */
-  .board-head .bh-dir {
-    flex: none;
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
-    color: var(--board); background: var(--muted);
-    border-radius: 4px; padding: 2px 5px; min-width: 26px; text-align: center;
+  /* The direction services leave in, drawn north-up: the arrow is rotated to
+     the real bearing, so it reads without knowing which way south-west is.
+     The same control serves the stops list and the arrivals header. */
+  .dir-arrow {
+    flex: none; display: inline-flex; align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px; border-radius: 999px;
+    background: var(--line);
   }
-  .plan-stops .ps-dir {
-    flex: none;
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
-    color: var(--board); background: var(--muted);
-    border-radius: 4px; padding: 2px 5px; min-width: 26px; text-align: center;
-  }
+  .dir-arrow svg { width: 13px; height: 13px; display: block; }
+  .dir-arrow svg path { fill: var(--amber); }
   .plan-stops .ps-name {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }

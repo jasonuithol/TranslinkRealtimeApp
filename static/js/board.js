@@ -86,12 +86,9 @@
     // and the opposite answer, and nothing else on this card distinguishes
     // them.
     head.append(bhIcon);
-    if (data.stop.heading) {
-      const dir = document.createElement("span");
-      dir.className = "bh-dir";
-      dir.textContent = data.stop.heading;
-      dir.title = `Services leave heading ${data.stop.heading}`;
-      head.append(dir);
+    if (data.stop.bearing != null) {
+      head.insertAdjacentHTML("beforeend",
+        headingArrow(data.stop.bearing, data.stop.heading));
     }
     head.append(bhName);
     board.appendChild(head);
@@ -176,10 +173,8 @@
         row.innerHTML = `
           <div class="badge${routeWord ? " two-line" : ""}" ${badgeStyle}>
             <span class="mode">${asText(glyph)}</span>
-            <span class="plate">
-              <span class="${numClass}">${routeLabel}</span>
-              ${routeWord ? `<span class="word">${escapeHtml(routeWord.toUpperCase())}</span>` : ""}
-            </span>
+            <span class="${numClass}">${routeLabel}</span>
+            ${routeWord ? `<span class="word">${escapeHtml(routeWord.toUpperCase())}</span>` : ""}
           </div>
           <div class="dest">
             <div class="headsign">${d.headsign ?? ""}</div>

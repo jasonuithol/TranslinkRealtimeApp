@@ -82,6 +82,20 @@
   // of it landing, and on a busy map they arrive as more grey among grey.
   // A few beats of bright yellow says "these ones, just now".
   const LANDMARK_FLASH_INK = "#ffd21f";
+
+  // Which way services leave a stop, drawn rather than spelled. A compass
+  // letter assumes the reader knows where south-west is; an arrow on a
+  // north-up list does not assume anything. The letters stay as the label
+  // for anyone who wants them, and for screen readers.
+  function headingArrow(bearing, letter) {
+    if (bearing == null) return "";
+    const label = `Services leave heading ${letter || Math.round(bearing) + "\u00B0"}`;
+    return `<span class="dir-arrow" title="${escapeHtml(label)}"`
+         + ` aria-label="${escapeHtml(label)}" role="img">`
+         + `<svg viewBox="0 0 24 24" aria-hidden="true"`
+         + ` style="transform:rotate(${Math.round(bearing)}deg)">`
+         + `<path d="M12 2 L18 20 L12 16 L6 20 Z"/></svg></span>`;
+  }
   let landmarkFlashInk = null;
   const LANDMARK_SELECTED_INK = "#ffffff"; // white — the stop being viewed
 

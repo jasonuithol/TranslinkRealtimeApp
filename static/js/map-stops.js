@@ -62,6 +62,7 @@
     const routeRgn = selectedTrip ? tripRegion(selectedTrip) : region;
     const seen = new Set();
     const features = [];
+    const pinIds = new Set(pinStops.map((l) => l.stop_id));
     for (const [l, rgn] of [
       ...routeStops.map((l) => [l, routeRgn]),
       ...paired.map((l) => [l, region]),
@@ -77,11 +78,32 @@
           region: rgn,
           name: l.stop_name,
           rt: l.route_type,     // the hover highlight re-inks this glyph
-          icon: ensureVehicleIcon(landmarkGlyph(l.route_type), LANDMARK_INK),
+          icon: ensureVehicleIcon(landmarkGlyph(l.route_type),
+            landmarkFlashInk && pinIds.has(l.stop_id)
+              ? landmarkFlashInk : LANDMARK_INK),
         },
       });
     }
     map.getSource("landmarks").setData({ type: "FeatureCollection", features });
+  }
+
+  // Blink the pin's stops. Three beats at walking pace — long enough to
+  // register, short enough that it is over before anyone finds it annoying,
+  // and it always ends on the normal ink so an interrupted run leaves no
+  // stop stuck yellow.
+  let landmarkFlashTimer = null;
+  function flashPinStops(beats = 3) {
+    if (!mapReady || !pinStops.length) return;
+    clearTimeout(landmarkFlashTimer);
+    let step = 0;
+    const total = beats * 2;
+    const beat = () => {
+      landmarkFlashInk = step % 2 === 0 ? LANDMARK_FLASH_INK : null;
+      drawLandmarks();
+      if (++step < total) landmarkFlashTimer = setTimeout(beat, 260);
+      else landmarkFlashInk = null;
+    };
+    beat();
   }
 
   // Hide only the stop being viewed from the all-stops layer — it already has

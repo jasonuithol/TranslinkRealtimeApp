@@ -29,6 +29,7 @@ export interface Departure {
   headsign: string | null;
   routeId: string;
   route: string | null;
+  routeDesc: string | null;   // the long name, when the short one is shown
   routeType: number | null;
   routeColor: string | null;
   platform: string | null;
@@ -149,6 +150,7 @@ export function scheduledDepartures(
       headsign: str(r["trip_headsign"]),
       routeId: String(r["route_id"]),
       route: str(r["route_short_name"]) || str(r["route_long_name"]),
+      routeDesc: str(r["route_short_name"]) ? str(r["route_long_name"]) : null,
       routeType: num(r["route_type"]),
       routeColor: str(r["route_color"]),
       platform: platformLabel(r["platform_code"], r["stop_name"]),

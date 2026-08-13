@@ -1021,7 +1021,11 @@
   /* --- settings -----------------------------------------------------------
      The menu button: three bars, drawn rather than a glyph, so it matches
      the toolbar's weight instead of whichever face the system picks. */
-  .tb-menu { color: var(--muted); }
+  /* Hard right, always: the journey chips grow rightward from the geese
+     and a menu that drifts along with them reads as part of the
+     workflow. `auto` on the left margin pins it to the far edge no
+     matter how many journeys there are. */
+  .tb-menu { color: var(--muted); margin-left: auto; }
   .tb-menu:hover { color: var(--text); }
   .tb-menu .bars {
     display: flex; flex-direction: column; justify-content: center;

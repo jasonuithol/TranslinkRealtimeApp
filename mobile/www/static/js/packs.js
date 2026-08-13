@@ -22,9 +22,16 @@
   // — and it means the browser's OPFS path below can only reach a mirror
   // that does send the header. A browser that cannot fetch simply gets no
   // packs and stays on the server, which is what the free web version is.
-  const PACK_BASE = (new URLSearchParams(location.search).get("packbase")
-    || "https://github.com/jasonuithol/TranslinkRealtimeApp"
-       + "/releases/download/packs-latest").replace(/\/$/, "");
+  // Remembered, not just read: the app navigates to ?region=&pin=… on
+  // its own and keeps none of the other parameters, so a source given
+  // once at boot has to outlive that or every later pack question
+  // silently answers "not supported".
+  const PACK_BASE_DEFAULT = "https://github.com/jasonuithol/TranslinkRealtimeApp"
+                          + "/releases/download/packs-latest";
+  const packBaseParam = new URLSearchParams(location.search).get("packbase");
+  if (packBaseParam) localStorage.setItem("packbase", packBaseParam);
+  const packBaseSet = packBaseParam || localStorage.getItem("packbase") || "";
+  const PACK_BASE = (packBaseSet || PACK_BASE_DEFAULT).replace(/\/$/, "");
   const packUrl = (region, file) => `${PACK_BASE}/${region}-${file}`;
 
   // The timetable is the only file that expires; the rest are geography.
@@ -121,20 +128,14 @@
     return null;                     // server mode; packs are not offered
   })();
 
-  // Offered in the packaged app, and to a browser only when ?packbase=
-  // points it somewhere on purpose. The free web version talks to the
-  // server: a browser cannot reach the release assets (no CORS) and has no
-  // engine to read a pack with yet, so downloading one would spend a
-  // rider's disk on nothing — and asking github.com on every cold start
-  // for an answer we would throw away only slows the page down.
-  // Read ONCE, at load. The planner rewrites the query string on every pin
-  // move (syncPlanUrl), and ?packbase= is not among the parameters it
-  // keeps — so re-reading location.search here meant packs quietly switched
-  // themselves off the moment a goose was dragged, which is precisely when
-  // the next question needed asking.
-  const PACK_BASE_GIVEN = new URLSearchParams(location.search).has("packbase");
+  // Offered in the packaged app, and to a browser only when a source has
+  // been set on purpose. The free web version talks to the server: a
+  // browser cannot reach the release assets (no CORS) and has no engine
+  // to read a pack with yet, so downloading one would spend a rider's
+  // disk on nothing — and asking github.com on every cold start for an
+  // answer we would throw away only slows the page down.
   const packsSupported = () => packStore !== null
-    && (Boolean(window.Capacitor) || PACK_BASE_GIVEN);
+    && (Boolean(window.Capacitor) || Boolean(packBaseSet));
 
   // --- what is installed ---------------------------------------------------
   // The record of an install is the manifest entry of every file that

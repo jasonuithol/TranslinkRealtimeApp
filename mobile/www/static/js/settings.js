@@ -91,20 +91,18 @@
 
     // --- offline data -----------------------------------------------------
     const data = settingsSection("Offline data");
-    if (!packsSupported()) {
-      data.appendChild(settingsNote(
-        "This browser keeps no offline data — the app is answered by the "
-        + "server. The packaged app downloads a region and works without "
-        + "a signal."));
-      body.appendChild(data);
-      return;
-    }
-
     const installed = settingsInstalled();
+    // What is on the device is a fact about the device, listed whether or
+    // not new downloads are currently on offer — saying "nothing here"
+    // while holding 373 MB is the kind of lie that makes a settings panel
+    // worthless.
     if (!installed.length) {
-      data.appendChild(settingsNote(
-        "No region downloaded yet. One is offered when the app finds you, "
-        + "or when a goose lands somewhere new."));
+      data.appendChild(settingsNote(packsSupported()
+        ? "No region downloaded yet. One is offered when the app finds you, "
+          + "or when a goose lands somewhere new."
+        : "This browser keeps no offline data — the app is answered by the "
+          + "server. The packaged app downloads a region and works without "
+          + "a signal."));
     }
     for (const pack of installed) {
       const row = document.createElement("div");
@@ -123,15 +121,42 @@
       const acts = document.createElement("div");
       acts.className = "set-pack-acts";
       // The timetable is the only part that expires: everything else is
-      // geography. So "update" means the timetable, and says so.
-      acts.appendChild(settingsButton("Check for a new timetable", "set-alt",
-        () => settingsUpdate(pack)));
+      // geography. So "update" means the timetable, and says so. With no
+      // source configured there is nothing to check against, but the
+      // pack is still here and still deletable.
+      if (packsSupported()) {
+        acts.appendChild(settingsButton("Check for a new timetable", "set-alt",
+          () => settingsUpdate(pack)));
+      }
       acts.appendChild(settingsButton("Delete", "set-danger",
         () => settingsDelete(pack, row)));
       row.appendChild(acts);
       data.appendChild(row);
     }
     body.appendChild(data);
+
+    if (packBaseSet) {
+      const src = settingsSection("Pack source");
+      src.appendChild(settingsNote(
+        `Packs come from ${packBaseSet}, set by a ?packbase= link and `
+        + "remembered — the app drops the parameter when it navigates, so "
+        + "reading it once would lose it a second later."));
+      // Say what forgetting it actually does, which is not the same on both
+      // platforms. The packaged app falls back to the published release; a
+      // browser has no other source it can use, so packs simply stop being
+      // offered — calling that button "use the published packs" was a
+      // promise it could not keep.
+      src.appendChild(settingsNote(window.Capacitor
+        ? "Forgetting it falls back to the published release."
+        : "Forgetting it stops packs being offered in this browser until "
+          + "you open a ?packbase= link again. Data already downloaded is "
+          + "kept."));
+      src.appendChild(settingsButton("Forget this pack source", "set-alt", () => {
+        localStorage.removeItem("packbase");
+        location.reload();
+      }));
+      body.appendChild(src);
+    }
   }
 
   // Fetch a fresh manifest — past the session's memo, which is the whole

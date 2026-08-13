@@ -168,6 +168,7 @@
       if (!near.length) return;   // the pin alone is still worth showing
       pinStops = near;
       drawLandmarks();
+      flashPinStops();
       renderPinStops();
       if (browsing) {
         const b = new maplibregl.LngLatBounds(
@@ -201,6 +202,10 @@
       b.dataset.sid = s.stop_id;
       b.innerHTML =
         `<span class="ps-icon">${asText(landmarkGlyph(s.route_type))}</span>`
+        // Stops come in same-named pairs either side of a road. The compass
+        // point is which way services LEAVE this one, which is the only
+        // thing that tells the pair apart in a list.
+        + (s.heading ? `<span class="ps-dir">${escapeHtml(s.heading)}</span>` : "")
         + `<span class="ps-name">${escapeHtml(s.stop_name)}</span>`
         + `<span class="ps-dist">${fmtDist(s.dist_m)}</span>`;
       b.addEventListener("click", () =>

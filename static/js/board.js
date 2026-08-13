@@ -82,7 +82,18 @@
     bhIcon.textContent = asText(stopGlyph(data));
     const bhName = document.createElement("span");
     bhName.textContent = data.stop.stop_name;
-    head.append(bhIcon, bhName);
+    // Which way services leave: the stop across the road has the same name
+    // and the opposite answer, and nothing else on this card distinguishes
+    // them.
+    head.append(bhIcon);
+    if (data.stop.heading) {
+      const dir = document.createElement("span");
+      dir.className = "bh-dir";
+      dir.textContent = data.stop.heading;
+      dir.title = `Services leave heading ${data.stop.heading}`;
+      head.append(dir);
+    }
+    head.append(bhName);
     board.appendChild(head);
     if (data.departures.length === 0) {
       board.insertAdjacentHTML("beforeend",
@@ -141,6 +152,15 @@
         const numClass = routeLabel.length > 8 ? "num xwide"
                        : routeLabel.length > 4 ? "num wide" : "num";
         const glyph = MODE_EMOJI[d.route_type] ?? DEFAULT_EMOJI;
+        // A route number runs in two directions and says nothing about which.
+        // The long name does — so it gets a line of its own under the number,
+        // full width, instead of competing for a narrow column on a phone.
+        const routeDesc = d.route_desc || "";
+        // ...and the badge takes the first real word of it, which is the
+        // shorthand a local would use ("The Gap" is the Gap route). "The" is
+        // never the distinguishing word, so it is skipped.
+        const routeWord = (routeDesc.match(/[A-Za-z][A-Za-z'-]*/g) || [])
+          .find((w) => w.toLowerCase() !== "the") || "";
         // "~" marks a timetable-derived countdown, same mark as the map's
         // estimated labels. (The timeline stays bare — a tilde on every
         // stop time would be noise; its header 🛜/📅 says it once.)
@@ -154,9 +174,12 @@
           .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit",
                                    ...(regionTz ? {timeZone: regionTz} : {})}));
         row.innerHTML = `
-          <div class="badge" ${badgeStyle}>
+          <div class="badge${routeWord ? " two-line" : ""}" ${badgeStyle}>
             <span class="mode">${asText(glyph)}</span>
-            <span class="${numClass}">${routeLabel}</span>
+            <span class="plate">
+              <span class="${numClass}">${routeLabel}</span>
+              ${routeWord ? `<span class="word">${escapeHtml(routeWord.toUpperCase())}</span>` : ""}
+            </span>
           </div>
           <div class="dest">
             <div class="headsign">${d.headsign ?? ""}</div>
@@ -170,7 +193,8 @@
                          aria-label="Service disruption details">${asText(MARK_ALERT)}</button>`
               : ""}
           </div>
-          <div class="eta">${eta}</div>`;
+          <div class="eta">${eta}</div>
+          ${routeDesc ? `<div class="route-desc">${escapeHtml(routeDesc)}</div>` : ""}`;
         // The ⚠ opens the disruption popup; it must not also select the row.
         const am = row.querySelector(".alert-mark");
         if (am) am.addEventListener("click", (ev) => {

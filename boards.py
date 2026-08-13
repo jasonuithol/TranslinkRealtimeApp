@@ -56,6 +56,66 @@ def search_stops(q: str, region: str = "seq"):
     ]
 
 
+# ---------------------------------------------------------------------------
+# Which way a stop faces
+#
+# Most bus and tram stops come in pairs with the SAME name, one either side
+# of the road, and a rider standing between them cannot tell from a list
+# which is which. The direction services travel from a stop does tell them:
+# the bearing to the next stop on a trip that calls there.
+#
+# One query per stop, memoised for the life of the process — the answer is a
+# property of the timetable, and the timetable is swapped atomically on
+# re-ingest (the cache key carries the region, and a restart follows an
+# ingest anyway).
+COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+
+
+def _bearing(lat1, lon1, lat2, lon2) -> float:
+    """Initial bearing from one point to another, in degrees from north."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    y = math.sin(dl) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+@lru_cache(maxsize=8192)
+def stop_heading(region: str, stop_id: str) -> str | None:
+    """Compass point a service leaving this stop heads off in, or None.
+
+    None for a terminus (nothing after it), for a stop nothing calls at, and
+    for stations — a platform's direction is already given by its number and
+    a station as a whole does not have one.
+    """
+    con = db(region)
+    try:
+        row = con.execute(
+            """SELECT s1.stop_lat, s1.stop_lon, s2.stop_lat, s2.stop_lon
+                 FROM stop_times a
+                 JOIN stop_times b ON b.trip_id = a.trip_id
+                                  AND b.stop_sequence > a.stop_sequence
+                 JOIN stops s1 ON s1.stop_id = a.stop_id
+                 JOIN stops s2 ON s2.stop_id = b.stop_id
+                WHERE a.stop_id = ?
+                  AND s1.stop_lat IS NOT NULL AND s2.stop_lat IS NOT NULL
+                ORDER BY a.stop_sequence, b.stop_sequence LIMIT 1""",
+            (stop_id,)).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+    if not row:
+        return None
+    la1, lo1, la2, lo2 = row
+    # Two stops at the same spot (a shared bay) give a meaningless bearing.
+    if abs(la1 - la2) < 1e-7 and abs(lo1 - lo2) < 1e-7:
+        return None
+    deg = _bearing(la1, lo1, la2, lo2)
+    return COMPASS[int((deg + 22.5) % 360 // 45)]
+
+
+
 @router.get("/api/r/{region}/stops/nearby")
 @router.get("/api/stops/nearby")
 def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
@@ -91,6 +151,7 @@ def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
                 "stop_id": r["stop_id"],
                 "stop_name": r["stop_name"],
                 "is_station": r["location_type"] == 1,
+                "heading": None,        # filled in below, for the survivors
                 "route_type": modes.get(r["stop_id"], 3),
                 "dist_m": round(haversine_m(r["stop_lat"], r["stop_lon"])),
                 # For drawing the surrounds of a dropped pin on the map.
@@ -102,7 +163,14 @@ def nearby_stops(lat: float, lon: float, limit: int = 10, region: str = "seq"):
         ),
         key=lambda s: s["dist_m"],
     )
-    return out[: max(1, min(limit, 25))]
+    out = out[: max(1, min(limit, 25))]
+    # Only the survivors get a heading: it is a query each, and the ones that
+    # lost the distance sort are never shown. A station is left without one —
+    # its platforms carry the direction, and the station itself has none.
+    for st in out:
+        if not st["is_station"]:
+            st["heading"] = stop_heading(region, st["stop_id"])
+    return out
 
 # ---------------------------------------------------------------------------
 @lru_cache(maxsize=4096)
@@ -434,7 +502,9 @@ def departures(stop_id: str, region: str = "seq"):
     ages_rt = [STATE[r]["rt_fetch"] for r in merged if STATE[r]["rt_fetch"]]
     ages_vp = [STATE[r]["vp_fetch"] for r in merged if STATE[r]["vp_fetch"]]
     return {
-        "stop": dict(stop),
+        "stop": {**dict(stop),
+                 "heading": (None if stop["location_type"] == 1
+                             else stop_heading(region, stop_id))},
         "generated_at": now_epoch,
         # False = NO merged region has realtime feeds configured (no key):
         # the status must say "timetable only", not "waiting for first fetch".

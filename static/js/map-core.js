@@ -78,6 +78,11 @@
   ];
   // Landmarks: the stops themselves, never a service.
   const LANDMARK_INK = "#8c98a4";          // grey — every landmark
+  // The stops that appear when the green goose lands are the whole point
+  // of it landing, and on a busy map they arrive as more grey among grey.
+  // A few beats of bright yellow says "these ones, just now".
+  const LANDMARK_FLASH_INK = "#ffd21f";
+  let landmarkFlashInk = null;
   const LANDMARK_SELECTED_INK = "#ffffff"; // white — the stop being viewed
 
   // Mode glyphs, rendered in the monochrome Noto Emoji face so they tint with

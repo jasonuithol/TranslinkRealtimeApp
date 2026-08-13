@@ -294,7 +294,7 @@
        row for the route's long name. The badge spans both rows; the name
        starts in column 2 and runs to the end, because on a phone in
        portrait that column is far too narrow to also carry a direction. */
-    grid-template-columns: 130px 1fr 64px 96px;
+    grid-template-columns: 130px minmax(0, 1fr) 96px auto;
     grid-template-rows: auto auto;
     align-items: center;
     gap: 6px 14px;
@@ -302,12 +302,15 @@
     background: var(--panel);
     border-top: 1px solid var(--line);
   }
-  .row > .badge { grid-row: 1 / span 2; }
+  .row > .badge    { grid-area: 1 / 1 / span 2 / 2; }
+  .row > .dest     { grid-area: 1 / 2 / 2 / 3; }
+  .row > .eta      { grid-area: 1 / 3 / span 2 / 4; align-self: center; }
+  .row > .src-col  { grid-area: 1 / 4 / span 2 / 5; }
   /* Where this service is actually going, full width and never truncated:
      it is the one field that tells the two directions of a route apart, and
      it spent a while ellipsised into "The Pines Sh…" in a narrow column. */
   .row > .headsign {
-    grid-column: 2 / -1;
+    grid-area: 2 / 2 / 3 / 3;
     font-size: 15px; font-weight: 500; line-height: 1.25;
     overflow-wrap: anywhere;
   }
@@ -377,10 +380,13 @@
   }
   .dest { min-width: 0; }
   .dest .sub {
-    margin-top: 0;
     font-family: "IBM Plex Mono", monospace;
-    font-size: 11px; color: var(--muted); margin-top: 3px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 11px; color: var(--muted);
+    /* Wraps at the separators rather than truncating: on a train the line
+       reads "Train · Platform 2 · 12:04 PM", and the departure time was
+       what fell off the end. Never mid-word — a time broken across two
+       lines is barely better than a missing one. */
+    overflow-wrap: normal; word-break: keep-all;
   }
   /* Every service carries its own colour — that is its identity, and it must
      not change as the service gains or loses a live position. */
@@ -539,10 +545,16 @@
   .src-col {
     font-family: "Noto Emoji", system-ui, sans-serif;
     font-size: 22px; line-height: 1;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
+    /* Stacked and hard right: the live/scheduled mark on top, the
+       disruption warning directly beneath it, so the pair costs one icon's
+       width instead of two and the detail line keeps the difference. */
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start; gap: 6px;
+    justify-self: end;
     color: var(--vcolor); opacity: 0.85;
     font-variant-emoji: text;
   }
+  .row > .src-col { grid-row: 1 / span 2; }
   /* Disruption warning, beside the source mark. Amber — it is a warning, not
      part of the service's identity, so it does not take the vehicle colour. */
   .alert-mark {
@@ -753,8 +765,8 @@
      columns and let the destination keep flexing; same for planner legs. */
   @media (max-width: 560px) {
     .row {
-      grid-template-columns: 92px minmax(0, 1fr) 30px 58px;
-      gap: 8px; padding: 10px 8px 10px 9px;
+      grid-template-columns: 92px minmax(0, 1fr) 58px auto;
+      gap: 6px 8px; padding: 10px 8px 10px 9px;
     }
     .badge .mode { font-size: 16px; padding: 5px 6px; }
     .badge .num { font-size: 16px; min-width: 30px; padding: 5px 6px; }

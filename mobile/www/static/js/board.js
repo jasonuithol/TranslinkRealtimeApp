@@ -169,7 +169,10 @@
           : `<div class="num">${d.realtime ? "" : "~"}${d.minutes}</div>` +
             `<div class="unit">MIN</div>`;
         const bits = [MODES[d.route_type] ?? ""];
-        if (d.platform) bits.push(`Platform ${d.platform}`);
+        // A non-breaking space: the line wraps at the separators now, and
+        // "Platform" landing on one line with its number on the next is
+        // worse than either word moving whole.
+        if (d.platform) bits.push(`Platform\u00A0${d.platform}`);
         bits.push(new Date(d.predicted * 1000)
           .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit",
                                    ...(regionTz ? {timeZone: regionTz} : {})}));

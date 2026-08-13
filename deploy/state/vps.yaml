@@ -30,7 +30,7 @@ components:
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: deployed, at: 2026-08-13 }
+  image: { status: pending, reason: "the detail line breaks only between its parts" }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.

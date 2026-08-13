@@ -379,14 +379,18 @@
     display: block; align-content: center;
   }
   .dest { min-width: 0; }
+  .dest .sub .bit { white-space: nowrap; }
+  /* The separator may break, and takes no width when it does. */
+  .dest .sub .sep { white-space: normal; }
   .dest .sub {
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px; color: var(--muted);
-    /* Wraps at the separators rather than truncating: on a train the line
-       reads "Train · Platform 2 · 12:04 PM", and the departure time was
-       what fell off the end. Never mid-word — a time broken across two
-       lines is barely better than a missing one. */
-    overflow-wrap: normal; word-break: keep-all;
+    /* Wraps BETWEEN its parts and never inside one. On a train the line
+       reads "Train · Platform 2 · 12:04 PM": it used to truncate and lose
+       the departure time, then it wrapped and split "Platform" from its
+       number, then "01:52" from its "PM". Each part is a nowrap span, so
+       there is nowhere left for it to break badly. */
+    overflow-wrap: normal;
   }
   /* Every service carries its own colour — that is its identity, and it must
      not change as the service gains or loses a live position. */

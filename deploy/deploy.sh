@@ -73,13 +73,18 @@ build_image() {
 #   gh auth refresh -h github.com -s write:packages
 #   gh auth token | podman login ghcr.io -u jasonuithol --password-stdin
 push_image() {
+  # Podman defaults its credential store to $XDG_RUNTIME_DIR, which does not
+  # survive a reboot — or, as it turned out, a new shell here. Pointing it at
+  # the config directory makes one login last.
+  export REGISTRY_AUTH_FILE="${REGISTRY_AUTH_FILE:-$HOME/.config/containers/auth.json}"
   local sha
   sha="$(git -C "$REPO" rev-parse HEAD)"
   echo "==> Pushing ${IMAGE_NAME}:${sha:0:7} and :latest…"
   if ! podman push "${IMAGE_NAME}:${sha}" 2>&1 | tail -1; then
     echo "!! push failed — is this machine logged in to GHCR?"
     echo "   gh auth refresh -h github.com -s write:packages"
-    echo "   gh auth token | podman login ghcr.io -u jasonuithol --password-stdin"
+    echo "   gh auth token | REGISTRY_AUTH_FILE=\$HOME/.config/containers/auth.json \\"
+    echo "     podman login ghcr.io -u jasonuithol --password-stdin"
     return 1
   fi
   podman push "${IMAGE_NAME}:latest" 2>&1 | tail -1

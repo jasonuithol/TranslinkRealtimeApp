@@ -23,14 +23,14 @@
 
 target: vps
 host: root@delphi-bogart.bnr.la
-updated: 2026-08-07
+updated: 2026-08-13
 
 components:
   # App container image (app.py, static/, ingest_gtfs.py, Containerfile).
   # Pipeline: git commit → push → CI builds → GHCR → target pulls. deploy.sh
   # GATES on this: uncommitted image inputs abort, an unpushed HEAD offers
   # to push, and it waits for CI green before pulling.
-  image: { status: pending, reason: "flashing stops, two-row route cards, compass headings" }
+  image: { status: deployed, at: 2026-08-13 }
   # Systemd quadlet units (deploy/*.container, *.timer). Only install-vps.sh
   # writes these — the live copies carry injected keys, so update-vps.sh must
   # never overwrite them. Unit changes are applied on the VPS by hand.
